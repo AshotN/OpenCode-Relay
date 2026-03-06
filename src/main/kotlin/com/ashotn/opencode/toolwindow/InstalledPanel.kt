@@ -1,8 +1,10 @@
 package com.ashotn.opencode.toolwindow
 
 import com.ashotn.opencode.OpenCodeChecker
+import com.ashotn.opencode.OpenCodeInfo
 import com.ashotn.opencode.OpenCodePlugin
-import com.ashotn.opencode.OpenCodePlugin.ServerState
+import com.ashotn.opencode.ServerState
+import com.ashotn.opencode.ServerStateListener
 import com.ashotn.opencode.settings.OpenCodeSettings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
@@ -20,8 +22,8 @@ import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 
-class InstalledPanel(private val project: Project) :
-    JPanel(BorderLayout()), Disposable, OpenCodePlugin.ServerStateListener {
+class InstalledPanel(private val project: Project, parentDisposable: Disposable) :
+    JPanel(BorderLayout()), Disposable, ServerStateListener {
 
     private val portStatusLabel = JBLabel("Checking…", SwingConstants.CENTER)
     private val startButton = JButton("Start OpenCode", AllIcons.Actions.Execute)
@@ -35,9 +37,9 @@ class InstalledPanel(private val project: Project) :
 
     private val plugin = OpenCodePlugin.getInstance(project)
     private val settings = OpenCodeSettings.getInstance(project)
-    private val resolvedExecutablePath: String =
+    private val resolvedExecutableInfo: OpenCodeInfo =
         OpenCodeChecker.findExecutable(settings.executablePath.takeIf { it.isNotBlank() })
-            ?: settings.executablePath
+            ?: OpenCodeInfo(settings.executablePath, "")
 
     init {
         val base = UIUtil.getLabelFont()
@@ -66,11 +68,12 @@ class InstalledPanel(private val project: Project) :
                 insets = Insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
             }
 
-            val subtitleLabel = JBLabel("OpenCode is installed and ready to use.", SwingConstants.CENTER).apply {
+            val versionSuffix = if (resolvedExecutableInfo.version.isNotBlank()) "(${resolvedExecutableInfo.version})" else ""
+            val subtitleLabel = JBLabel("OpenCode$versionSuffix is installed and ready to use.", SwingConstants.CENTER).apply {
                 font = base.deriveFont(base.size * 1.1f)
                 foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
-            val pathLabel = JBLabel(resolvedExecutablePath, SwingConstants.CENTER).apply {
+            val pathLabel = JBLabel(resolvedExecutableInfo.path, SwingConstants.CENTER).apply {
                 font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
                 foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
@@ -88,7 +91,7 @@ class InstalledPanel(private val project: Project) :
             stopButton.isEnabled = true
             portStatusLabel.text = "Starting…"
             portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            plugin.startServer(settings.serverPort, resolvedExecutablePath)
+            plugin.startServer(settings.serverPort, resolvedExecutableInfo.path)
         }
         stopButton.addActionListener {
             stopButton.isEnabled = false
@@ -101,7 +104,7 @@ class InstalledPanel(private val project: Project) :
         plugin.checkPort(settings.serverPort)
         plugin.startPolling(settings.serverPort)
 
-        Disposer.register(project, this)
+        Disposer.register(parentDisposable, this)
     }
 
     override fun onStateChanged(state: ServerState) {

@@ -2,35 +2,46 @@ package com.ashotn.opencode
 
 import com.intellij.openapi.diagnostic.logger
 import java.io.File
+import java.util.concurrent.TimeUnit
+
+data class OpenCodeInfo(val path: String, val version: String)
 
 object OpenCodeChecker {
 
     private val log = logger<OpenCodeChecker>()
 
     /**
-     * Returns the resolved path to the `opencode` executable, or null if not found.
+     * Returns an [OpenCodeInfo] containing the resolved path and version of the `opencode`
+     * executable, or null if no valid executable is found.
      *
-     * If [userProvidedPath] is non-blank, it is validated and returned if the file exists
-     * and is executable. If it does not pass validation, a warning is logged and null is
-     * returned immediately (auto-resolve is NOT attempted).
+     * If [userProvidedPath] is non-blank, it is validated (file exists, is executable, and
+     * responds to `--version`). If it does not pass validation, a warning is logged and null
+     * is returned immediately (auto-resolve is NOT attempted).
      *
      * If [userProvidedPath] is blank or null, the auto-resolve strategy is used:
-     * PATH entries are searched first, followed by common install locations.
+     * PATH entries are searched first, followed by common install locations. The first
+     * candidate that passes all validation gates (including `--version`) is returned.
      */
-    fun findExecutable(userProvidedPath: String? = null): String? {
+    fun findExecutable(userProvidedPath: String? = null): OpenCodeInfo? {
         if (userProvidedPath.isNullOrBlank()) {
             return autoResolve()
         }
         val file = File(userProvidedPath)
         return if (file.isFile && file.canExecute()) {
-            file.absolutePath
+            val version = getVersion(file.absolutePath)
+            if (version != null) {
+                OpenCodeInfo(file.absolutePath, version)
+            } else {
+                log.warn("OpenCode executable at user-provided path did not respond to --version: $userProvidedPath")
+                null
+            }
         } else {
             log.warn("OpenCode executable not found at user-provided path: $userProvidedPath")
             null
         }
     }
 
-    private fun autoResolve(): String? {
+    private fun autoResolve(): OpenCodeInfo? {
         val executableName = if (isWindows()) "opencode.exe" else "opencode"
 
         // Check PATH entries first
@@ -38,7 +49,8 @@ object OpenCodeChecker {
         for (dir in pathEnv.split(File.pathSeparator)) {
             val candidate = File(dir, executableName)
             if (candidate.isFile && candidate.canExecute()) {
-                return candidate.absolutePath
+                val version = getVersion(candidate.absolutePath)
+                if (version != null) return OpenCodeInfo(candidate.absolutePath, version)
             }
         }
 
@@ -59,13 +71,39 @@ object OpenCodeChecker {
             )
         }
 
-        return extraLocations
-            .map(::File)
-            .firstOrNull { it.isFile && it.canExecute() }
-            ?.absolutePath
+        for (path in extraLocations) {
+            val candidate = File(path)
+            if (candidate.isFile && candidate.canExecute()) {
+                val version = getVersion(candidate.absolutePath)
+                if (version != null) return OpenCodeInfo(candidate.absolutePath, version)
+            }
+        }
+
+        return null
     }
 
-    fun isInstalled(): Boolean = findExecutable() != null
+    private fun getVersion(path: String): String? {
+        return try {
+            val process = ProcessBuilder(path, "--version")
+                .redirectErrorStream(true)
+                .start()
+            val completed = process.waitFor(3, TimeUnit.SECONDS)
+            if (!completed) {
+                process.destroyForcibly()
+                log.warn("OpenCode --version timed out for: $path")
+                return null
+            }
+            if (process.exitValue() != 0) {
+                log.warn("OpenCode --version exited with code ${process.exitValue()} for: $path")
+                return null
+            }
+            val output = process.inputStream.bufferedReader().readText().trim()
+            output.ifBlank { null }
+        } catch (e: Exception) {
+            log.warn("Failed to run --version for: $path", e)
+            null
+        }
+    }
 
     private fun isWindows(): Boolean =
         System.getProperty("os.name")?.lowercase()?.contains("win") == true
