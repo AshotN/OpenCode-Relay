@@ -37,7 +37,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         ApplicationManager.getApplication().executeOnPooledThread {
             val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
             ApplicationManager.getApplication().invokeLater {
-                val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable) else NotInstalledPanel()
+                val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable, executableInfo) else NotInstalledPanel()
                 add(screen, BorderLayout.CENTER)
                 revalidate()
                 repaint()
@@ -45,7 +45,5 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         }
     }
 
-    override fun dispose() {
-        // slotDisposable (and its children) will be disposed transitively by Disposer.
-    }
+    override fun dispose() {}
 }

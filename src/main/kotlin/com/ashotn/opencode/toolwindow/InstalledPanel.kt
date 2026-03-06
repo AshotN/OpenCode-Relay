@@ -1,6 +1,5 @@
 package com.ashotn.opencode.toolwindow
 
-import com.ashotn.opencode.OpenCodeChecker
 import com.ashotn.opencode.OpenCodeInfo
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.ServerState
@@ -22,7 +21,7 @@ import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 
-class InstalledPanel(private val project: Project, parentDisposable: Disposable) :
+class InstalledPanel(project: Project, parentDisposable: Disposable, private val resolvedExecutableInfo: OpenCodeInfo) :
     JPanel(BorderLayout()), Disposable, ServerStateListener {
 
     companion object {
@@ -42,9 +41,6 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable)
 
     private val plugin = OpenCodePlugin.getInstance(project)
     private val settings = OpenCodeSettings.getInstance(project)
-    private val resolvedExecutableInfo: OpenCodeInfo =
-        OpenCodeChecker.findExecutable(settings.executablePath.takeIf { it.isNotBlank() })
-            ?: OpenCodeInfo(settings.executablePath, "")
 
     init {
         val base = UIUtil.getLabelFont()

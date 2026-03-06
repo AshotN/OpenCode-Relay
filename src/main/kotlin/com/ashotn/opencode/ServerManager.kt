@@ -4,7 +4,6 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import com.ashotn.opencode.OpenCodeConstants
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -18,7 +17,7 @@ import javax.swing.SwingUtilities
 enum class ServerState {
     /** Initial state — no check has completed yet. */
     UNKNOWN,
-    /** We launched the process; port is open but /global/health has not returned 200 yet. */
+    /** We launched the process and are waiting for /global/health to return 200. */
     STARTING,
     /** /global/health returned 200 — server is fully ready. */
     READY,

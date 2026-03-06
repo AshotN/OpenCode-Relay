@@ -32,7 +32,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             }
             group("Server") {
                 row("Server Port:") {
-                    intTextField(1..65535)
+                    intTextField(1024..65535)
                         .bindIntText(settings::serverPort)
                         .comment("Port the OpenCode server listens on (default: 4096)")
                         .enabled(!running)
