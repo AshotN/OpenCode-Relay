@@ -1,12 +1,13 @@
 package com.ashotn.opencode.toolwindow
 
-import com.ashotn.opencode.diff.DiffHunksChangedListener
-import com.ashotn.opencode.diff.OpenCodeDiffService
 import com.ashotn.opencode.diff.DiffHighlightKind
 import com.ashotn.opencode.diff.DiffHighlightStyles
+import com.ashotn.opencode.diff.DiffHunksChangedListener
+import com.ashotn.opencode.diff.OpenCodeDiffService
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.permission.OpenCodePermissionService
+import com.ashotn.opencode.ipc.PermissionReply
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
@@ -34,12 +35,18 @@ import javax.swing.border.MatteBorder
 /**
  * Shows the list of files with AI session diff highlights.
  * Clicking a file opens it in the editor and scrolls to the first hunk.
- *
- * The panel hides itself when there are no session files and no pending permission.
  */
 class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
-    private val listModel = DefaultListModel<String>()
+    private data class PendingFileRow(
+        val path: String,
+        val name: String,
+        val displayDir: String,
+        val isDeleted: Boolean,
+        val isAdded: Boolean,
+    )
+
+    private val listModel = DefaultListModel<PendingFileRow>()
     private val fileList = JBList(listModel).apply {
         cellRenderer = FilePathCellRenderer()
         selectionMode = javax.swing.ListSelectionModel.SINGLE_SELECTION
@@ -58,7 +65,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             isFocusPainted = false
             isOpaque = true
             addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission("once")
+                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ONCE)
             }
         }
         val allowAlwaysButton = JButton("Allow Always").apply {
@@ -67,7 +74,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             isFocusPainted = false
             isOpaque = true
             addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission("always")
+                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ALWAYS)
             }
         }
         val rejectButton = JButton("Reject").apply {
@@ -76,7 +83,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             isFocusPainted = false
             isOpaque = true
             addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission("reject")
+                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.REJECT)
             }
         }
         val buttons = JPanel(GridLayout(1, 3)).apply {
@@ -105,8 +112,8 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         fileList.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount >= 1) {
-                    val path = fileList.selectedValue ?: return
-                    openFile(path)
+                    val row = fileList.selectedValue ?: return
+                    openFile(row)
                 }
             }
         })
@@ -115,14 +122,14 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             DiffHunksChangedListener.TOPIC,
             DiffHunksChangedListener { _ ->
                 ApplicationManager.getApplication().invokeLater { refresh() }
-            }
+            },
         )
 
         project.messageBus.connect().subscribe(
             PermissionChangedListener.TOPIC,
             PermissionChangedListener { event ->
                 ApplicationManager.getApplication().invokeLater { onPermissionChanged(event) }
-            }
+            },
         )
 
         val permissionService = OpenCodePermissionService.getInstance(project)
@@ -137,8 +144,8 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 ?: event.patterns.firstOrNull()
                 ?: event.permission
             permissionLabel.text = "<html><b>${event.permission}</b>" +
-                    if (detail != event.permission) "&nbsp;&nbsp;$detail" else "" +
-                            "</html>"
+                if (detail != event.permission) "&nbsp;&nbsp;$detail" else "" +
+                    "</html>"
             permissionPanel.isVisible = true
         } else {
             permissionPanel.isVisible = false
@@ -149,64 +156,77 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun refresh() {
         val diffService = OpenCodeDiffService.getInstance(project)
         val permissionService = OpenCodePermissionService.getInstance(project)
-        val files = diffService.allTrackedFiles().sorted()
+
+        val rows = diffService.allTrackedFiles()
+            .sorted()
+            .map { path ->
+                val name = path.substringAfterLast('/')
+                val fullDir = path.substringBeforeLast('/', "")
+                val projectBase = project.basePath ?: ""
+                val relativeDir = if (projectBase.isNotBlank() && fullDir.startsWith(projectBase)) {
+                    fullDir.removePrefix(projectBase).trimStart('/')
+                } else {
+                    fullDir
+                }
+                PendingFileRow(
+                    path = path,
+                    name = name,
+                    displayDir = relativeDir.ifEmpty { "/" },
+                    isDeleted = diffService.isDeleted(path),
+                    isAdded = diffService.isAdded(path),
+                )
+            }
+
         listModel.clear()
-        files.forEach { listModel.addElement(it) }
+        rows.forEach { listModel.addElement(it) }
+
         val hasPermission = permissionService.currentPermission() != null
-        isVisible = files.isNotEmpty() || hasPermission
+        isVisible = rows.isNotEmpty() || hasPermission
         revalidate()
         repaint()
     }
 
-    private fun openFile(absolutePath: String) {
+    private fun openFile(row: PendingFileRow) {
+        if (row.isDeleted) return
+
         val diffService = OpenCodeDiffService.getInstance(project)
-        if (diffService.isDeleted(absolutePath)) return
-        val vFile = LocalFileSystem.getInstance().findFileByPath(absolutePath) ?: return
-        val firstHunkLine = diffService.getHunks(absolutePath).firstOrNull()?.startLine ?: 0
+        val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return
+        val firstHunkLine = diffService.getHunks(row.path).firstOrNull()?.startLine ?: 0
         val descriptor = OpenFileDescriptor(project, vFile, firstHunkLine, 0)
         ApplicationManager.getApplication().invokeLater {
             FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
         }
     }
 
-    /** Renders the filename in bold and the project-relative directory path dimmed.
-     *  Deleted files are shown with strikethrough in red. */
     private inner class FilePathCellRenderer : DefaultListCellRenderer() {
         override fun getListCellRendererComponent(
             list: JList<*>, value: Any?, index: Int,
             isSelected: Boolean, cellHasFocus: Boolean,
         ): Component {
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
-            val path = value as? String ?: return this
-            val name = path.substringAfterLast('/')
-            val fullDir = path.substringBeforeLast('/', "")
-            val projectBase = project.basePath ?: ""
-            val relativeDir = if (projectBase.isNotBlank() && fullDir.startsWith(projectBase)) {
-                fullDir.removePrefix(projectBase).trimStart('/')
-            } else {
-                fullDir
-            }
-            val displayDir = relativeDir.ifEmpty { "/" }
-            val diffService = OpenCodeDiffService.getInstance(project)
-            if (diffService.isDeleted(path)) {
+
+            val row = value as? PendingFileRow ?: return this
+
+            if (row.isDeleted) {
                 val removedStyle = DiffHighlightStyles.style(DiffHighlightKind.REMOVED)
                 val removedColor = if (isSelected) foreground else (removedStyle.fg ?: JBColor.RED)
                 val removedHex = String.format("%06x", removedColor.rgb and 0xFFFFFF)
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><font color='#$removedHex'><s><b>$name</b></s></font>&nbsp;<font color='#$dimHex'>$displayDir</font></html>"
-            } else if (diffService.isAdded(path)) {
+                text = "<html><font color='#$removedHex'><s><b>${row.name}</b></s></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
+            } else if (row.isAdded) {
                 val addedStyle = DiffHighlightStyles.style(DiffHighlightKind.ADDED)
                 val addedColor = if (isSelected) foreground else (addedStyle.fg ?: JBColor(Color(0x2E7D32), Color(0x66BB6A)))
                 val addedHex = String.format("%06x", addedColor.rgb and 0xFFFFFF)
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><font color='#$addedHex'><b>$name</b></font>&nbsp;<font color='#$dimHex'>$displayDir</font></html>"
+                text = "<html><font color='#$addedHex'><b>${row.name}</b></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
             } else {
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val hex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><b>$name</b>&nbsp;<font color='#$hex'>$displayDir</font></html>"
+                text = "<html><b>${row.name}</b>&nbsp;<font color='#$hex'>${row.displayDir}</font></html>"
             }
+
             border = JBUI.Borders.empty(2, 8)
             return this
         }

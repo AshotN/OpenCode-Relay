@@ -43,11 +43,8 @@ object OpenCodeChecker {
     }
 
     private fun autoResolve(): OpenCodeInfo? {
-        // On Windows, npm global installs produce opencode.cmd; direct/Scoop/Chocolatey
-        // installs produce opencode.exe. Check both; .bat is not produced by any installer.
         val executableNames = if (SystemInfo.isWindows) listOf("opencode.exe", "opencode.cmd") else listOf("opencode")
 
-        // Check PATH entries first
         val pathEnv = System.getenv("PATH") ?: ""
         for (dir in pathEnv.split(File.pathSeparator)) {
             for (executableName in executableNames) {
@@ -59,12 +56,11 @@ object OpenCodeChecker {
             }
         }
 
-        // Check common install locations not always on PATH
         val home = System.getProperty("user.home")
         val extraLocations = if (SystemInfo.isWindows) {
             listOf(
                 "${System.getenv("APPDATA") ?: ""}\\npm\\opencode.cmd",
-                "${System.getenv("LOCALAPPDATA") ?: ""}\\Programs\\opencode\\opencode.exe"
+                "${System.getenv("LOCALAPPDATA") ?: ""}\\Programs\\opencode\\opencode.exe",
             )
         } else {
             listOf(
@@ -72,7 +68,7 @@ object OpenCodeChecker {
                 "/usr/bin/opencode",
                 "$home/.local/bin/opencode",
                 "$home/.bun/bin/opencode",
-                "$home/.npm-global/bin/opencode"
+                "$home/.npm-global/bin/opencode",
             )
         }
 
@@ -92,6 +88,7 @@ object OpenCodeChecker {
             val process = ProcessBuilder(path, "--version")
                 .redirectErrorStream(true)
                 .start()
+
             val completed = process.waitFor(3, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
@@ -102,12 +99,13 @@ object OpenCodeChecker {
                 log.warn("OpenCode --version exited with code ${process.exitValue()} for: $path")
                 return null
             }
-            val output = process.inputStream.bufferedReader().readText().trim()
-            output.ifBlank { null }
+
+            process.inputStream.bufferedReader().use { reader ->
+                reader.readText().trim().ifBlank { null }
+            }
         } catch (e: Exception) {
             log.warn("Failed to run --version for: $path", e)
             null
         }
     }
-
 }

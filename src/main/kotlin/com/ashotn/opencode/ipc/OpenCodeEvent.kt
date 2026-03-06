@@ -61,13 +61,13 @@ sealed class OpenCodeEvent {
     data class PermissionReplied(
         val requestId: String,
         val sessionId: String,
-        val reply: String,   // "once" | "always" | "reject"
+        val reply: PermissionReply,
     ) : OpenCodeEvent()
 
     /**
      * session.diff — fired after every tool execution with the cumulative diff
-     * for the session. Each entry carries before/after content and a status of
-     * "added", "modified", or "deleted".
+     * for the session. Each entry carries before/after content and a typed
+     * [SessionDiffStatus].
      */
     data class SessionDiff(
         val sessionId: String,
@@ -80,7 +80,7 @@ sealed class OpenCodeEvent {
         val after: String,
         val additions: Int,
         val deletions: Int,
-        val status: String,     // "added" | "modified" | "deleted"
+        val status: SessionDiffStatus,
     )
 
     /**

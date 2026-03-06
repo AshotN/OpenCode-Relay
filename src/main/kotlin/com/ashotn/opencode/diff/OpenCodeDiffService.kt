@@ -2,6 +2,7 @@ package com.ashotn.opencode.diff
 
 import com.ashotn.opencode.ipc.FileDiff
 import com.ashotn.opencode.ipc.OpenCodeEvent
+import com.ashotn.opencode.ipc.SessionDiffStatus
 import com.ashotn.opencode.ipc.SseClient
 import com.ashotn.opencode.permission.OpenCodePermissionService
 import com.intellij.diff.comparison.ComparisonManager
@@ -10,8 +11,8 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.progress.EmptyProgressIndicator
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.util.concurrent.ConcurrentHashMap
@@ -20,12 +21,6 @@ import java.util.concurrent.atomic.AtomicLong
 /**
  * Project-level service that owns the SSE connection to the OpenCode server
  * and maintains AI diff hunks by session.
- *
- * The server diff API is cumulative for each session, so each `session.diff`
- * event is treated as the source of truth for that session's full change set.
- *
- * We keep per-session diff state so tabs can be added later, and expose only
- * the latest session as the active list for now.
  */
 @Service(Service.Level.PROJECT)
 class OpenCodeDiffService(private val project: Project) : Disposable {
@@ -50,6 +45,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     /** Monotonic counter used to ignore out-of-order async session.diff applications. */
     private val diffApplyRevision = AtomicLong(0)
 
+    /** Guards map updates that must commit atomically. */
+    private val stateLock = Any()
+
     private val permissionService = OpenCodePermissionService.getInstance(project)
 
     private var sseClient: SseClient? = null
@@ -69,22 +67,36 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun handleEvent(event: OpenCodeEvent) {
         when (event) {
-            is OpenCodeEvent.SessionDiff       -> handleSessionDiff(event)
-            is OpenCodeEvent.SessionBusy       -> { latestSessionId = event.sessionId }
-            is OpenCodeEvent.SessionIdle       -> { }
-            is OpenCodeEvent.TurnPatch         -> { }
-            is OpenCodeEvent.PermissionAsked   -> permissionService.handlePermissionAsked(event)
+            is OpenCodeEvent.SessionDiff -> handleSessionDiff(event)
+            is OpenCodeEvent.SessionBusy -> {
+                log.debug("OpenCodeDiffService: session busy ${event.sessionId}")
+            }
+            is OpenCodeEvent.SessionIdle -> {
+                cleanupInactiveSession(event.sessionId)
+            }
+            is OpenCodeEvent.TurnPatch -> {
+            }
+            is OpenCodeEvent.PermissionAsked -> permissionService.handlePermissionAsked(event)
             is OpenCodeEvent.PermissionReplied -> permissionService.handlePermissionReplied(event)
-            is OpenCodeEvent.FileEdited        -> { }
-            is OpenCodeEvent.FileDeleted       -> { }
+            is OpenCodeEvent.FileEdited -> {
+            }
+            is OpenCodeEvent.FileDeleted -> {
+            }
+        }
+    }
+
+    private fun cleanupInactiveSession(sessionId: String) {
+        if (sessionId == latestSessionId) return
+        synchronized(stateLock) {
+            hunksBySessionAndFile.remove(sessionId)
+            deletedBySession.remove(sessionId)
+            addedBySession.remove(sessionId)
+            baselineBeforeBySessionAndFile.remove(sessionId)
         }
     }
 
     private fun handleSessionDiff(event: OpenCodeEvent.SessionDiff) {
         val projectBase = project.basePath ?: return
-        val previousVisibleFiles = allTrackedFiles()
-
-        latestSessionId = event.sessionId
         val revision = diffApplyRevision.incrementAndGet()
 
         ApplicationManager.getApplication().executeOnPooledThread {
@@ -93,17 +105,21 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             val newAdded = HashSet<String>()
             val newBaselineByFile = HashMap<String, String>()
 
-            log.debug("OpenCodeDiffService: apply session.diff session=${event.sessionId} revision=$revision files=${event.files.size}")
+            log.debug(
+                "OpenCodeDiffService: apply session.diff session=${event.sessionId} revision=$revision files=${event.files.size}",
+            )
 
             for (diffFile in event.files) {
                 val absPath = "$projectBase/${diffFile.file}"
-                refreshVfs(absPath, wasDeleted = diffFile.status == "deleted")
+                refreshVfs(absPath, wasDeleted = diffFile.status == SessionDiffStatus.DELETED)
                 reloadOpenDocument(absPath)
 
                 val actualAfter = readCurrentContent(absPath)
                 val hasContentChange = normalizeContent(diffFile.before) != normalizeContent(actualAfter)
 
-                log.debug("OpenCodeDiffService: file=${diffFile.file} status=${diffFile.status} beforeEqDisk=${!hasContentChange} additions=${diffFile.additions} deletions=${diffFile.deletions}")
+                log.debug(
+                    "OpenCodeDiffService: file=${diffFile.file} status=${diffFile.status} beforeEqDisk=${!hasContentChange} additions=${diffFile.additions} deletions=${diffFile.deletions}",
+                )
 
                 if (!hasContentChange) {
                     log.debug("OpenCodeDiffService: skip baseline-matching file=${diffFile.file}")
@@ -127,32 +143,57 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 newHunksByFile[absPath] = hunks
                 newBaselineByFile[absPath] = diffFile.before
                 if (actualAfter.isEmpty()) newDeleted.add(absPath)
-                if (diffFile.status == "added" && actualAfter.isNotEmpty()) newAdded.add(absPath)
+                if (diffFile.status == SessionDiffStatus.ADDED && actualAfter.isNotEmpty()) newAdded.add(absPath)
             }
 
-            if (revision != diffApplyRevision.get()) {
-                log.debug("OpenCodeDiffService: skipping stale session.diff apply revision=$revision")
-                return@executeOnPooledThread
+            val removedFiles: Set<String>
+            val changedFiles: Set<String>
+
+            synchronized(stateLock) {
+                if (revision != diffApplyRevision.get()) {
+                    log.debug("OpenCodeDiffService: skipping stale session.diff apply revision=$revision")
+                    return@executeOnPooledThread
+                }
+
+                val previousSessionId = latestSessionId
+                val previousVisibleFiles = previousSessionId
+                    ?.let { hunksBySessionAndFile[it]?.keys?.toSet() }
+                    ?: emptySet()
+
+                latestSessionId = event.sessionId
+                evictOtherSessionsLocked(event.sessionId)
+
+                hunksBySessionAndFile[event.sessionId] = newHunksByFile
+                deletedBySession[event.sessionId] = newDeleted
+                addedBySession[event.sessionId] = newAdded
+                baselineBeforeBySessionAndFile[event.sessionId] = newBaselineByFile
+
+                val newVisibleFiles = newHunksByFile.keys.toSet()
+                removedFiles = previousVisibleFiles - newVisibleFiles
+                changedFiles = previousVisibleFiles + newVisibleFiles
             }
 
-            hunksBySessionAndFile[event.sessionId] = newHunksByFile
-            deletedBySession[event.sessionId] = newDeleted
-            addedBySession[event.sessionId] = newAdded
-            baselineBeforeBySessionAndFile[event.sessionId] = newBaselineByFile
+            log.debug(
+                "OpenCodeDiffService: applied session=${event.sessionId} trackedFiles=${newHunksByFile.size} deletedFiles=${newDeleted.size} addedFiles=${newAdded.size}",
+            )
 
-            log.debug("OpenCodeDiffService: applied session=${event.sessionId} trackedFiles=${newHunksByFile.size} deletedFiles=${newDeleted.size} addedFiles=${newAdded.size}")
-
-            val newVisibleFiles = newHunksByFile.keys
-            val removedFiles = previousVisibleFiles - newVisibleFiles
             removedFiles.forEach {
                 refreshVfs(it, wasDeleted = false)
                 reloadOpenDocument(it)
             }
-
-            val changedFiles = previousVisibleFiles + newVisibleFiles
             changedFiles.forEach { publishChanged(it) }
 
             scheduleReconcile(event.sessionId, revision)
+        }
+    }
+
+    private fun evictOtherSessionsLocked(activeSessionId: String) {
+        val staleSessionIds = hunksBySessionAndFile.keys.filter { it != activeSessionId }
+        staleSessionIds.forEach { sessionId ->
+            hunksBySessionAndFile.remove(sessionId)
+            deletedBySession.remove(sessionId)
+            addedBySession.remove(sessionId)
+            baselineBeforeBySessionAndFile.remove(sessionId)
         }
     }
 
@@ -163,12 +204,13 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             } catch (_: InterruptedException) {
                 return@executeOnPooledThread
             }
+
             if (revision != diffApplyRevision.get()) return@executeOnPooledThread
-            reconcileSessionState(sessionId)
+            reconcileSessionState(sessionId, revision)
         }
     }
 
-    private fun reconcileSessionState(sessionId: String) {
+    private fun reconcileSessionState(sessionId: String, revision: Long) {
         val currentHunks = hunksBySessionAndFile[sessionId] ?: return
         val currentDeleted = deletedBySession[sessionId] ?: emptySet()
         val currentAdded = addedBySession[sessionId] ?: emptySet()
@@ -196,10 +238,15 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
         if (removedPaths.isEmpty()) return
 
-        hunksBySessionAndFile[sessionId] = updatedHunks
-        deletedBySession[sessionId] = updatedDeleted
-        addedBySession[sessionId] = updatedAdded
-        baselineBeforeBySessionAndFile[sessionId] = currentBaselines.filterKeys { it in updatedHunks.keys }
+        synchronized(stateLock) {
+            if (revision != diffApplyRevision.get()) return
+            if (latestSessionId != sessionId) return
+
+            hunksBySessionAndFile[sessionId] = updatedHunks
+            deletedBySession[sessionId] = updatedDeleted
+            addedBySession[sessionId] = updatedAdded
+            baselineBeforeBySessionAndFile[sessionId] = currentBaselines.filterKeys { it in updatedHunks.keys }
+        }
 
         removedPaths.forEach { publishChanged(it) }
     }
@@ -235,6 +282,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         val vFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(absPath)
             ?: LocalFileSystem.getInstance().findFileByPath(absPath)
             ?: return
+
         val fileDocumentManager = FileDocumentManager.getInstance()
         val document = fileDocumentManager.getCachedDocument(vFile) ?: return
 
@@ -245,7 +293,11 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         }
 
         val app = ApplicationManager.getApplication()
-        if (app.isDispatchThread) reloadAction() else app.invokeAndWait(reloadAction)
+        if (app.isDispatchThread) {
+            reloadAction()
+        } else {
+            app.invokeAndWait(reloadAction)
+        }
     }
 
     private fun readCurrentContent(absPath: String): String {
@@ -285,7 +337,6 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     fun getHunks(filePath: String): List<DiffHunk> {
         val sessionId = latestSessionId ?: return emptyList()
-        reconcileSessionState(sessionId)
         return hunksBySessionAndFile[sessionId]?.get(filePath) ?: emptyList()
     }
 
@@ -294,29 +345,29 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     fun isDeleted(filePath: String): Boolean {
         val sessionId = latestSessionId ?: return false
-        reconcileSessionState(sessionId)
         return deletedBySession[sessionId]?.contains(filePath) == true
     }
 
     fun isAdded(filePath: String): Boolean {
         val sessionId = latestSessionId ?: return false
-        reconcileSessionState(sessionId)
         return addedBySession[sessionId]?.contains(filePath) == true
     }
 
     fun allTrackedFiles(): Set<String> {
         val sessionId = latestSessionId ?: return emptySet()
-        reconcileSessionState(sessionId)
-        return hunksBySessionAndFile[sessionId]?.keys ?: emptySet()
+        return hunksBySessionAndFile[sessionId]?.keys?.toSet() ?: emptySet()
     }
 
     fun clearAll() {
-        val files = allTrackedFiles().toList()
-        hunksBySessionAndFile.clear()
-        deletedBySession.clear()
-        addedBySession.clear()
-        baselineBeforeBySessionAndFile.clear()
-        latestSessionId = null
+        diffApplyRevision.incrementAndGet()
+        val files = hunksBySessionAndFile.values.flatMap { it.keys }.toSet()
+        synchronized(stateLock) {
+            hunksBySessionAndFile.clear()
+            deletedBySession.clear()
+            addedBySession.clear()
+            baselineBeforeBySessionAndFile.clear()
+            latestSessionId = null
+        }
         files.forEach { publishChanged(it) }
     }
 
@@ -328,11 +379,14 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     override fun dispose() {
         stopListening()
-        hunksBySessionAndFile.clear()
-        deletedBySession.clear()
-        addedBySession.clear()
-        baselineBeforeBySessionAndFile.clear()
-        latestSessionId = null
+        diffApplyRevision.incrementAndGet()
+        synchronized(stateLock) {
+            hunksBySessionAndFile.clear()
+            deletedBySession.clear()
+            addedBySession.clear()
+            baselineBeforeBySessionAndFile.clear()
+            latestSessionId = null
+        }
     }
 
     companion object {

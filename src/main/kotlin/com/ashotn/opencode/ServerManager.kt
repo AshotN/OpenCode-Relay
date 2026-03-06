@@ -4,6 +4,7 @@ import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import java.io.File
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -12,18 +13,19 @@ import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 
 enum class ServerState {
-    /** Initial state — no check has completed yet. */
+    /** Initial state - no check has completed yet. */
     UNKNOWN,
     /** We launched the process and are waiting for /global/health to return 200. */
     STARTING,
-    /** /global/health returned 200 — server is fully ready. */
+    /** /global/health returned 200 - server is fully ready. */
     READY,
-    /** Port is closed — server is not running. */
+    /** Port is closed - server is not running. */
     STOPPED,
-    /** Port is open but occupied by a non-OpenCode process — user action required. */
+    /** Port is open but occupied by a non-OpenCode process - user action required. */
     PORT_CONFLICT
 }
 
@@ -33,12 +35,6 @@ fun interface ServerStateListener {
 
 /**
  * Owns the OpenCode server process and all polling logic.
- *
- * Responsibilities:
- *  - Launch and kill the `opencode serve` process (and its process tree)
- *  - Register/remove a JVM shutdown hook so the process is cleaned up on ungraceful JVM exit
- *  - Poll the server port for liveness (TCP connect) and readiness (HTTP /global/health)
- *  - Drive [ServerState] transitions and notify [onStateChanged]
  */
 class ServerManager(
     private val project: Project,
@@ -56,8 +52,6 @@ class ServerManager(
         private const val HEALTH_READ_TIMEOUT_MS = 1_000
     }
 
-    // --- State ---
-
     @Volatile var serverState: ServerState = ServerState.UNKNOWN
         private set
 
@@ -73,7 +67,8 @@ class ServerManager(
     /** Last-known port-open state for unexpected-stop detection. EDT-only. */
     private var wasPortOpen = false
 
-    // --- Scheduler ---
+    /** Monotonic revision to ignore stale external health checks. */
+    private val externalHealthRevision = AtomicLong(0)
 
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "opencode-poll").apply { isDaemon = true }
@@ -81,13 +76,13 @@ class ServerManager(
     private var portPollFuture: ScheduledFuture<*>? = null
     private var healthPollFuture: ScheduledFuture<*>? = null
 
-    // --- Port polling (liveness) ---
-
     fun startPolling(port: Int, intervalSeconds: Long = PORT_POLL_INTERVAL_SECONDS) {
         portPollFuture?.cancel(false)
         portPollFuture = scheduler.scheduleWithFixedDelay(
             { checkPort(port) },
-            intervalSeconds, intervalSeconds, TimeUnit.SECONDS
+            intervalSeconds,
+            intervalSeconds,
+            TimeUnit.SECONDS,
         )
     }
 
@@ -109,34 +104,42 @@ class ServerManager(
             when {
                 serverState == ServerState.READY -> {
                     wasPortOpen = true
+                    externalHealthRevision.incrementAndGet()
                 }
                 ownedProcess != null -> {
                     wasPortOpen = true
+                    externalHealthRevision.incrementAndGet()
                     if (serverState != ServerState.STARTING) applyState(ServerState.STARTING)
                     startHealthPolling(port)
                 }
                 else -> {
-                    scheduler.submit { checkExternalHealth(port) }
+                    val revision = externalHealthRevision.incrementAndGet()
+                    scheduler.submit { checkExternalHealth(port, revision) }
                 }
             }
             return
         }
 
+        externalHealthRevision.incrementAndGet()
         if (wasPortOpen) {
-            notify("OpenCode stopped unexpectedly", "The OpenCode server process was terminated externally.", NotificationType.WARNING)
+            notify(
+                "OpenCode stopped unexpectedly",
+                "The OpenCode server process was terminated externally.",
+                NotificationType.WARNING,
+            )
         }
         wasPortOpen = false
         stopHealthPolling()
         applyState(ServerState.STOPPED)
     }
 
-    // --- Health polling (readiness) ---
-
     private fun startHealthPolling(port: Int, intervalSeconds: Long = HEALTH_POLL_INTERVAL_SECONDS) {
         if (healthPollFuture != null) return
         healthPollFuture = scheduler.scheduleWithFixedDelay(
             { doCheckHealth(port) },
-            0L, intervalSeconds, TimeUnit.SECONDS
+            0L,
+            intervalSeconds,
+            TimeUnit.SECONDS,
         )
     }
 
@@ -154,9 +157,12 @@ class ServerManager(
         }
     }
 
-    private fun checkExternalHealth(port: Int) {
+    private fun checkExternalHealth(port: Int, revision: Long) {
         val healthy = checkHealthOnce(port)
         SwingUtilities.invokeLater {
+            if (revision != externalHealthRevision.get()) return@invokeLater
+            if (ownedProcess != null || serverState == ServerState.STARTING) return@invokeLater
+
             if (healthy) {
                 wasPortOpen = true
                 applyState(ServerState.READY)
@@ -173,7 +179,8 @@ class ServerManager(
             conn.readTimeout = HEALTH_READ_TIMEOUT_MS
             conn.requestMethod = "GET"
             conn.responseCode == 200
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.debug("ServerManager: health check failed for port $port", e)
             false
         } finally {
             conn.disconnect()
@@ -183,13 +190,15 @@ class ServerManager(
     private fun isPortOpen(port: Int): Boolean {
         val addresses = try {
             InetAddress.getAllByName("localhost").toList()
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            log.debug("ServerManager: failed to resolve localhost, using loopback", e)
             listOf(InetAddress.getLoopbackAddress())
         }
+
         return addresses.any { addr ->
             try {
-                Socket().use { s ->
-                    s.connect(InetSocketAddress(addr, port), 500)
+                Socket().use { socket ->
+                    socket.connect(InetSocketAddress(addr, port), 500)
                     true
                 }
             } catch (_: Exception) {
@@ -199,17 +208,22 @@ class ServerManager(
     }
 
     private fun applyState(newState: ServerState) {
+        val oldState = serverState
+        if (oldState == newState) return
         serverState = newState
+        log.info("ServerManager: state $oldState -> $newState")
         onStateChanged(newState)
     }
 
-    // --- Shutdown hook helpers ---
-
     private fun registerShutdownHook(process: Process): Thread {
-        val hook = Thread(Thread.currentThread().threadGroup, {
-            process.toHandle().descendants().forEach { it.destroyForcibly() }
-            process.destroyForcibly()
-        }, "opencode-shutdown-hook")
+        val hook = Thread(
+            Thread.currentThread().threadGroup,
+            {
+                process.toHandle().descendants().forEach { it.destroyForcibly() }
+                process.destroyForcibly()
+            },
+            "opencode-shutdown-hook",
+        )
         Runtime.getRuntime().addShutdownHook(hook)
         return hook
     }
@@ -220,13 +234,22 @@ class ServerManager(
         try {
             Runtime.getRuntime().removeShutdownHook(hook)
         } catch (_: IllegalStateException) {
-            // JVM is already shutting down — nothing to do.
+            // JVM is already shutting down - nothing to do.
         }
     }
 
-    // --- Server lifecycle ---
-
     fun startServer(port: Int, executablePath: String) {
+        val executable = File(executablePath)
+        if (!executable.isFile || !executable.canExecute()) {
+            notify(
+                "Failed to start OpenCode",
+                "OpenCode executable is not valid or executable: $executablePath",
+                NotificationType.ERROR,
+            )
+            applyState(ServerState.STOPPED)
+            return
+        }
+
         scheduler.submit {
             val portAlreadyOpen = isPortOpen(port)
 
@@ -241,12 +264,14 @@ class ServerManager(
                     .inheritIO()
                     .apply {
                         val basePath = project.basePath
-                        if (basePath != null) directory(java.io.File(basePath))
+                        if (basePath != null) directory(File(basePath))
                     }
                     .start()
+
                 ownedProcess = process
                 shutdownHook = registerShutdownHook(process)
                 startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
+
                 process.onExit().thenRun {
                     if (ownedProcess === process) {
                         SwingUtilities.invokeLater {
@@ -256,6 +281,7 @@ class ServerManager(
                         }
                     }
                 }
+
                 scheduler.schedule({ doCheckPort(port) }, HEALTH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 val message = e.message ?: e.javaClass.simpleName
@@ -263,7 +289,7 @@ class ServerManager(
                     notify(
                         "Failed to start OpenCode",
                         "Could not launch the OpenCode process: $message",
-                        NotificationType.ERROR
+                        NotificationType.ERROR,
                     )
                     applyState(ServerState.STOPPED)
                 }
@@ -279,17 +305,18 @@ class ServerManager(
         ownedProcess = null
         removeShutdownHook()
         wasPortOpen = false
+        externalHealthRevision.incrementAndGet()
         stopHealthPolling()
         applyState(ServerState.STOPPED)
         process.toHandle().descendants().forEach { it.destroyForcibly() }
         process.destroyForcibly()
     }
 
-    // --- Dispose ---
-
     fun dispose() {
         stopPortPolling()
         stopHealthPolling()
+        externalHealthRevision.incrementAndGet()
+
         val process = ownedProcess
         if (process != null) {
             ownedProcess = null
@@ -298,8 +325,6 @@ class ServerManager(
         }
         scheduler.shutdownNow()
     }
-
-    // --- Notifications ---
 
     private fun notify(title: String, content: String, type: NotificationType = NotificationType.ERROR) {
         NotificationGroupManager.getInstance()
