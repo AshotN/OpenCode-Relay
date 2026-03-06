@@ -26,6 +26,9 @@
             displayName="OpenCode"
         />
         <notificationGroup id="OpenCode" displayType="BALLOON"/>
+
+        <projectService serviceImplementation="com.ashotn.opencode.diff.OpenCodeDiffService"/>
+        <projectService serviceImplementation="com.ashotn.opencode.diff.EditorDiffRenderer"/>
     </extensions>
 
     <actions>

@@ -239,6 +239,10 @@ class ServerManager(
             try {
                 val process = ProcessBuilder(executablePath, "serve", "--port", port.toString())
                     .inheritIO()
+                    .apply {
+                        val basePath = project.basePath
+                        if (basePath != null) directory(java.io.File(basePath))
+                    }
                     .start()
                 ownedProcess = process
                 shutdownHook = registerShutdownHook(process)

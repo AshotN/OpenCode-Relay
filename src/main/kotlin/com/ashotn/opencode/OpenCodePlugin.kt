@@ -1,5 +1,6 @@
 package com.ashotn.opencode
 
+import com.ashotn.opencode.diff.OpenCodeDiffService
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
@@ -19,6 +20,12 @@ class OpenCodePlugin(project: Project) : Disposable {
 
     private val serverManager = ServerManager(project) { state ->
         listeners.forEach { it.onStateChanged(state) }
+        if (state == ServerState.READY) {
+            val port = com.ashotn.opencode.settings.OpenCodeSettings.getInstance(project).serverPort
+            OpenCodeDiffService.getInstance(project).startListening(port)
+        } else if (state == ServerState.STOPPED) {
+            OpenCodeDiffService.getInstance(project).stopListening()
+        }
     }
 
     val isRunning: Boolean get() = serverManager.isRunning

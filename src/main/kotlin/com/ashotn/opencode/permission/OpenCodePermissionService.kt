@@ -1,0 +1,82 @@
+package com.ashotn.opencode.permission
+
+import com.ashotn.opencode.ipc.OpenCodeEvent
+import com.ashotn.opencode.ipc.PermissionChangedListener
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.components.Service
+import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.project.Project
+import java.net.HttpURLConnection
+import java.net.URI
+import java.util.concurrent.ConcurrentLinkedQueue
+
+@Service(Service.Level.PROJECT)
+class OpenCodePermissionService(private val project: Project) : Disposable {
+
+    private val log = logger<OpenCodePermissionService>()
+
+    @Volatile private var port: Int = 0
+
+    private val permissionQueue = ConcurrentLinkedQueue<OpenCodeEvent.PermissionAsked>()
+
+    fun setPort(port: Int) {
+        this.port = port
+    }
+
+    fun currentPermission(): OpenCodeEvent.PermissionAsked? = permissionQueue.peek()
+
+    fun handlePermissionAsked(event: OpenCodeEvent.PermissionAsked) {
+        log.info("OpenCodePermissionService: permission.asked id=${event.requestId} permission=${event.permission}")
+        val wasEmpty = permissionQueue.isEmpty()
+        permissionQueue.add(event)
+        if (wasEmpty) publishPermissionChanged()
+    }
+
+    fun handlePermissionReplied(event: OpenCodeEvent.PermissionReplied) {
+        log.info("OpenCodePermissionService: permission.replied id=${event.requestId} reply=${event.reply}")
+        val wasHead = permissionQueue.peek()?.requestId == event.requestId
+        permissionQueue.removeIf { it.requestId == event.requestId }
+        if (wasHead) publishPermissionChanged()
+    }
+
+    fun replyToPermission(response: String) {
+        val event = permissionQueue.peek() ?: return
+        val currentPort = port
+        if (currentPort <= 0) {
+            log.warn("OpenCodePermissionService: cannot reply to permission ${event.requestId}, invalid port=$currentPort")
+            return
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val url = URI("http://localhost:$currentPort/session/${event.sessionId}/permissions/${event.requestId}").toURL()
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+                conn.outputStream.use { it.write("{\"response\":\"$response\"}".toByteArray()) }
+                val code = conn.responseCode
+                log.info("OpenCodePermissionService: permission reply $response -> HTTP $code")
+                conn.disconnect()
+            } catch (e: Exception) {
+                log.warn("OpenCodePermissionService: failed to reply to permission ${event.requestId}", e)
+            }
+        }
+    }
+
+    private fun publishPermissionChanged() {
+        project.messageBus
+            .syncPublisher(PermissionChangedListener.TOPIC)
+            .onPermissionChanged(permissionQueue.peek())
+    }
+
+    override fun dispose() {
+        permissionQueue.clear()
+    }
+
+    companion object {
+        fun getInstance(project: Project): OpenCodePermissionService =
+            project.getService(OpenCodePermissionService::class.java)
+    }
+}

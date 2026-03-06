@@ -84,8 +84,14 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
             add(pathLabel, gbc)
         }
 
-        add(centerPanel, BorderLayout.CENTER)
-        add(bottomPanel, BorderLayout.SOUTH)
+        // Normal view: status + buttons + path info
+        val normalView = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(centerPanel, BorderLayout.CENTER)
+            add(bottomPanel, BorderLayout.SOUTH)
+        }
+
+        add(normalView, BorderLayout.CENTER)
 
         startButton.addActionListener {
             buttonCardLayout.show(buttonPanel, CARD_STOP)

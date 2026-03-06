@@ -1,22 +1,63 @@
 package com.ashotn.opencode.toolwindow
 
 import com.ashotn.opencode.OpenCodeChecker
+import com.ashotn.opencode.diff.DiffHunksChangedListener
+import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.ipc.PermissionChangedListener
+import com.ashotn.opencode.permission.OpenCodePermissionService
 import com.ashotn.opencode.settings.OpenCodeSettings
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.awt.BorderLayout
+import java.awt.CardLayout
 import javax.swing.JPanel
 
 class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
+    companion object {
+        private const val CARD_CONTENT = "content"
+        private const val CARD_PENDING = "pending"
+    }
+
     private var slotDisposable: Disposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
 
+    private val outerCardLayout = CardLayout()
+    private val outerCardPanel = JPanel(outerCardLayout)
+    private val pendingFilesPanel = PendingFilesPanel(project)
+
     init {
+        add(outerCardPanel, BorderLayout.CENTER)
+        outerCardPanel.add(JPanel(BorderLayout()), CARD_CONTENT) // placeholder until buildContent runs
+        outerCardPanel.add(pendingFilesPanel, CARD_PENDING)
+
         Disposer.register(project, this)
         Disposer.register(this, slotDisposable)
+
+        project.messageBus.connect(this).subscribe(
+            DiffHunksChangedListener.TOPIC,
+            DiffHunksChangedListener { _ ->
+                ApplicationManager.getApplication().invokeLater { syncCard() }
+            }
+        )
+
+        project.messageBus.connect(this).subscribe(
+            PermissionChangedListener.TOPIC,
+            PermissionChangedListener {
+                ApplicationManager.getApplication().invokeLater { syncCard() }
+            }
+        )
+
         buildContent()
+    }
+
+    private fun syncCard() {
+        val diffService = OpenCodeDiffService.getInstance(project)
+        val permissionService = OpenCodePermissionService.getInstance(project)
+        val hasPending = diffService.allTrackedFiles().isNotEmpty()
+        val hasPermission = permissionService.currentPermission() != null
+        outerCardLayout.show(outerCardPanel, if (hasPending || hasPermission) CARD_PENDING else CARD_CONTENT)
     }
 
     fun refresh() {
@@ -24,10 +65,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         Disposer.dispose(slotDisposable)
         slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
         Disposer.register(this, slotDisposable)
-        removeAll()
         buildContent()
-        revalidate()
-        repaint()
     }
 
     private fun buildContent() {
@@ -38,7 +76,11 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
             val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
             ApplicationManager.getApplication().invokeLater {
                 val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable, executableInfo) else NotInstalledPanel()
-                add(screen, BorderLayout.CENTER)
+                // Replace the content card with the new screen
+                val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
+                if (existingContent != null) outerCardPanel.remove(existingContent)
+                outerCardPanel.add(screen, CARD_CONTENT)
+                syncCard()
                 revalidate()
                 repaint()
             }
