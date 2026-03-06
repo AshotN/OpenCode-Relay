@@ -3,6 +3,7 @@ package com.ashotn.opencode.toolwindow
 import com.ashotn.opencode.OpenCodeChecker
 import com.ashotn.opencode.diff.DiffHunksChangedListener
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.diff.SessionStateChangedListener
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.permission.OpenCodePermissionService
 import com.ashotn.opencode.settings.OpenCodeSettings
@@ -12,6 +13,7 @@ import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.awt.BorderLayout
 import java.awt.CardLayout
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JPanel
 
 class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
@@ -26,6 +28,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardLayout = CardLayout()
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project)
+    private val syncScheduled = AtomicBoolean(false)
 
     init {
         add(outerCardPanel, BorderLayout.CENTER)
@@ -37,27 +40,37 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
         project.messageBus.connect(this).subscribe(
             DiffHunksChangedListener.TOPIC,
-            DiffHunksChangedListener { _ ->
-                ApplicationManager.getApplication().invokeLater { syncCard() }
-            }
+            DiffHunksChangedListener { _ -> requestSyncCard() }
+        )
+
+        project.messageBus.connect(this).subscribe(
+            SessionStateChangedListener.TOPIC,
+            SessionStateChangedListener { requestSyncCard() }
         )
 
         project.messageBus.connect(this).subscribe(
             PermissionChangedListener.TOPIC,
-            PermissionChangedListener {
-                ApplicationManager.getApplication().invokeLater { syncCard() }
-            }
+            PermissionChangedListener { requestSyncCard() }
         )
 
         buildContent()
+    }
+
+    private fun requestSyncCard() {
+        if (!syncScheduled.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().invokeLater {
+            syncScheduled.set(false)
+            syncCard()
+        }
     }
 
     private fun syncCard() {
         val diffService = OpenCodeDiffService.getInstance(project)
         val permissionService = OpenCodePermissionService.getInstance(project)
         val hasPending = diffService.allTrackedFiles().isNotEmpty()
+        val hasSessions = diffService.listSessions().isNotEmpty()
         val hasPermission = permissionService.currentPermission() != null
-        outerCardLayout.show(outerCardPanel, if (hasPending || hasPermission) CARD_PENDING else CARD_CONTENT)
+        outerCardLayout.show(outerCardPanel, if (hasPending || hasSessions || hasPermission) CARD_PENDING else CARD_CONTENT)
     }
 
     fun refresh() {

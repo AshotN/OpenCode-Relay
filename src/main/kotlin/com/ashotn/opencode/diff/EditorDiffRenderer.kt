@@ -7,7 +7,6 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.editor.markup.HighlighterLayer
-import com.intellij.openapi.editor.markup.HighlighterTargetArea
 import com.intellij.openapi.editor.markup.MarkupModel
 import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
@@ -87,8 +86,6 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
             if (hunk.addedLines.isNotEmpty() && document.lineCount > 0) {
                 val startLine = hunk.startLine.coerceIn(0, document.lineCount - 1)
                 val endLine = (hunk.startLine + hunk.addedLines.size - 1).coerceIn(0, document.lineCount - 1)
-                val startOffset = document.getLineStartOffset(startLine)
-                val endOffset = document.getLineEndOffset(endLine)
 
                 val addedAttrs = TextAttributes().apply {
                     backgroundColor = DiffHighlightStyles.style(DiffHighlightKind.ADDED).bg
@@ -96,20 +93,24 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
 
                 editors.forEach { editor ->
                     val model = editor.markupModel
-                    val highlighter = model.addRangeHighlighter(
-                        startOffset,
-                        endOffset,
-                        ADDED_HIGHLIGHT_LAYER,
-                        addedAttrs,
-                        HighlighterTargetArea.LINES_IN_RANGE,
-                    )
-                    markup.highlighters.add(ManagedHighlighter(model, highlighter))
+                    for (line in startLine..endLine) {
+                        val highlighter = model.addLineHighlighter(
+                            line,
+                            ADDED_HIGHLIGHT_LAYER,
+                            addedAttrs,
+                        )
+                        markup.highlighters.add(ManagedHighlighter(model, highlighter))
+                    }
                 }
             }
 
-            if (hunk.removedLines.isNotEmpty() && document.lineCount > 0) {
-                val inlayLine = hunk.startLine.coerceIn(0, document.lineCount - 1)
-                val inlayOffset = document.getLineStartOffset(inlayLine)
+            if (hunk.removedLines.isNotEmpty()) {
+                val inlayOffset = if (document.lineCount > 0) {
+                    val inlayLine = hunk.startLine.coerceIn(0, document.lineCount - 1)
+                    document.getLineStartOffset(inlayLine)
+                } else {
+                    0
+                }
                 editors.forEach { editor ->
                     val inlay = editor.inlayModel.addBlockElement(
                         inlayOffset,

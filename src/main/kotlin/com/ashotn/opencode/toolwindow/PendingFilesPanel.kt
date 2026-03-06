@@ -4,15 +4,16 @@ import com.ashotn.opencode.diff.DiffHighlightKind
 import com.ashotn.opencode.diff.DiffHighlightStyles
 import com.ashotn.opencode.diff.DiffHunksChangedListener
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.diff.SessionStateChangedListener
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
-import com.ashotn.opencode.permission.OpenCodePermissionService
 import com.ashotn.opencode.ipc.PermissionReply
+import com.ashotn.opencode.permission.OpenCodePermissionService
+import com.intellij.diff.DiffManager
+import com.intellij.diff.DiffContentFactory
+import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileEditor.FileEditorManager
-import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
@@ -25,15 +26,18 @@ import java.awt.Component
 import java.awt.GridLayout
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JList
 import javax.swing.JPanel
+import javax.swing.JSplitPane
+import javax.swing.ListSelectionModel
 import javax.swing.border.MatteBorder
 
 /**
- * Shows the list of files with AI session diff highlights.
+ * Shows session list and files with AI session diff highlights.
  * Clicking a file opens it in the editor and scrolls to the first hunk.
  */
 class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
@@ -46,12 +50,30 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val isAdded: Boolean,
     )
 
-    private val listModel = DefaultListModel<PendingFileRow>()
-    private val fileList = JBList(listModel).apply {
+    private data class SessionRow(
+        val sessionId: String,
+        val title: String,
+        val description: String,
+        val isBusy: Boolean,
+        val trackedFileCount: Int,
+    )
+
+    private val fileListModel = DefaultListModel<PendingFileRow>()
+    private val fileList = JBList(fileListModel).apply {
         cellRenderer = FilePathCellRenderer()
-        selectionMode = javax.swing.ListSelectionModel.SINGLE_SELECTION
+        selectionMode = ListSelectionModel.SINGLE_SELECTION
+        visibleRowCount = 6
+    }
+
+    private val sessionListModel = DefaultListModel<SessionRow>()
+    private val sessionList = JBList(sessionListModel).apply {
+        cellRenderer = SessionRowCellRenderer()
+        selectionMode = ListSelectionModel.SINGLE_SELECTION
         visibleRowCount = 5
     }
+
+    private var isUpdatingSessionSelection = false
+    private val refreshScheduled = AtomicBoolean(false)
 
     private val permissionLabel = JBLabel("").apply {
         font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
@@ -99,30 +121,84 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
     init {
         border = MatteBorder(1, 0, 0, 0, JBColor.border())
 
-        val header = JBLabel("Session Changes").apply {
+        val header = JBLabel("Session changes").apply {
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             border = JBUI.Borders.empty(6, 8, 4, 8)
         }
 
-        add(header, BorderLayout.NORTH)
-        add(JBScrollPane(fileList), BorderLayout.CENTER)
-        add(permissionPanel, BorderLayout.SOUTH)
+        OpenCodeDiffService.getInstance(project).setViewMode(OpenCodeDiffService.ViewMode.UNIFIED_FAMILY)
 
-        fileList.addMouseListener(object : MouseAdapter() {
+        val sessionsHeader = JBLabel("Sessions (family root)").apply {
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+            foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            border = JBUI.Borders.empty(0, 8, 2, 8)
+        }
+
+        sessionList.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount >= 1) {
-                    val row = fileList.selectedValue ?: return
-                    openFile(row)
+                    val row = sessionList.selectedValue ?: return
+                    OpenCodeDiffService.getInstance(project).selectSession(row.sessionId)
+                    refresh()
                 }
             }
         })
 
+        val sessionSection = JPanel(BorderLayout()).apply {
+            border = JBUI.Borders.emptyBottom(4)
+            add(sessionsHeader, BorderLayout.NORTH)
+            add(JBScrollPane(sessionList), BorderLayout.CENTER)
+            minimumSize = JBUI.size(120, 90)
+        }
+
+        val filesHeader = JBLabel("Files").apply {
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+            foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            border = JBUI.Borders.empty(0, 8, 2, 8)
+        }
+
+        fileList.addMouseListener(object : MouseAdapter() {
+            override fun mouseClicked(e: MouseEvent) {
+                if (e.clickCount < 2) return
+                val row = fileList.selectedValue ?: return
+                openBuiltInDiff(row)
+            }
+        })
+
+        val filesSection = JPanel(BorderLayout()).apply {
+            add(filesHeader, BorderLayout.NORTH)
+            add(JBScrollPane(fileList), BorderLayout.CENTER)
+            minimumSize = JBUI.size(120, 140)
+        }
+
+        val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionSection, filesSection).apply {
+            resizeWeight = 0.35
+            setContinuousLayout(true)
+            setOneTouchExpandable(true)
+            border = JBUI.Borders.empty()
+        }
+
+        val contentCenter = JPanel(BorderLayout()).apply {
+            add(splitPane, BorderLayout.CENTER)
+        }
+
+        val body = JPanel(BorderLayout()).apply {
+            add(contentCenter, BorderLayout.CENTER)
+        }
+
+        add(header, BorderLayout.NORTH)
+        add(body, BorderLayout.CENTER)
+        add(permissionPanel, BorderLayout.SOUTH)
+
         project.messageBus.connect().subscribe(
             DiffHunksChangedListener.TOPIC,
-            DiffHunksChangedListener { _ ->
-                ApplicationManager.getApplication().invokeLater { refresh() }
-            },
+            DiffHunksChangedListener { _ -> requestRefresh() },
+        )
+
+        project.messageBus.connect().subscribe(
+            SessionStateChangedListener.TOPIC,
+            SessionStateChangedListener { requestRefresh() },
         )
 
         project.messageBus.connect().subscribe(
@@ -135,6 +211,14 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val permissionService = OpenCodePermissionService.getInstance(project)
         onPermissionChanged(permissionService.currentPermission())
         refresh()
+    }
+
+    private fun requestRefresh() {
+        if (!refreshScheduled.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().invokeLater {
+            refreshScheduled.set(false)
+            refresh()
+        }
     }
 
     private fun onPermissionChanged(event: OpenCodeEvent.PermissionAsked?) {
@@ -157,6 +241,10 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val diffService = OpenCodeDiffService.getInstance(project)
         val permissionService = OpenCodePermissionService.getInstance(project)
 
+        val sessions = diffService.listSessions()
+        val selectedSessionId = diffService.selectedSessionId()
+        updateSessionList(sessions, selectedSessionId)
+
         val rows = diffService.allTrackedFiles()
             .sorted()
             .map { path ->
@@ -177,24 +265,78 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 )
             }
 
-        listModel.clear()
-        rows.forEach { listModel.addElement(it) }
+        fileListModel.clear()
+        rows.forEach { fileListModel.addElement(it) }
 
         val hasPermission = permissionService.currentPermission() != null
-        isVisible = rows.isNotEmpty() || hasPermission
+        isVisible = rows.isNotEmpty() || hasPermission || sessions.isNotEmpty()
         revalidate()
         repaint()
     }
 
-    private fun openFile(row: PendingFileRow) {
-        if (row.isDeleted) return
+    private fun updateSessionList(
+        sessions: List<OpenCodeDiffService.SessionInfo>,
+        selectedSessionId: String?,
+    ) {
+        val rows = sessions
+            .filter { it.parentSessionId == null }
+            .map { session ->
+                SessionRow(
+                    sessionId = session.sessionId,
+                    title = session.title ?: session.sessionId.take(12),
+                    description = session.description ?: session.sessionId,
+                    isBusy = session.isBusy,
+                    trackedFileCount = session.trackedFileCount,
+                )
+            }
 
+        isUpdatingSessionSelection = true
+        sessionListModel.clear()
+        rows.forEach { sessionListModel.addElement(it) }
+
+        if (selectedSessionId != null) {
+            val index = rows.indexOfFirst { it.sessionId == selectedSessionId }
+            if (index >= 0) {
+                sessionList.selectedIndex = index
+                sessionList.ensureIndexIsVisible(index)
+            }
+        }
+        isUpdatingSessionSelection = false
+    }
+
+    private fun openBuiltInDiff(row: PendingFileRow) {
         val diffService = OpenCodeDiffService.getInstance(project)
-        val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return
-        val firstHunkLine = diffService.getHunks(row.path).firstOrNull()?.startLine ?: 0
-        val descriptor = OpenFileDescriptor(project, vFile, firstHunkLine, 0)
+        val preview = diffService.getFileDiffPreview(row.path) ?: return
+
+        val title = "OpenCode Diff: ${row.name}"
+        val request = SimpleDiffRequest(
+            title,
+            DiffContentFactory.getInstance().create(project, preview.before),
+            DiffContentFactory.getInstance().create(project, preview.after),
+            "Session baseline",
+            "Current file",
+        )
+
         ApplicationManager.getApplication().invokeLater {
-            FileEditorManager.getInstance(project).openTextEditor(descriptor, true)
+            DiffManager.getInstance().showDiff(project, request)
+        }
+    }
+
+    private inner class SessionRowCellRenderer : DefaultListCellRenderer() {
+        override fun getListCellRendererComponent(
+            list: JList<*>, value: Any?, index: Int,
+            isSelected: Boolean, cellHasFocus: Boolean,
+        ): Component {
+            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            val row = value as? SessionRow ?: return this
+
+            val marker = if (row.isBusy) "*" else "-"
+            val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
+            val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
+            val safeDescription = row.description.ifBlank { row.sessionId }
+            text = "<html><b>$marker ${row.title}</b>&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
+            border = JBUI.Borders.empty(4, 8)
+            return this
         }
     }
 
