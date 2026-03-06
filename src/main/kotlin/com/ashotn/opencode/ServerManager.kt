@@ -2,7 +2,9 @@ package com.ashotn.opencode
 
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.ashotn.opencode.OpenCodeConstants
 import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -26,7 +28,7 @@ enum class ServerState {
     PORT_CONFLICT
 }
 
-interface ServerStateListener {
+fun interface ServerStateListener {
     fun onStateChanged(state: ServerState)
 }
 
@@ -43,6 +45,17 @@ class ServerManager(
     private val project: Project,
     private val onStateChanged: (ServerState) -> Unit,
 ) {
+
+    companion object {
+        private val log = logger<ServerManager>()
+
+        private const val PORT_POLL_INTERVAL_SECONDS = 10L
+        private const val PORT_POLL_INTERVAL_AFTER_START_SECONDS = 5L
+        private const val HEALTH_POLL_INTERVAL_SECONDS = 2L
+        private const val HEALTH_INITIAL_DELAY_SECONDS = 2L
+        private const val HEALTH_CONNECT_TIMEOUT_MS = 1_000
+        private const val HEALTH_READ_TIMEOUT_MS = 1_000
+    }
 
     // --- State ---
 
@@ -71,7 +84,7 @@ class ServerManager(
 
     // --- Port polling (liveness) ---
 
-    fun startPolling(port: Int, intervalSeconds: Long = 10L) {
+    fun startPolling(port: Int, intervalSeconds: Long = PORT_POLL_INTERVAL_SECONDS) {
         portPollFuture?.cancel(false)
         portPollFuture = scheduler.scheduleWithFixedDelay(
             { checkPort(port) },
@@ -120,7 +133,7 @@ class ServerManager(
 
     // --- Health polling (readiness) ---
 
-    private fun startHealthPolling(port: Int, intervalSeconds: Long = 2L) {
+    private fun startHealthPolling(port: Int, intervalSeconds: Long = HEALTH_POLL_INTERVAL_SECONDS) {
         if (healthPollFuture != null) return
         healthPollFuture = scheduler.scheduleWithFixedDelay(
             { doCheckHealth(port) },
@@ -154,16 +167,18 @@ class ServerManager(
         }
     }
 
-    private fun checkHealthOnce(port: Int): Boolean = try {
+    private fun checkHealthOnce(port: Int): Boolean {
         val conn = URI("http://localhost:$port/global/health").toURL().openConnection() as HttpURLConnection
-        conn.connectTimeout = 1_000
-        conn.readTimeout = 1_000
-        conn.requestMethod = "GET"
-        val code = conn.responseCode
-        conn.disconnect()
-        code == 200
-    } catch (_: Exception) {
-        false
+        return try {
+            conn.connectTimeout = HEALTH_CONNECT_TIMEOUT_MS
+            conn.readTimeout = HEALTH_READ_TIMEOUT_MS
+            conn.requestMethod = "GET"
+            conn.responseCode == 200
+        } catch (_: Exception) {
+            false
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private fun isPortOpen(port: Int): Boolean {
@@ -217,7 +232,7 @@ class ServerManager(
             val portAlreadyOpen = isPortOpen(port)
 
             if (portAlreadyOpen) {
-                startPolling(port, intervalSeconds = 5L)
+                startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
                 SwingUtilities.invokeLater { applyPortResult(true, port) }
                 return@submit
             }
@@ -228,7 +243,7 @@ class ServerManager(
                     .start()
                 ownedProcess = process
                 shutdownHook = registerShutdownHook(process)
-                startPolling(port, intervalSeconds = 5L)
+                startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
                 process.onExit().thenRun {
                     if (ownedProcess === process) {
                         SwingUtilities.invokeLater {
@@ -238,7 +253,7 @@ class ServerManager(
                         }
                     }
                 }
-                scheduler.schedule({ doCheckPort(port) }, 2L, TimeUnit.SECONDS)
+                scheduler.schedule({ doCheckPort(port) }, HEALTH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
                 val message = e.message ?: e.javaClass.simpleName
                 SwingUtilities.invokeLater {
@@ -254,7 +269,10 @@ class ServerManager(
     }
 
     fun stopServer() {
-        val process = ownedProcess ?: error("stopServer() called but no process is owned")
+        val process = ownedProcess ?: run {
+            log.warn("stopServer() called but no process is owned")
+            return
+        }
         ownedProcess = null
         removeShutdownHook()
         wasPortOpen = false
@@ -282,7 +300,7 @@ class ServerManager(
 
     private fun notify(title: String, content: String, type: NotificationType = NotificationType.ERROR) {
         NotificationGroupManager.getInstance()
-            .getNotificationGroup("OpenCode")
+            .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
             .createNotification(title, content, type)
             .notify(project)
     }

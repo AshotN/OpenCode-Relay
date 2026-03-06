@@ -25,14 +25,19 @@ import javax.swing.SwingConstants
 class InstalledPanel(private val project: Project, parentDisposable: Disposable) :
     JPanel(BorderLayout()), Disposable, ServerStateListener {
 
+    companion object {
+        private const val CARD_START = "start"
+        private const val CARD_STOP = "stop"
+    }
+
     private val portStatusLabel = JBLabel("Checking…", SwingConstants.CENTER)
     private val startButton = JButton("Start OpenCode", AllIcons.Actions.Execute)
     private val stopButton = JButton("Stop OpenCode", AllIcons.Actions.Suspend)
     private val buttonCardLayout = CardLayout()
     private val buttonPanel = JPanel(buttonCardLayout).apply {
         isOpaque = false
-        add(startButton, "start")
-        add(stopButton, "stop")
+        add(startButton, CARD_START)
+        add(stopButton, CARD_STOP)
     }
 
     private val plugin = OpenCodePlugin.getInstance(project)
@@ -87,7 +92,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable)
         add(bottomPanel, BorderLayout.SOUTH)
 
         startButton.addActionListener {
-            buttonCardLayout.show(buttonPanel, "stop")
+            buttonCardLayout.show(buttonPanel, CARD_STOP)
             stopButton.isEnabled = true
             portStatusLabel.text = "Starting…"
             portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
@@ -119,7 +124,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable)
                 portStatusLabel.text = "Starting on port $port…"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 stopButton.isEnabled = true
-                buttonCardLayout.show(buttonPanel, "stop")
+                buttonCardLayout.show(buttonPanel, CARD_STOP)
                 buttonPanel.isVisible = true
             }
             ServerState.READY -> {
@@ -128,7 +133,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable)
                 val owned = plugin.ownsProcess
                 if (owned) {
                     stopButton.isEnabled = true
-                    buttonCardLayout.show(buttonPanel, "stop")
+                    buttonCardLayout.show(buttonPanel, CARD_STOP)
                 }
                 buttonPanel.isVisible = owned
             }
@@ -136,7 +141,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable)
                 portStatusLabel.text = "OpenCode is not running on port $port"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 startButton.isEnabled = true
-                buttonCardLayout.show(buttonPanel, "start")
+                buttonCardLayout.show(buttonPanel, CARD_START)
                 buttonPanel.isVisible = true
             }
             ServerState.PORT_CONFLICT -> {

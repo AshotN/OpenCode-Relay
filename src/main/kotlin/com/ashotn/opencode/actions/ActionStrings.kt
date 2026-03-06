@@ -18,4 +18,10 @@ enum class ActionStrings(
         description = "Open the OpenCode web UI in your browser",
         disabledDescription = "OpenCode must be running to open the web UI",
     ),
+    OPEN_SETTINGS(
+        text = "OpenCode Settings",
+        disabledText = "OpenCode Settings",
+        description = "Open OpenCode settings",
+        disabledDescription = "Open OpenCode settings",
+    ),
 }

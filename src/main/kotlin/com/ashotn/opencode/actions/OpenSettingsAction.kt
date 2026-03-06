@@ -8,8 +8,8 @@ import com.intellij.openapi.project.Project
 import com.ashotn.opencode.settings.OpenCodeSettingsConfigurable
 
 class OpenSettingsAction(private val project: Project) : AnAction(
-    "OpenCode Settings",
-    "Open OpenCode settings",
+    ActionStrings.OPEN_SETTINGS.text,
+    ActionStrings.OPEN_SETTINGS.description,
     AllIcons.General.Settings
 ) {
     override fun actionPerformed(e: AnActionEvent) {

@@ -3,6 +3,7 @@ package com.ashotn.opencode.toolwindow
 import com.ashotn.opencode.OpenCodeChecker
 import com.ashotn.opencode.settings.OpenCodeSettings
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
 import java.awt.BorderLayout
@@ -31,9 +32,17 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
     private fun buildContent() {
         val userProvidedPath = OpenCodeSettings.getInstance(project).executablePath
-        val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
-        val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable) else NotInstalledPanel()
-        add(screen, BorderLayout.CENTER)
+        // findExecutable() performs filesystem I/O (PATH scan, File.isFile, File.canExecute,
+        // process spawn for --version). Run it on a pooled thread to avoid blocking the EDT.
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
+            ApplicationManager.getApplication().invokeLater {
+                val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable) else NotInstalledPanel()
+                add(screen, BorderLayout.CENTER)
+                revalidate()
+                repaint()
+            }
+        }
     }
 
     override fun dispose() {

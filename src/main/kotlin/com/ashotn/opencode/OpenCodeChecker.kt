@@ -1,6 +1,7 @@
 package com.ashotn.opencode
 
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.util.SystemInfo
 import java.io.File
 import java.util.concurrent.TimeUnit
 
@@ -42,24 +43,28 @@ object OpenCodeChecker {
     }
 
     private fun autoResolve(): OpenCodeInfo? {
-        val executableName = if (isWindows()) "opencode.exe" else "opencode"
+        // On Windows, npm global installs produce opencode.cmd; direct/Scoop/Chocolatey
+        // installs produce opencode.exe. Check both; .bat is not produced by any installer.
+        val executableNames = if (SystemInfo.isWindows) listOf("opencode.exe", "opencode.cmd") else listOf("opencode")
 
         // Check PATH entries first
         val pathEnv = System.getenv("PATH") ?: ""
         for (dir in pathEnv.split(File.pathSeparator)) {
-            val candidate = File(dir, executableName)
-            if (candidate.isFile && candidate.canExecute()) {
-                val version = getVersion(candidate.absolutePath)
-                if (version != null) return OpenCodeInfo(candidate.absolutePath, version)
+            for (executableName in executableNames) {
+                val candidate = File(dir, executableName)
+                if (candidate.isFile && candidate.canExecute()) {
+                    val version = getVersion(candidate.absolutePath)
+                    if (version != null) return OpenCodeInfo(candidate.absolutePath, version)
+                }
             }
         }
 
         // Check common install locations not always on PATH
         val home = System.getProperty("user.home")
-        val extraLocations = if (isWindows()) {
+        val extraLocations = if (SystemInfo.isWindows) {
             listOf(
-                "${System.getenv("APPDATA")}\\npm\\opencode.cmd",
-                "${System.getenv("LOCALAPPDATA")}\\Programs\\opencode\\opencode.exe"
+                "${System.getenv("APPDATA") ?: ""}\\npm\\opencode.cmd",
+                "${System.getenv("LOCALAPPDATA") ?: ""}\\Programs\\opencode\\opencode.exe"
             )
         } else {
             listOf(
@@ -105,6 +110,4 @@ object OpenCodeChecker {
         }
     }
 
-    private fun isWindows(): Boolean =
-        System.getProperty("os.name")?.lowercase()?.contains("win") == true
 }

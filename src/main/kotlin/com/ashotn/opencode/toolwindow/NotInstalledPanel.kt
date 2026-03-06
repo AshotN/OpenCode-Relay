@@ -1,6 +1,8 @@
 package com.ashotn.opencode.toolwindow
 
 import com.intellij.ide.BrowserUtil
+import com.intellij.icons.AllIcons
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.components.JBLabel
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
@@ -8,9 +10,6 @@ import java.awt.Font
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
 import java.awt.Insets
-import java.awt.event.MouseAdapter
-import java.awt.event.MouseEvent
-import java.awt.Cursor
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 
@@ -26,8 +25,7 @@ class NotInstalledPanel : JPanel(GridBagLayout()) {
 
         val base = UIUtil.getLabelFont()
 
-        val emojiLabel = JBLabel("⚠️", SwingConstants.CENTER).apply {
-            font = base.deriveFont(base.size * 2.5f)
+        val emojiLabel = JBLabel(AllIcons.General.Warning, SwingConstants.CENTER).apply {
             alignmentX = CENTER_ALIGNMENT
         }
 
@@ -45,16 +43,10 @@ class NotInstalledPanel : JPanel(GridBagLayout()) {
             alignmentX = CENTER_ALIGNMENT
         }
 
-        val linkLabel = JBLabel("opencode.ai →", SwingConstants.CENTER).apply {
+        val linkLabel = HyperlinkLabel("opencode.ai").apply {
             font = base.deriveFont(Font.BOLD, base.size * 1.1f)
-            foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
-            cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
             alignmentX = CENTER_ALIGNMENT
-            addMouseListener(object : MouseAdapter() {
-                override fun mouseClicked(e: MouseEvent) {
-                    BrowserUtil.browse("https://opencode.ai")
-                }
-            })
+            addHyperlinkListener { BrowserUtil.browse("https://opencode.ai") }
         }
 
         gbc.gridy = 0; add(emojiLabel, gbc)

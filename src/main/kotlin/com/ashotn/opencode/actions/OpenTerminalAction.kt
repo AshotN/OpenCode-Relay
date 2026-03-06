@@ -1,5 +1,6 @@
 package com.ashotn.opencode.actions
 
+import com.ashotn.opencode.OpenCodeConstants
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.settings.OpenCodeSettings
 import com.intellij.icons.AllIcons
@@ -36,7 +37,7 @@ class OpenTerminalAction(private val project: Project) :
 
         if (processCommand.isEmpty()) {
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("OpenCode")
+                .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
                     "Cannot open terminal",
                     "No supported terminal emulator found. Install xterm, gnome-terminal, konsole, or xfce4-terminal.",
@@ -52,7 +53,7 @@ class OpenTerminalAction(private val project: Project) :
                 .start()
         } catch (ex: Exception) {
             NotificationGroupManager.getInstance()
-                .getNotificationGroup("OpenCode")
+                .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
                 .createNotification(
                     "Failed to open terminal",
                     "Could not launch terminal: ${ex.message}",
@@ -87,22 +88,9 @@ class OpenTerminalAction(private val project: Project) :
     }
 
     private fun isOnPath(executable: String): Boolean {
-        if (SystemInfo.isWindows) {
-            // 'which' is not available on Windows; check PATH entries directly
-            val pathEnv = System.getenv("PATH") ?: return false
-            return pathEnv.split(java.io.File.pathSeparator).any { dir ->
-                listOf(executable, "$executable.exe", "$executable.cmd", "$executable.bat").any { name ->
-                    java.io.File(dir, name).let { it.isFile && it.canExecute() }
-                }
-            }
-        }
-        return try {
-            ProcessBuilder("which", executable)
-                .redirectErrorStream(true)
-                .start()
-                .waitFor() == 0
-        } catch (_: Exception) {
-            false
+        val pathEnv = System.getenv("PATH") ?: return false
+        return pathEnv.split(java.io.File.pathSeparator).any { dir ->
+            java.io.File(dir, executable).let { it.isFile && it.canExecute() }
         }
     }
 }
