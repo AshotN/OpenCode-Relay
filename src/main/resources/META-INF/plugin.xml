@@ -1,0 +1,34 @@
+<idea-plugin>
+    <id>com.ashotn.opencode-intellij</id>
+    <name>OpenCode</name>
+    <vendor>Ashot Nazaryan</vendor>
+
+    <description><![CDATA[
+        OpenCode AI coding assistant integration for IntelliJ IDEA.
+        Brings the power of OpenCode directly into your IDE.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="OpenCode"
+            anchor="right"
+            factoryClass="com.ashotn.opencode.toolwindow.OpenCodeToolWindowFactory"
+            icon="/icons/opencode.svg"
+        />
+        <projectService serviceImplementation="com.ashotn.opencode.OpenCodePlugin"/>
+        <projectService serviceImplementation="com.ashotn.opencode.settings.OpenCodeSettings"/>
+        <projectConfigurable
+            parentId="tools"
+            instance="com.ashotn.opencode.settings.OpenCodeSettingsConfigurable"
+            id="com.ashotn.opencode.settings"
+            displayName="OpenCode"
+        />
+        <notificationGroup id="OpenCode" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
+    </actions>
+</idea-plugin>

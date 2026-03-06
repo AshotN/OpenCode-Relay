@@ -1,0 +1,18 @@
+/build/
+
+# Gradle
+.gradle/
+gradle/wrapper/gradle-wrapper.jar
+
+# IntelliJ Platform plugin cache
+.intellijPlatform/
+
+# Kotlin
+.kotlin/
+
+# Module files
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
