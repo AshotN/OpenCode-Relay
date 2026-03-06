@@ -1,4 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
-  <rect width="16" height="16" rx="3" fill="#6B57FF"/>
-  <text x="8" y="12" text-anchor="middle" font-family="monospace" font-size="10" fill="white">O</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
+  <defs>
+    <linearGradient id="bg" x1="2" y1="2" x2="14" y2="14" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0EA5E9"/>
+      <stop offset="1" stop-color="#10B981"/>
+    </linearGradient>
+    <linearGradient id="glyph" x1="4" y1="4" x2="12" y2="12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D1FAE5"/>
+    </linearGradient>
+  </defs>
+
+  <rect x="1" y="1" width="14" height="14" rx="3" fill="url(#bg)"/>
+  <rect x="1.5" y="1.5" width="13" height="13" rx="2.5" stroke="#FFFFFF" stroke-opacity="0.16"/>
+
+  <path d="M6.2 5.3 3.8 8l2.4 2.7" stroke="url(#glyph)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M9.8 5.3 12.2 8l-2.4 2.7" stroke="url(#glyph)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M8.75 4.7 7.25 11.3" stroke="#ECFEFF" stroke-width="1.2" stroke-linecap="round"/>
+
+  <circle cx="12.4" cy="3.6" r="1.1" fill="#FDE047"/>
 </svg>
