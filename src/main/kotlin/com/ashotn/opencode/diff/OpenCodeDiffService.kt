@@ -580,28 +580,37 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     fun allTrackedFiles(): Set<String> = synchronized(stateLock) { visibleFilesLocked() }
 
-    fun getFileDiffPreview(filePath: String): FileDiffPreview? {
-        val source = synchronized(stateLock) {
+    fun getFileDiffPreview(filePath: String, onResult: (FileDiffPreview?) -> Unit) {
+        val (sessionId, currentPort) = synchronized(stateLock) {
             val candidateSessionIds = queryService.previewCandidateSessionIds(
                 familySessionIds = { familySessionIdsLocked() },
                 updatedAtBySession = stateStore.updatedAtBySession,
             )
+            val sid = candidateSessionIds.firstOrNull { sessionId ->
+                stateStore.baselineBeforeBySessionAndFile[sessionId]?.containsKey(filePath) == true
+            } ?: return onResult(null)
+            sid to port
+        }
 
-            candidateSessionIds.asSequence()
-                .mapNotNull { sessionId ->
-                    val before =
-                        stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(filePath) ?: return@mapNotNull null
-                    sessionId to before
-                }
-                .firstOrNull()
-        } ?: return null
+        if (currentPort <= 0) return onResult(null)
 
-        return FileDiffPreview(
-            filePath = filePath,
-            sessionId = source.first,
-            before = source.second,
-            after = documentSyncService.readCurrentContent(filePath),
-        )
+        val projectBase = project.basePath ?: return onResult(null)
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val result = sessionApiClient.fetchFileDiffPreview(currentPort, sessionId, projectBase, filePath)
+            if (!result.success || result.before == null) {
+                onResult(null)
+                return@executeOnPooledThread
+            }
+            onResult(
+                FileDiffPreview(
+                    filePath = filePath,
+                    sessionId = sessionId,
+                    before = result.before,
+                    after = result.after ?: documentSyncService.readCurrentContent(filePath),
+                )
+            )
+        }
     }
 
     private fun ensureHistoricalFamilyLoadedAsync(rootSessionId: String, generation: Long = lifecycleGeneration.get()) {

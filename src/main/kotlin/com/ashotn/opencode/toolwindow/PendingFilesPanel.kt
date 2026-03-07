@@ -319,32 +319,32 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private fun openBuiltInDiff(row: PendingFileRow) {
         val diffService = OpenCodeDiffService.getInstance(project)
-        val preview = diffService.getFileDiffPreview(row.path) ?: return
+        diffService.getFileDiffPreview(row.path) { preview ->
+            if (preview == null) return@getFileDiffPreview
+            ApplicationManager.getApplication().invokeLater {
+                val contentFactory = DiffContentFactory.getInstance()
+                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path)
+                val beforeContent = if (vFile != null) {
+                    contentFactory.create(project, preview.before, vFile)
+                } else {
+                    contentFactory.create(project, preview.before)
+                }
+                val afterContent = if (vFile != null && vFile.exists()) {
+                    contentFactory.create(project, vFile)
+                } else {
+                    contentFactory.create(project, preview.after)
+                }
 
-        val contentFactory = DiffContentFactory.getInstance()
-        val vFile = LocalFileSystem.getInstance().findFileByPath(row.path)
-        val beforeContent = if (vFile != null) {
-            contentFactory.create(project, preview.before, vFile)
-        } else {
-            contentFactory.create(project, preview.before)
-        }
-        val afterContent = if (vFile != null && vFile.exists()) {
-            contentFactory.create(project, vFile)
-        } else {
-            contentFactory.create(project, preview.after)
-        }
-
-        val title = "OpenCode Diff: ${row.name}"
-        val request = SimpleDiffRequest(
-            title,
-            beforeContent,
-            afterContent,
-            "Session baseline",
-            "Current file",
-        )
-
-        ApplicationManager.getApplication().invokeLater {
-            DiffManager.getInstance().showDiff(project, request)
+                val title = "OpenCode Diff: ${row.name}"
+                val request = SimpleDiffRequest(
+                    title,
+                    beforeContent,
+                    afterContent,
+                    "Session baseline",
+                    "Current file",
+                )
+                DiffManager.getInstance().showDiff(project, request)
+            }
         }
     }
 

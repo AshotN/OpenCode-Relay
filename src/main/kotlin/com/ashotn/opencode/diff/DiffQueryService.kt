@@ -51,7 +51,7 @@ internal class DiffQueryService {
         familySessionIds: () -> Set<String>,
         updatedAtBySession: Map<String, Long>,
     ): List<String> {
-        return familySessionIds().sortedByDescending { updatedAtBySession[it] ?: 0L }
+        return familySessionIds().sortedBy { updatedAtBySession[it] ?: 0L }
     }
 
     fun listSessions(

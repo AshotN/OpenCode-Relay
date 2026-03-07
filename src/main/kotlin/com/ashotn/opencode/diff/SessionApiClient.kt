@@ -13,6 +13,12 @@ internal class SessionApiClient {
         val event: OpenCodeEvent.SessionDiff?,
     )
 
+    data class FileDiffPreviewResult(
+        val success: Boolean,
+        val before: String?,
+        val after: String?,
+    )
+
     data class HierarchySnapshot(
         val sessionIds: Set<String>,
         val parentBySessionId: Map<String, String>,
@@ -71,6 +77,15 @@ internal class SessionApiClient {
         } finally {
             conn.disconnect()
         }
+    }
+
+    fun fetchFileDiffPreview(currentPort: Int, sessionId: String, projectBase: String, absFilePath: String): FileDiffPreviewResult {
+        val snapshot = fetchSessionDiffSnapshot(currentPort, sessionId)
+        if (!snapshot.success) return FileDiffPreviewResult(success = false, before = null, after = null)
+        val match = snapshot.event?.files?.firstOrNull { diffFile ->
+            DiffTextUtil.toAbsolutePath(projectBase, diffFile.file) == absFilePath
+        } ?: return FileDiffPreviewResult(success = true, before = null, after = null)
+        return FileDiffPreviewResult(success = true, before = match.before, after = match.after)
     }
 
     fun fetchSessionHierarchy(currentPort: Int): HierarchySnapshot {

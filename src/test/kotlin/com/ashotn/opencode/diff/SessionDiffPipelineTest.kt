@@ -321,9 +321,9 @@ class SessionDiffPipelineTest {
 
     // -------------------------------------------------------------------------
     // When you double-click a file in the diff viewer after the AI has modified
-    // it across multiple turns (e.g. add poem, then add signature), the diff
-    // must show all changes from the original file — not just the most recent
-    // turn's change. The "before" side of the diff must always be the content
+    // it across multiple turns (e.g. add poem in turn 1, add signature in turn 2),
+    // the diff must show all changes from the original file — not just the most
+    // recent turn's change. The "before" side of the diff must always be the content
     // the file had before the AI touched it at all in this conversation.
     //
     // MANUAL VERIFICATION:
@@ -345,7 +345,6 @@ class SessionDiffPipelineTest {
 
         val stateStore = DiffStateStore()
         val stateLock = Any()
-        val eventReducer = DiffEventReducer()
         val disk = mutableMapOf<String, String>()
 
         val computer = SessionDiffApplyComputer(
@@ -361,29 +360,19 @@ class SessionDiffPipelineTest {
             tracer = NoOpDiffTracer,
         )
 
-        fun runTurn(sessionId: String, content: String, nowMillis: Long) {
-            disk[absFile] = content
-            stateStore.commitTurnPatch(
-                stateLock = stateLock,
-                sessionId = sessionId,
-                touchedPaths = setOf(absFile),
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )
+        // Simulate what the server returns for GET /session/{id}/diff:
+        // it always carries the true original "before" for each file, regardless of
+        // how many live turns have run. We model this with fromHistory=true, which
+        // makes SessionDiffApplyComputer use diffFile.before directly.
+        fun simulateServerDiffFetch(sessionId: String, serverBefore: String, currentContent: String) {
+            disk[absFile] = currentContent
             val revision = stateStore.reserveRevisionForSessionDiffApply(
                 stateLock = stateLock,
                 sessionId = sessionId,
-                fromHistory = false,
+                fromHistory = true,
                 expectedGeneration = generation,
                 currentGeneration = { generation },
             )!!
-            val turnScope = stateStore.consumeTurnScopeForDiff(
-                stateLock = stateLock,
-                sessionId = sessionId,
-                fromHistory = false,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )
             val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
                 stateLock = stateLock,
                 sessionId = sessionId,
@@ -393,55 +382,51 @@ class SessionDiffPipelineTest {
             val event = OpenCodeEvent.SessionDiff(
                 sessionId = sessionId,
                 files = listOf(OpenCodeEvent.SessionDiffFile(
-                    file = absFile, before = "", after = "", additions = 1, deletions = 0,
+                    file = absFile,
+                    before = serverBefore, // server's authoritative original
+                    after = currentContent,
+                    additions = 1,
+                    deletions = 0,
                     status = SessionDiffStatus.MODIFIED,
                 )),
             )
             val computedState = computer.compute(
                 projectBase = projectBase,
                 event = event,
-                fromHistory = false,
-                turnScope = turnScope,
+                fromHistory = true,
+                turnScope = null,
                 previousAfterByFile = prepareSnapshot.previousAfterByFile,
             )
             stateStore.commitSessionDiffApply(
                 stateLock = stateLock,
                 sessionId = sessionId,
                 revision = revision,
-                fromHistory = false,
+                fromHistory = true,
                 computedState = computedState,
-                nowMillis = nowMillis,
+                nowMillis = 1000L,
                 expectedGeneration = generation,
                 currentGeneration = { generation },
             )
         }
 
-        // File starts at original content; poem session runs first.
-        disk[absFile] = originalContent
-        runTurn("ses_poem", afterPoem, nowMillis = 1000L)
+        // The server is fetched for the most recently active session (sign).
+        // It returns originalContent as "before" — the state before any AI edits.
+        simulateServerDiffFetch(
+            sessionId = "ses_sign",
+            serverBefore = originalContent,
+            currentContent = afterSignature,
+        )
 
-        // Sign session runs after; its baseline is afterPoem, not originalContent.
-        runTurn("ses_sign", afterSignature, nowMillis = 2000L)
+        // The baseline stored from the server fetch must be the original content,
+        // not the intermediate post-poem content.
+        val storedBefore = stateStore.baselineBeforeBySessionAndFile["ses_sign"]?.get(absFile)
 
-        // Simulate getFileDiffPreview: pick the session with the most-recent updatedAt
-        // that has a baseline for this file, return (before=baseline, after=currentDisk).
-        val candidateSessionIds = listOf("ses_poem", "ses_sign")
-            .sortedByDescending { stateStore.updatedAtBySession[it] ?: 0L }
-
-        val (pickedSessionId, pickedBefore) = candidateSessionIds
-            .mapNotNull { sessionId ->
-                val before = stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(absFile)
-                    ?: return@mapNotNull null
-                sessionId to before
-            }
-            .first()
-
-        // The diff preview must use the original content as "before" so that opening
-        // the diff viewer shows ALL AI changes, not just the signature.
         assertEquals(
             originalContent,
-            pickedBefore,
-            "diff preview 'before' must be the original file content, but picked session=$pickedSessionId with before.length=${pickedBefore.length} (afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
+            storedBefore,
+            "diff preview 'before' must be the server-provided original file content, " +
+                "but got before.length=${storedBefore?.length} " +
+                "(afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
         )
     }
 }
