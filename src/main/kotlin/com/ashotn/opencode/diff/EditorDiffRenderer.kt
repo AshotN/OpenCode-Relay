@@ -4,12 +4,14 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
+import com.intellij.openapi.editor.Document
 import com.intellij.openapi.editor.Editor
 import com.intellij.openapi.editor.Inlay
 import com.intellij.openapi.editor.markup.HighlighterLayer
 import com.intellij.openapi.editor.markup.MarkupModel
 import com.intellij.openapi.editor.markup.RangeHighlighter
 import com.intellij.openapi.editor.markup.TextAttributes
+import com.intellij.openapi.fileEditor.FileDocumentManagerListener
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.FileEditorManagerListener
 import com.intellij.openapi.fileEditor.TextEditor
@@ -48,6 +50,16 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
             }
         })
         bus.subscribe(FileEditorManagerListener.FILE_EDITOR_MANAGER, this)
+        bus.subscribe(FileDocumentManagerListener.TOPIC, object : FileDocumentManagerListener {
+            override fun fileContentReloaded(file: VirtualFile, document: Document) {
+                val filePath = file.path
+                val diffService = OpenCodeDiffService.getInstance(project)
+                if (!diffService.hasPendingHunks(filePath)) return
+                ApplicationManager.getApplication().invokeLater {
+                    refreshFile(filePath)
+                }
+            }
+        })
     }
 
     override fun fileOpened(source: FileEditorManager, file: VirtualFile) {

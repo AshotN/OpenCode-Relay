@@ -5,6 +5,7 @@ import java.util.concurrent.ConcurrentHashMap
 internal class DiffStateStore {
     data class SessionDiffComputedState(
         val nextAfterByFile: MutableMap<String, String>,
+        val processedPaths: Set<String>, // Paths touched by the current apply pass.
         val newHunksByFile: Map<String, List<DiffHunk>>,
         val newDeleted: Set<String>,
         val newAdded: Set<String>,
@@ -12,7 +13,6 @@ internal class DiffStateStore {
     )
 
     data class SessionDiffCommitResult(
-        val removedFiles: Set<String>,
         val changedFiles: Set<String>,
     )
 
@@ -61,6 +61,14 @@ internal class DiffStateStore {
 
     data class SessionDiffPrepareSnapshot(
         val previousAfterByFile: Map<String, String>,
+    )
+
+    private data class SessionStateSnapshot(
+        val hunks: Map<String, List<DiffHunk>>,
+        val liveHunks: Map<String, List<DiffHunk>>,
+        val deleted: Set<String>,
+        val added: Set<String>,
+        val baselines: Map<String, String>,
     )
 
     fun currentSessionRevision(stateLock: Any, sessionId: String): Long = synchronized(stateLock) {
@@ -186,23 +194,67 @@ internal class DiffStateStore {
 
         lastAfterBySessionAndFile[sessionId] = computedState.nextAfterByFile
 
-        val previousSessionFiles = hunksBySessionAndFile[sessionId]?.keys?.toSet() ?: emptySet()
+        val previousState = SessionStateSnapshot(
+            hunks = hunksBySessionAndFile[sessionId] ?: emptyMap(),
+            liveHunks = liveHunksBySessionAndFile[sessionId] ?: emptyMap(),
+            deleted = deletedBySession[sessionId] ?: emptySet(),
+            added = addedBySession[sessionId] ?: emptySet(),
+            baselines = baselineBeforeBySessionAndFile[sessionId] ?: emptyMap(),
+        )
 
         if (!fromHistory) {
             busyBySession[sessionId] = true
             updatedAtBySession[sessionId] = nowMillis
         }
 
-        hunksBySessionAndFile[sessionId] = computedState.newHunksByFile
-        liveHunksBySessionAndFile[sessionId] = if (fromHistory) emptyMap() else computedState.newHunksByFile
-        deletedBySession[sessionId] = computedState.newDeleted
-        addedBySession[sessionId] = computedState.newAdded
-        baselineBeforeBySessionAndFile[sessionId] = computedState.newBaselineByFile
+        val mergedState = SessionStateSnapshot(
+            hunks = mergeMapByProcessedPaths(
+                previous = previousState.hunks,
+                processedPaths = computedState.processedPaths,
+                next = computedState.newHunksByFile,
+                replaceAll = fromHistory,
+            ),
+            liveHunks = if (fromHistory) {
+                emptyMap()
+            } else {
+                mergeMapByProcessedPaths(
+                    previous = previousState.liveHunks,
+                    processedPaths = computedState.processedPaths,
+                    next = computedState.newHunksByFile,
+                    replaceAll = false,
+                )
+            },
+            deleted = mergeSetByProcessedPaths(
+                previous = previousState.deleted,
+                processedPaths = computedState.processedPaths,
+                next = computedState.newDeleted,
+                replaceAll = fromHistory,
+            ),
+            added = mergeSetByProcessedPaths(
+                previous = previousState.added,
+                processedPaths = computedState.processedPaths,
+                next = computedState.newAdded,
+                replaceAll = fromHistory,
+            ),
+            baselines = mergeMapByProcessedPaths(
+                previous = previousState.baselines,
+                processedPaths = computedState.processedPaths,
+                next = computedState.newBaselineByFile,
+                replaceAll = fromHistory,
+            ),
+        )
 
-        val newSessionFiles = computedState.newHunksByFile.keys.toSet()
+        hunksBySessionAndFile[sessionId] = mergedState.hunks
+        liveHunksBySessionAndFile[sessionId] = mergedState.liveHunks
+        deletedBySession[sessionId] = mergedState.deleted
+        addedBySession[sessionId] = mergedState.added
+        baselineBeforeBySessionAndFile[sessionId] = mergedState.baselines
+
+        val previousTrackedFiles = previousState.hunks.keys + previousState.added + previousState.deleted
+        val newTrackedFiles = mergedState.hunks.keys + mergedState.added + mergedState.deleted
+
         SessionDiffCommitResult(
-            removedFiles = previousSessionFiles - newSessionFiles,
-            changedFiles = previousSessionFiles + newSessionFiles,
+            changedFiles = previousTrackedFiles + newTrackedFiles,
         )
     }
 
@@ -234,6 +286,26 @@ internal class DiffStateStore {
         baselineBeforeBySessionAndFile[sessionId] = currentBaselines.filterKeys { it in updatedHunks.keys }
         updatedAtBySession[sessionId] = nowMillis
         true
+    }
+
+    private fun <T> mergeMapByProcessedPaths(
+        previous: Map<String, T>,
+        processedPaths: Set<String>,
+        next: Map<String, T>,
+        replaceAll: Boolean,
+    ): Map<String, T> {
+        if (replaceAll) return next
+        return previous.filterKeys { it !in processedPaths } + next
+    }
+
+    private fun mergeSetByProcessedPaths(
+        previous: Set<String>,
+        processedPaths: Set<String>,
+        next: Set<String>,
+        replaceAll: Boolean,
+    ): Set<String> {
+        if (replaceAll) return next
+        return (previous - processedPaths) + next
     }
 
     fun resetState() {

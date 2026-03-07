@@ -21,6 +21,7 @@ internal class SessionDiffApplyComputer(
         val newDeleted = HashSet<String>()
         val newAdded = HashSet<String>()
         val newBaselineByFile = HashMap<String, String>()
+        val processedPaths = HashSet<String>()
         val nextAfterByFile = previousAfterByFile.toMutableMap()
         var outOfScopeCount = 0
         var baselineMatchCount = 0
@@ -34,8 +35,12 @@ internal class SessionDiffApplyComputer(
                 continue
             }
 
-            documentSyncService.refreshVfs(absPath, wasDeleted = diffFile.status == SessionDiffStatus.DELETED)
-            documentSyncService.reloadOpenDocument(absPath)
+            processedPaths.add(absPath)
+
+            if (!fromHistory) {
+                documentSyncService.queueVfsRefresh(absPath, diffFile.status)
+                documentSyncService.reloadOpenDocument(absPath)
+            }
 
             val actualAfter = documentSyncService.readCurrentContent(absPath)
             val effectiveBefore = if (fromHistory) {
@@ -48,6 +53,9 @@ internal class SessionDiffApplyComputer(
                 DiffTextUtil.normalizeContent(effectiveBefore) != DiffTextUtil.normalizeContent(actualAfter)
 
             nextAfterByFile[absPath] = actualAfter
+
+            if (diffFile.status == SessionDiffStatus.DELETED) newDeleted.add(absPath)
+            if (diffFile.status == SessionDiffStatus.ADDED) newAdded.add(absPath)
 
             if (!hasContentChange) {
                 baselineMatchCount += 1
@@ -69,8 +77,6 @@ internal class SessionDiffApplyComputer(
 
             newHunksByFile[absPath] = hunks
             newBaselineByFile[absPath] = effectiveBefore
-            if (actualAfter.isEmpty()) newDeleted.add(absPath)
-            if (diffFile.status == SessionDiffStatus.ADDED && actualAfter.isNotEmpty()) newAdded.add(absPath)
         }
 
         log.debug(
@@ -79,6 +85,7 @@ internal class SessionDiffApplyComputer(
 
         return DiffStateStore.SessionDiffComputedState(
             nextAfterByFile = nextAfterByFile,
+            processedPaths = processedPaths,
             newHunksByFile = newHunksByFile,
             newDeleted = newDeleted,
             newAdded = newAdded,

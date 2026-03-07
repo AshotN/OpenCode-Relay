@@ -55,7 +55,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private val stateLock = Any()
 
     private val permissionService = OpenCodePermissionService.getInstance(project)
-    private val documentSyncService = DocumentSyncService()
+    private val documentSyncService = DocumentSyncService(project)
     private val sessionApiClient = SessionApiClient()
     private val hunkComputer = DiffHunkComputer(log)
     private val sessionDiffApplyComputer = SessionDiffApplyComputer(documentSyncService, hunkComputer, log)
@@ -136,6 +136,14 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun markSessionBusy(sessionId: String, isBusy: Boolean, generation: Long) {
         if (generation != lifecycleGeneration.get()) return
+
+        val previousLiveVisibleFiles = synchronized(stateLock) {
+            if (generation != lifecycleGeneration.get()) {
+                return@synchronized emptySet()
+            }
+            liveVisibleFilesLocked()
+        }
+
         val committed = eventReducer.commitSessionBusy(
             stateStore = stateStore,
             stateLock = stateLock,
@@ -146,7 +154,21 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             currentGeneration = { lifecycleGeneration.get() },
         )
         if (!committed) return
+
+        val nextLiveVisibleFiles = synchronized(stateLock) {
+            if (generation != lifecycleGeneration.get()) {
+                return@synchronized emptySet()
+            }
+            liveVisibleFilesLocked()
+        }
+
+        if (!isBusy) {
+            documentSyncService.flushQueuedVfsRefreshes()
+        }
         if (generation != lifecycleGeneration.get()) return
+
+        val filesToRefresh = previousLiveVisibleFiles + nextLiveVisibleFiles
+        filesToRefresh.forEach { publishService.publishChanged(it) }
         publishService.publishSessionStateChanged()
         refreshSessionHierarchyAsync(generation)
     }
@@ -209,6 +231,13 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
+            val previousLiveVisibleFiles = synchronized(stateLock) {
+                if (generation != lifecycleGeneration.get()) {
+                    return@synchronized emptySet()
+                }
+                liveVisibleFilesLocked()
+            }
+
             val commitResult = stateStore.commitSessionDiffApply(
                 stateLock = stateLock,
                 sessionId = event.sessionId,
@@ -224,21 +253,26 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 return@executeOnPooledThread
             }
 
-            val removedFiles = commitResult.removedFiles
             val changedFiles = commitResult.changedFiles
+            val nextLiveVisibleFiles = synchronized(stateLock) {
+                if (generation != lifecycleGeneration.get()) {
+                    return@synchronized emptySet()
+                }
+                liveVisibleFilesLocked()
+            }
+
+            val filesToRefresh = changedFiles + previousLiveVisibleFiles + nextLiveVisibleFiles
 
             log.debug(
-                "OpenCodeDiffService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} removedFileCount=${removedFiles.size} generation=$generation",
+                "OpenCodeDiffService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} refreshedFileCount=${filesToRefresh.size} generation=$generation",
             )
 
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
-            historicalDiffLoadedSessions.add(event.sessionId)
-
-            removedFiles.forEach {
-                documentSyncService.refreshVfs(it, wasDeleted = false)
-                documentSyncService.reloadOpenDocument(it)
+            if (fromHistory) {
+                historicalDiffLoadedSessions.add(event.sessionId)
             }
-            changedFiles.forEach { publishService.publishChanged(it) }
+
+            filesToRefresh.forEach { publishService.publishChanged(it) }
             publishService.publishSessionStateChanged()
             if (!fromHistory) {
                 refreshSessionHierarchyAsync(generation)
@@ -318,6 +352,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private fun currentSessionRevision(sessionId: String): Long =
         stateStore.currentSessionRevision(stateLock, sessionId)
 
+    private fun hasAppliedDiffState(sessionId: String): Boolean =
+        currentSessionRevision(sessionId) > 0L
+
     private fun knownSessionIdsLocked(): Set<String> =
         scopeResolver.knownSessionIds(
             hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
@@ -358,11 +395,15 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private fun visibleFilesLocked(): Set<String> = queryService.visibleFiles(
         familySessionIds = { familySessionIdsLocked() },
         hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
+        addedBySession = stateStore.addedBySession,
+        deletedBySession = stateStore.deletedBySession,
     )
 
     private fun liveVisibleFilesLocked(): Set<String> = queryService.liveVisibleFiles(
         familySessionIds = { familySessionIdsLocked() },
         liveHunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
+        addedBySession = stateStore.addedBySession,
+        deletedBySession = stateStore.deletedBySession,
     )
 
     private fun inlineHunks(filePath: String): List<DiffHunk> = queryService.hunks(
@@ -483,6 +524,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         if (generation != lifecycleGeneration.get()) return
         if (sessionId.isBlank()) return
         if (historicalDiffLoadedSessions.contains(sessionId)) return
+        if (hasAppliedDiffState(sessionId)) {
+            historicalDiffLoadedSessions.add(sessionId)
+            return
+        }
         if (!historicalDiffLoadInFlight.add(sessionId)) return
 
         val currentPort = port
@@ -507,7 +552,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 val event = result.event ?: return@executeOnPooledThread
                 handleSessionDiff(event, fromHistory = true, generation = generation)
             } catch (e: Exception) {
-                log.debug("OpenCodeDiffService: failed historical snapshot load session=$sessionId port=$currentPort generation=$generation", e)
+                log.debug(
+                    "OpenCodeDiffService: failed historical snapshot load session=$sessionId port=$currentPort generation=$generation",
+                    e
+                )
             } finally {
                 historicalDiffLoadInFlight.remove(sessionId)
             }
@@ -578,7 +626,6 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         }
     }
 
-    //cleanup
     private fun clearRuntimeStateAndPublish() {
         val previousInlineFiles = synchronized(stateLock) {
             stateStore.liveHunksBySessionAndFile.values.flatMap { it.keys }.toSet()
@@ -595,7 +642,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private fun resetStateLocked() {
         sessionTitleById.clear()
         sessionDescriptionById.clear()
-        documentSyncService.clearReloadHistory()
+        documentSyncService.reset()
         parentBySessionId.clear()
         hierarchySessionIds.clear()
         historicalDiffLoadInFlight.clear()
@@ -613,6 +660,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         synchronized(stateLock) {
             resetStateLocked()
         }
+        documentSyncService.dispose()
         hierarchyRefreshInFlight.set(false)
     }
 

@@ -4,15 +4,27 @@ internal class DiffQueryService {
     fun visibleFiles(
         familySessionIds: () -> Set<String>,
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
+        addedBySession: Map<String, Set<String>>,
+        deletedBySession: Map<String, Set<String>>,
     ): Set<String> = familySessionIds()
-        .flatMap { sessionId -> hunksBySessionAndFile[sessionId]?.keys ?: emptySet() }
+        .flatMap { sessionId ->
+            (hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
+                    (addedBySession[sessionId] ?: emptySet()) +
+                    (deletedBySession[sessionId] ?: emptySet())
+        }
         .toSet()
 
     fun liveVisibleFiles(
         familySessionIds: () -> Set<String>,
         liveHunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
+        addedBySession: Map<String, Set<String>>,
+        deletedBySession: Map<String, Set<String>>,
     ): Set<String> = familySessionIds()
-        .flatMap { sessionId -> liveHunksBySessionAndFile[sessionId]?.keys ?: emptySet() }
+        .flatMap { sessionId ->
+            (liveHunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
+                    (addedBySession[sessionId] ?: emptySet()) +
+                    (deletedBySession[sessionId] ?: emptySet())
+        }
         .toSet()
 
     fun hunks(

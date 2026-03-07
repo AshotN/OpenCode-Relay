@@ -1,54 +1,56 @@
 package com.ashotn.opencode.diff
 
+import com.ashotn.opencode.ipc.SessionDiffStatus
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileDocumentManager
+import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import java.util.concurrent.ConcurrentHashMap
 
-internal class DocumentSyncService {
+internal class DocumentSyncService(
+    private val project: Project,
+) {
     private val lastDocumentReloadAtByPath = ConcurrentHashMap<String, Long>()
+    private val refreshCoordinator = VfsRefreshCoordinator()
 
-    fun refreshVfs(absPath: String, wasDeleted: Boolean) {
-        val lfs = LocalFileSystem.getInstance()
-        val fileOnDisk = java.io.File(absPath)
+    fun queueVfsRefresh(absPath: String, status: SessionDiffStatus) {
+        when (status) {
+            SessionDiffStatus.MODIFIED -> {
+                refreshCoordinator.enqueue(absPath, recursive = false)
+            }
 
-        if (wasDeleted) {
-            val parentPath = fileOnDisk.parent ?: return
-            val parentVFile = lfs.refreshAndFindFileByPath(parentPath) ?: lfs.findFileByPath(parentPath) ?: return
-            parentVFile.refresh(false, true)
-            return
+            SessionDiffStatus.ADDED -> {
+                refreshCoordinator.enqueue(absPath, recursive = false)
+                parentPath(absPath)?.let { refreshCoordinator.enqueue(it, recursive = true) }
+            }
+
+            SessionDiffStatus.DELETED -> {
+                parentPath(absPath)?.let { refreshCoordinator.enqueue(it, recursive = true) }
+            }
+
+            SessionDiffStatus.UNKNOWN -> {
+                refreshCoordinator.enqueue(absPath, recursive = false)
+                parentPath(absPath)?.let { refreshCoordinator.enqueue(it, recursive = true) }
+            }
         }
+    }
 
-        val vFile = lfs.refreshAndFindFileByPath(absPath) ?: lfs.findFileByPath(absPath)
-        if (vFile != null) {
-            vFile.refresh(false, false)
-            return
-        }
-
-        var ancestor = fileOnDisk.parentFile
-        var ancestorVFile = null as com.intellij.openapi.vfs.VirtualFile?
-        while (ancestor != null) {
-            ancestorVFile = lfs.refreshAndFindFileByPath(ancestor.path) ?: lfs.findFileByPath(ancestor.path)
-            if (ancestorVFile != null) break
-            ancestor = ancestor.parentFile
-        }
-        ancestorVFile?.refresh(false, true)
+    fun flushQueuedVfsRefreshes() {
+        refreshCoordinator.flushNow(trigger = "explicit")
     }
 
     fun reloadOpenDocument(absPath: String) {
-        if (!shouldReloadDocument(absPath)) return
+        if (isMarkdownFile(absPath)) return
+        if (project.isDisposed) return
 
-        val vFile = LocalFileSystem.getInstance().refreshAndFindFileByPath(absPath)
-            ?: LocalFileSystem.getInstance().findFileByPath(absPath)
-            ?: return
-
+        val vFile = LocalFileSystem.getInstance().findFileByPath(absPath) ?: return
         val fileDocumentManager = FileDocumentManager.getInstance()
         val document = fileDocumentManager.getCachedDocument(vFile) ?: return
+        if (!shouldReloadDocument(absPath)) return
 
         val reloadAction = {
-            if (!fileDocumentManager.isDocumentUnsaved(document)) {
+            if (!project.isDisposed && !fileDocumentManager.isDocumentUnsaved(document)) {
                 fileDocumentManager.reloadFromDisk(document)
-                lastDocumentReloadAtByPath[absPath] = System.currentTimeMillis()
             }
         }
 
@@ -56,7 +58,11 @@ internal class DocumentSyncService {
         if (app.isDispatchThread) {
             reloadAction()
         } else {
-            app.invokeLater(reloadAction)
+            app.invokeLater {
+                if (!project.isDisposed) {
+                    reloadAction()
+                }
+            }
         }
     }
 
@@ -70,20 +76,39 @@ internal class DocumentSyncService {
         }
     }
 
-    fun clearReloadHistory() {
+    fun reset() {
         lastDocumentReloadAtByPath.clear()
+        refreshCoordinator.clearPending()
+    }
+
+    fun dispose() {
+        lastDocumentReloadAtByPath.clear()
+        refreshCoordinator.dispose()
     }
 
     private fun shouldReloadDocument(absPath: String): Boolean {
-        val lowerPath = absPath.lowercase()
-        if (lowerPath.endsWith(".md") || lowerPath.endsWith(".markdown") || lowerPath.endsWith(".mdx")) {
-            return false
+        val now = System.currentTimeMillis()
+        var shouldReload = false
+
+        lastDocumentReloadAtByPath.compute(absPath) { _, previousReloadAt ->
+            val lastReloadAt = previousReloadAt ?: 0L
+            if (now - lastReloadAt >= DOCUMENT_RELOAD_COOLDOWN_MILLIS) {
+                shouldReload = true
+                now
+            } else {
+                lastReloadAt
+            }
         }
 
-        val now = System.currentTimeMillis()
-        val lastReloadAt = lastDocumentReloadAtByPath[absPath] ?: 0L
-        return now - lastReloadAt >= DOCUMENT_RELOAD_COOLDOWN_MILLIS
+        return shouldReload
     }
+
+    private fun isMarkdownFile(absPath: String): Boolean {
+        val lowerPath = absPath.lowercase()
+        return lowerPath.endsWith(".md") || lowerPath.endsWith(".markdown") || lowerPath.endsWith(".mdx")
+    }
+
+    private fun parentPath(absPath: String): String? = java.io.File(absPath).parent
 
     companion object {
         private const val DOCUMENT_RELOAD_COOLDOWN_MILLIS = 500L
