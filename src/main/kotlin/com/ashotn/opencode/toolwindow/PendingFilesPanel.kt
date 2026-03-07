@@ -9,10 +9,16 @@ import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.ipc.PermissionReply
 import com.ashotn.opencode.permission.OpenCodePermissionService
-import com.intellij.diff.DiffManager
 import com.intellij.diff.DiffContentFactory
+import com.intellij.diff.editor.DiffEditorTabFilesManager
+import com.intellij.diff.editor.SimpleDiffVirtualFile
 import com.intellij.diff.requests.SimpleDiffRequest
+import com.intellij.openapi.actionSystem.AnAction
+import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.actionSystem.CommonShortcuts
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.JBColor
@@ -45,8 +51,12 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.KeyStroke
+import javax.swing.JMenuItem
+import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
 import javax.swing.border.MatteBorder
+import javax.swing.event.ListSelectionEvent
+import javax.swing.event.ListSelectionListener
 
 /**
  * Shows the session list and files with AI session diff highlights.
@@ -72,21 +82,23 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
     private val fileListModel = DefaultListModel<PendingFileRow>()
     private val fileList = JBList(fileListModel).apply {
-        cellRenderer = FilePathCellRenderer()
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         visibleRowCount = 6
     }
 
     private val sessionListModel = DefaultListModel<SessionRow>()
     private val sessionList = JBList(sessionListModel).apply {
-        cellRenderer = SessionRowCellRenderer()
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         visibleRowCount = 5
     }
     private val sessionScrollPane = JBScrollPane(sessionList)
 
+    // Tracks open diff editor tabs by (filePath, sessionId) so reuse is scoped to the same session.
+    private val openDiffFiles = HashMap<Pair<String, String>, SimpleDiffVirtualFile>()
+
     private val refreshScheduled = AtomicBoolean(false)
     private var didApplyInitialSessionSelection = false
+    private var isUpdatingSessionSelection = false
     private val busySessionIcon = AnimatedIcon.Default.INSTANCE
     private val idleSessionIcon = EmptyIcon.create(busySessionIcon.iconWidth, busySessionIcon.iconHeight)
 
@@ -134,6 +146,9 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     init {
+        fileList.cellRenderer = FilePathCellRenderer()
+        sessionList.cellRenderer = SessionRowCellRenderer()
+
         border = MatteBorder(1, 0, 0, 0, JBColor.border())
 
         val header = JBLabel("Session changes").apply {
@@ -148,8 +163,10 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             border = JBUI.Borders.empty(0, 8, 2, 8)
         }
 
-        sessionList.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) {
+        sessionList.addListSelectionListener(object : ListSelectionListener {
+            override fun valueChanged(e: ListSelectionEvent) {
+                if (e.valueIsAdjusting) return
+                if (isUpdatingSessionSelection) return
                 val row = sessionList.selectedValue ?: return
                 OpenCodeDiffService.getInstance(project).selectSession(row.sessionId)
                 refresh()
@@ -173,8 +190,41 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount < 2) return
                 val row = fileList.selectedValue ?: return
-                if (row.isDeleted || row.isAdded) return
+                if (row.isDeleted) return
                 openBuiltInDiff(row)
+            }
+
+            //For right click
+            override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
+            override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
+
+            private fun maybeShowPopup(e: MouseEvent) {
+                if (!e.isPopupTrigger) return
+
+                // Select the row under the cursor so menu actions operate on the right item.
+                val index = fileList.locationToIndex(e.point)
+                if (index >= 0) fileList.selectedIndex = index
+
+                val row = fileList.selectedValue ?: return
+
+                val popup = JPopupMenu()
+
+                val jumpItem = JMenuItem("Jump to Source")
+                jumpItem.isEnabled = !row.isDeleted
+                jumpItem.addActionListener {
+                    val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return@addActionListener
+                    OpenFileDescriptor(project, vFile).navigate(true)
+                }
+                popup.add(jumpItem)
+
+                val diffItem = JMenuItem("Open Diff")
+                diffItem.isEnabled = !row.isDeleted
+                diffItem.addActionListener {
+                    openBuiltInDiff(row)
+                }
+                popup.add(diffItem)
+
+                popup.show(fileList, e.x, e.y)
             }
         })
 
@@ -187,7 +237,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionSection, filesSection).apply {
             resizeWeight = 0.35
             setContinuousLayout(true)
-            setOneTouchExpandable(true)
             border = JBUI.Borders.empty()
         }
 
@@ -212,6 +261,18 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
             .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clearSession")
         actionMap.put("clearSession", escAction)
+
+        // "Jump to Source" — registered as an IDE AnAction so it participates in the IDE's
+        // action dispatch and respects user keymap remappings (CommonShortcuts.getEditSource()
+        // is the live shortcut set for EditSourceAction, typically F4).
+        object : AnAction() {
+            override fun actionPerformed(e: AnActionEvent) {
+                val row = fileList.selectedValue ?: return
+                if (row.isDeleted) return
+                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return
+                OpenFileDescriptor(project, vFile).navigate(true)
+            }
+        }.registerCustomShortcutSet(CommonShortcuts.getEditSource(), fileList)
 
         project.messageBus.connect().subscribe(
             DiffHunksChangedListener.TOPIC,
@@ -289,8 +350,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         fileListModel.clear()
         rows.forEach { fileListModel.addElement(it) }
 
-        val hasPermission = permissionService.currentPermission() != null
-        isVisible = rows.isNotEmpty() || hasPermission || sessions.isNotEmpty()
         revalidate()
         repaint()
     }
@@ -311,17 +370,22 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 )
             }
 
-        sessionListModel.clear()
-        rows.forEach { sessionListModel.addElement(it) }
-
         val selectedIndex = selectedSessionId
             ?.let { sessionId -> rows.indexOfFirst { it.sessionId == sessionId } }
             ?.takeIf { it >= 0 }
 
-        if (selectedIndex != null) {
-            sessionList.selectedIndex = selectedIndex
-        } else {
-            sessionList.clearSelection()
+        isUpdatingSessionSelection = true
+        try {
+            sessionListModel.clear()
+            rows.forEach { sessionListModel.addElement(it) }
+
+            if (selectedIndex != null) {
+                sessionList.selectedIndex = selectedIndex
+            } else {
+                sessionList.clearSelection()
+            }
+        } finally {
+            isUpdatingSessionSelection = false
         }
 
         if (!didApplyInitialSessionSelection && rows.isNotEmpty()) {
@@ -339,6 +403,15 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         diffService.getFileDiffPreview(row.path) { preview ->
             if (preview == null) return@getFileDiffPreview
             ApplicationManager.getApplication().invokeLater {
+                val key = row.path to preview.sessionId
+
+                // If a diff tab for this file+session is already open, focus it.
+                val existing = openDiffFiles[key]
+                if (existing != null && FileEditorManager.getInstance(project).isFileOpen(existing)) {
+                    FileEditorManager.getInstance(project).openFile(existing, true)
+                    return@invokeLater
+                }
+
                 val contentFactory = DiffContentFactory.getInstance()
                 val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return@invokeLater
                 val beforeContent = contentFactory.create(project, preview.before, vFile)
@@ -352,7 +425,10 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                     "Session baseline",
                     "Current file",
                 )
-                DiffManager.getInstance().showDiff(project, request)
+
+                val diffVirtualFile = SimpleDiffVirtualFile(request)
+                openDiffFiles[key] = diffVirtualFile
+                DiffEditorTabFilesManager.getInstance(project).showDiffFile(diffVirtualFile, true)
             }
         }
     }

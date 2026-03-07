@@ -13,6 +13,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     data class State(
         var serverPort: Int = 4096,
         var executablePath: String = "",
+        var inlineDiffEnabled: Boolean = true,
         var diffTraceEnabled: Boolean = false,
         var diffTraceHistoryEnabled: Boolean = false,
     )
@@ -32,6 +33,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     var executablePath: String
         get() = state.executablePath
         set(value) { state.executablePath = value }
+
+    var inlineDiffEnabled: Boolean
+        get() = state.inlineDiffEnabled
+        set(value) { state.inlineDiffEnabled = value }
 
     var diffTraceEnabled: Boolean
         get() = state.diffTraceEnabled

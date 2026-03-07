@@ -484,6 +484,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         scopeResolver.resolveSelectedSessionId(
             selectedSessionId = selectedSessionId,
             knownSessionIds = knownSessionIdsLocked(),
+            updatedAtBySession = stateStore.updatedAtBySession,
+            busyBySession = stateStore.busyBySession,
+            parentBySessionId = parentBySessionId,
         )
     }
 
@@ -521,7 +524,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         filePath = filePath,
         familySessionIds = { familySessionIdsLocked() },
         updatedAtBySession = stateStore.updatedAtBySession,
-        hunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
+        hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
     )
 
     fun listSessions(): List<SessionInfo> = synchronized(stateLock) {
@@ -781,7 +784,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun clearRuntimeStateAndPublish() {
         val previousInlineFiles = synchronized(stateLock) {
-            stateStore.liveHunksBySessionAndFile.values.flatMap { it.keys }.toSet()
+            stateStore.hunksBySessionAndFile.values.flatMap { it.keys }.toSet()
         }
         synchronized(stateLock) {
             resetStateLocked()

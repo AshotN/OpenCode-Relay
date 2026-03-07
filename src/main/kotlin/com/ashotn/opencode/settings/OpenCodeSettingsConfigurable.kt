@@ -1,6 +1,7 @@
 package com.ashotn.opencode.settings
 
 import com.ashotn.opencode.OpenCodePlugin
+import com.ashotn.opencode.diff.EditorDiffRenderer
 import com.ashotn.opencode.toolwindow.OpenCodeToolWindowPanel
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
@@ -18,7 +19,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         return panel {
             if (running) {
                 row {
-                    comment("Settings are read-only while OpenCode is running. Stop the server to make changes.")
+                    comment("Some settings are read-only while OpenCode is running. Stop the server to make changes.")
                 }
             }
             group("Executable") {
@@ -36,6 +37,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindIntText(settings::serverPort)
                         .comment("Port the OpenCode server listens on (default: 4096)")
                         .enabled(!running)
+                }
+            }
+            group("Editor") {
+                row {
+                    checkBox("Show inline diff highlights")
+                        .bindSelected(settings::inlineDiffEnabled)
+                        .comment(
+                            "Renders green/red inline diff highlights in the editor " +
+                            "for AI-modified files. Changes take effect immediately."
+                        )
                 }
             }
             group("Diagnostics") {
@@ -65,6 +76,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
     override fun apply() {
         super.apply()
+        EditorDiffRenderer.getInstance(project).onSettingsChanged()
         refreshToolWindowPanel()
     }
 

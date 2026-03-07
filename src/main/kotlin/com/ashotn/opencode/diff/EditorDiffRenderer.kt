@@ -1,5 +1,6 @@
 package com.ashotn.opencode.diff
 
+import com.ashotn.opencode.settings.OpenCodeSettings
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -72,8 +73,20 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         }
     }
 
+    /** Called after settings are applied so highlights reflect the latest enabled state. */
+    fun onSettingsChanged() {
+        if (!OpenCodeSettings.getInstance(project).inlineDiffEnabled) {
+            clearAll()
+        } else {
+            val diffService = OpenCodeDiffService.getInstance(project)
+            diffService.allTrackedFiles().forEach { refreshFile(it) }
+        }
+    }
+
     private fun refreshFile(filePath: String) {
         clearMarkup(filePath)
+
+        if (!OpenCodeSettings.getInstance(project).inlineDiffEnabled) return
 
         val diffService = OpenCodeDiffService.getInstance(project)
         val hunks = diffService.getHunks(filePath)
