@@ -20,6 +20,8 @@ dependencies {
         instrumentationTools()
         pluginVerifier()
     }
+
+    testImplementation(kotlin("test"))
 }
 
 intellijPlatform {

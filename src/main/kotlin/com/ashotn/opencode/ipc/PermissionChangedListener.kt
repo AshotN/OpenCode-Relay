@@ -6,8 +6,8 @@ import com.intellij.util.messages.Topic
  * Published on the project message bus whenever the pending permission request
  * changes (a new one arrives, or the current one is resolved/dequeued).
  *
- * [event] is the next pending [OpenCodeEvent.PermissionAsked], or null when
- * there are no more queued requests.
+ * The callback argument is the next pending [OpenCodeEvent.PermissionAsked],
+ * or null when there are no queued requests.
  */
 fun interface PermissionChangedListener {
     fun onPermissionChanged(event: OpenCodeEvent.PermissionAsked?)

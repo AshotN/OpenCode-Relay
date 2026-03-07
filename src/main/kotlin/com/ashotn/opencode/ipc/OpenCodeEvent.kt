@@ -9,29 +9,6 @@ package com.ashotn.opencode.ipc
 sealed class OpenCodeEvent {
 
     /**
-     * Fired when an edit tool call completes on a file.
-     *
-     * Source: message.part.updated where part.tool == "edit" and
-     * part.state.status == "running" with metadata.filediff populated.
-     */
-    data class FileEdited(
-        val sessionId: String,
-        val messageId: String,
-        val fileDiff: FileDiff,
-    ) : OpenCodeEvent()
-
-    /**
-     * Fired when a bash `rm` command is detected targeting a file inside the project.
-     * The file content is captured at the moment the event is parsed (before `rm` runs).
-     */
-    data class FileDeleted(
-        val sessionId: String,
-        val messageId: String,
-        val filePath: String,
-        val originalContent: String,
-    ) : OpenCodeEvent()
-
-    /**
      * session.idle — fired when the AI finishes responding (turn complete).
      */
     data class SessionIdle(val sessionId: String) : OpenCodeEvent()
@@ -42,15 +19,10 @@ sealed class OpenCodeEvent {
      */
     data class SessionBusy(val sessionId: String) : OpenCodeEvent()
 
-    /**
-     * message.part.updated with type == "patch".
-     * Parsed for completeness; currently not required for session-level diff rendering.
-     */
+    /** message.part.updated with type == "patch". */
     data class TurnPatch(
         val sessionId: String,
-        val messageId: String,
         val files: List<String>,   // absolute paths
-        val hash: String,          // snapshot hash after this turn's edits
     ) : OpenCodeEvent()
 
     /**

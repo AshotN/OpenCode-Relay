@@ -20,7 +20,6 @@ internal class DiffHunkComputer(private val logger: Logger) {
                     removedLines = beforeLines.subList(change.startLine1, change.endLine1.coerceAtMost(beforeLines.size)),
                     addedLines = afterLines.subList(change.startLine2, change.endLine2.coerceAtMost(afterLines.size)),
                     sessionId = sessionId,
-                    messageId = sessionId,
                 )
             }
         } catch (e: Exception) {

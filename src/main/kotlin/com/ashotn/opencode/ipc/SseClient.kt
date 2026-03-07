@@ -228,8 +228,6 @@ class SseClient(
         if (part.getStringOrNull("type") != "patch") return null
 
         val sessionId = part.getStringOrNull("sessionID") ?: return null
-        val messageId = part.getStringOrNull("messageID") ?: return null
-        val hash = part.getStringOrNull("hash") ?: return null
         val files = part.getAsJsonArray("files")
             ?.mapNotNull { element ->
                 if (!element.isJsonPrimitive) return@mapNotNull null
@@ -237,7 +235,7 @@ class SseClient(
             }
             ?: emptyList()
 
-        return OpenCodeEvent.TurnPatch(sessionId, messageId, files, hash)
+        return OpenCodeEvent.TurnPatch(sessionId, files)
     }
 
     private fun parseSessionIdle(props: JsonObject): OpenCodeEvent.SessionIdle? {

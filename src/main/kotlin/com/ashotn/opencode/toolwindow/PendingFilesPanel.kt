@@ -37,8 +37,8 @@ import javax.swing.ListSelectionModel
 import javax.swing.border.MatteBorder
 
 /**
- * Shows session list and files with AI session diff highlights.
- * Clicking a file opens it in the editor and scrolls to the first hunk.
+ * Shows the session list and files with AI session diff highlights.
+ * Double-clicking a file opens a before/after diff preview.
  */
 class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
@@ -72,7 +72,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         visibleRowCount = 5
     }
 
-    private var isUpdatingSessionSelection = false
     private val refreshScheduled = AtomicBoolean(false)
 
     private val permissionLabel = JBLabel("").apply {
@@ -126,8 +125,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             border = JBUI.Borders.empty(6, 8, 4, 8)
         }
-
-        OpenCodeDiffService.getInstance(project).setViewMode(OpenCodeDiffService.ViewMode.UNIFIED_FAMILY)
 
         val sessionsHeader = JBLabel("Sessions (family root)").apply {
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
@@ -228,8 +225,8 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 ?: event.patterns.firstOrNull()
                 ?: event.permission
             permissionLabel.text = "<html><b>${event.permission}</b>" +
-                if (detail != event.permission) "&nbsp;&nbsp;$detail" else "" +
-                    "</html>"
+                    if (detail != event.permission) "&nbsp;&nbsp;$detail" else "" +
+                            "</html>"
             permissionPanel.isVisible = true
         } else {
             permissionPanel.isVisible = false
@@ -290,7 +287,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 )
             }
 
-        isUpdatingSessionSelection = true
         sessionListModel.clear()
         rows.forEach { sessionListModel.addElement(it) }
 
@@ -301,7 +297,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 sessionList.ensureIndexIsVisible(index)
             }
         }
-        isUpdatingSessionSelection = false
     }
 
     private fun openBuiltInDiff(row: PendingFileRow) {
@@ -334,7 +329,8 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
             val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
             val safeDescription = row.description.ifBlank { row.sessionId }
-            text = "<html><b>$marker ${row.title}</b>&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
+            text =
+                "<html><b>$marker ${row.title}</b>&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
             border = JBUI.Borders.empty(4, 8)
             return this
         }
@@ -355,14 +351,17 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 val removedHex = String.format("%06x", removedColor.rgb and 0xFFFFFF)
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><font color='#$removedHex'><s><b>${row.name}</b></s></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
+                text =
+                    "<html><font color='#$removedHex'><s><b>${row.name}</b></s></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
             } else if (row.isAdded) {
                 val addedStyle = DiffHighlightStyles.style(DiffHighlightKind.ADDED)
-                val addedColor = if (isSelected) foreground else (addedStyle.fg ?: JBColor(Color(0x2E7D32), Color(0x66BB6A)))
+                val addedColor =
+                    if (isSelected) foreground else (addedStyle.fg ?: JBColor(Color(0x2E7D32), Color(0x66BB6A)))
                 val addedHex = String.format("%06x", addedColor.rgb and 0xFFFFFF)
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><font color='#$addedHex'><b>${row.name}</b></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
+                text =
+                    "<html><font color='#$addedHex'><b>${row.name}</b></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
             } else {
                 val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
                 val hex = String.format("%06x", dimColor.rgb and 0xFFFFFF)

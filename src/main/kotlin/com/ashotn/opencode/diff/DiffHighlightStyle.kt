@@ -6,7 +6,6 @@ import java.awt.Color
 enum class DiffHighlightKind {
     ADDED,
     REMOVED,
-    MODIFIED,
 }
 
 data class DiffHighlightStyle(
@@ -28,9 +27,5 @@ object DiffHighlightStyles {
             border = JBColor(Color(188, 63, 63), Color(229, 115, 115)),
         )
 
-        DiffHighlightKind.MODIFIED -> DiffHighlightStyle(
-            bg = JBColor(Color(255, 193, 7, 45), Color(255, 213, 79, 55)),
-            fg = JBColor(Color(166, 124, 0), Color(255, 224, 130)),
-        )
     }
 }
