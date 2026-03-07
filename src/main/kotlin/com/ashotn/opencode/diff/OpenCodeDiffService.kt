@@ -480,13 +480,14 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun resolveSelectedSessionIdLocked(): String? = stateStore.resolveSelectedSessionId(
         stateLock = stateLock,
-    ) { selectedSessionId ->
+    ) { selectedSessionId, explicitlyCleared ->
         scopeResolver.resolveSelectedSessionId(
             selectedSessionId = selectedSessionId,
             knownSessionIds = knownSessionIdsLocked(),
             updatedAtBySession = stateStore.updatedAtBySession,
             busyBySession = stateStore.busyBySession,
             parentBySessionId = parentBySessionId,
+            explicitlyCleared = explicitlyCleared,
         )
     }
 

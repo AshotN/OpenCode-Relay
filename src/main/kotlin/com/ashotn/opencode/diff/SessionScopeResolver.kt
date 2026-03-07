@@ -24,10 +24,13 @@ internal class SessionScopeResolver {
         updatedAtBySession: Map<String, Long> = emptyMap(),
         busyBySession: Map<String, Boolean> = emptyMap(),
         parentBySessionId: Map<String, String> = emptyMap(),
+        explicitlyCleared: Boolean = false,
     ): String? {
         if (selectedSessionId != null && selectedSessionId in knownSessionIds) {
             return selectedSessionId
         }
+        // User explicitly cleared the selection — do not auto-select.
+        if (explicitlyCleared) return null
         // No explicit selection — auto-select the most recently active root session.
         val rootSessions = knownSessionIds.filter { it !in parentBySessionId }
         if (rootSessions.isEmpty()) return null

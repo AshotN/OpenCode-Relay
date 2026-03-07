@@ -19,6 +19,10 @@ internal class DiffStateStore {
     @Volatile
     var selectedSessionId: String? = null
 
+    /** True when the user has explicitly cleared the selection via selectSession(null). */
+    @Volatile
+    var sessionExplicitlyCleared: Boolean = false
+
 
     val busyBySession = ConcurrentHashMap<String, Boolean>()
     val updatedAtBySession = ConcurrentHashMap<String, Long>()
@@ -158,19 +162,25 @@ internal class DiffStateStore {
         requestedSessionId: String?,
         sessionExists: (String) -> Boolean,
     ): String? = synchronized(stateLock) {
-        selectedSessionId = when {
-            requestedSessionId == null -> null
-            sessionExists(requestedSessionId) -> requestedSessionId
-            else -> selectedSessionId
+        when {
+            requestedSessionId == null -> {
+                selectedSessionId = null
+                sessionExplicitlyCleared = true
+            }
+            sessionExists(requestedSessionId) -> {
+                selectedSessionId = requestedSessionId
+                sessionExplicitlyCleared = false
+            }
+            // requested session not yet known — leave existing selection untouched
         }
         selectedSessionId
     }
 
     fun resolveSelectedSessionId(
         stateLock: Any,
-        resolver: (selectedSessionId: String?) -> String?,
+        resolver: (selectedSessionId: String?, explicitlyCleared: Boolean) -> String?,
     ): String? = synchronized(stateLock) {
-        val resolved = resolver(selectedSessionId)
+        val resolved = resolver(selectedSessionId, sessionExplicitlyCleared)
         selectedSessionId = resolved
         resolved
     }
@@ -320,5 +330,6 @@ internal class DiffStateStore {
         pendingTurnFilesBySession.clear()
         diffApplyRevisionBySession.clear()
         selectedSessionId = null
+        sessionExplicitlyCleared = false
     }
 }
