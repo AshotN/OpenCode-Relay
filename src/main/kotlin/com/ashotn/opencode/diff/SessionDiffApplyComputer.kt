@@ -22,11 +22,15 @@ internal class SessionDiffApplyComputer(
         val newAdded = HashSet<String>()
         val newBaselineByFile = HashMap<String, String>()
         val nextAfterByFile = previousAfterByFile.toMutableMap()
+        var outOfScopeCount = 0
+        var baselineMatchCount = 0
+        var zeroHunkCount = 0
 
         for (diffFile in event.files) {
             val absPath = DiffTextUtil.toAbsolutePath(projectBase, diffFile.file)
 
             if (!fromHistory && turnScope != null && absPath !in turnScope) {
+                outOfScopeCount += 1
                 continue
             }
 
@@ -43,14 +47,10 @@ internal class SessionDiffApplyComputer(
             val hasContentChange =
                 DiffTextUtil.normalizeContent(effectiveBefore) != DiffTextUtil.normalizeContent(actualAfter)
 
-            log.debug(
-                "OpenCodeDiffService: file=${diffFile.file} status=${diffFile.status} beforeEqDisk=${!hasContentChange} additions=${diffFile.additions} deletions=${diffFile.deletions}",
-            )
-
             nextAfterByFile[absPath] = actualAfter
 
             if (!hasContentChange) {
-                log.debug("OpenCodeDiffService: skip baseline-matching file=${diffFile.file}")
+                baselineMatchCount += 1
                 continue
             }
 
@@ -62,9 +62,8 @@ internal class SessionDiffApplyComputer(
                 deletions = diffFile.deletions,
             )
             val hunks = hunkComputer.compute(fileDiff, event.sessionId)
-            log.debug("OpenCodeDiffService: file=${diffFile.file} hunks=${hunks.size}")
             if (hunks.isEmpty()) {
-                log.debug("OpenCodeDiffService: skip zero-hunk file=${diffFile.file}")
+                zeroHunkCount += 1
                 continue
             }
 
@@ -73,6 +72,10 @@ internal class SessionDiffApplyComputer(
             if (actualAfter.isEmpty()) newDeleted.add(absPath)
             if (diffFile.status == SessionDiffStatus.ADDED && actualAfter.isNotEmpty()) newAdded.add(absPath)
         }
+
+        log.debug(
+            "SessionDiffApplyComputer: compute session.diff session=${event.sessionId} fileCount=${event.files.size} emittedFileCount=${newHunksByFile.size} baselineMatchedFileCount=$baselineMatchCount zeroHunkFileCount=$zeroHunkCount outOfScopeFileCount=$outOfScopeCount fromHistory=$fromHistory",
+        )
 
         return DiffStateStore.SessionDiffComputedState(
             nextAfterByFile = nextAfterByFile,

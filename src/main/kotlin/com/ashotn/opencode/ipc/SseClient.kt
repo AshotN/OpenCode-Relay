@@ -142,17 +142,24 @@ class SseClient(
             }
 
             if (event != null) {
-                log.debug("SseClient: dispatching ${event::class.simpleName}")
                 onEvent(event)
             }
         } catch (e: Exception) {
-            log.warn("SseClient: failed to parse event JSON=${json.take(500)}", e)
+            log.warn("SseClient: failed to parse event jsonLength=${json.length}", e)
         }
     }
 
     private fun parseSessionDiff(props: JsonObject): OpenCodeEvent.SessionDiff? {
-        val sessionId = props.getStringOrNull("sessionID") ?: return null
-        val diffArray = props.getAsJsonArray("diff") ?: return null
+        val sessionId = props.getStringOrNull("sessionID")
+        if (sessionId == null) {
+            log.debug("SseClient: skip session.diff reason=missingSessionId")
+            return null
+        }
+        val diffArray = props.getAsJsonArray("diff")
+        if (diffArray == null) {
+            log.debug("SseClient: skip session.diff reason=missingDiffArray session=$sessionId")
+            return null
+        }
         val files = diffArray.mapNotNull { elem ->
             if (!elem.isJsonObject) return@mapNotNull null
             val obj = elem.asJsonObject
@@ -171,7 +178,7 @@ class SseClient(
             OpenCodeEvent.SessionDiffFile(file, before, after, additions, deletions, status)
         }
 
-        log.debug("SseClient: session.diff sessionId=$sessionId files=${files.map { it.file }}")
+        log.debug("SseClient: parsed session.diff session=$sessionId fileCount=${files.size}")
         return OpenCodeEvent.SessionDiff(sessionId, files)
     }
 

@@ -54,7 +54,6 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         val filePath = file.path
         val diffService = OpenCodeDiffService.getInstance(project)
         if (diffService.hasPendingHunks(filePath)) {
-            log.debug("EditorDiffRenderer: fileOpened with pending hunks: $filePath")
             ApplicationManager.getApplication().invokeLater {
                 refreshFile(filePath)
             }
@@ -66,22 +65,16 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
 
         val diffService = OpenCodeDiffService.getInstance(project)
         val hunks = diffService.getHunks(filePath).filter { it.state == HunkState.PENDING }
-        log.debug("EditorDiffRenderer: refreshFile $filePath - ${hunks.size} pending hunks")
+        log.debug("EditorDiffRenderer: refresh file=$filePath pendingHunkCount=${hunks.size}")
         if (hunks.isEmpty()) return
 
         val editors = editorsForPath(filePath)
-        log.debug("EditorDiffRenderer: found ${editors.size} open editors for $filePath")
         if (editors.isEmpty()) return
 
         val document = editors.first().document
         val markup = FileMarkup()
 
-        log.debug("EditorDiffRenderer: document lineCount=${document.lineCount}")
-
         for (hunk in hunks) {
-            log.debug(
-                "EditorDiffRenderer: rendering hunk startLine=${hunk.startLine} removed=${hunk.removedLines.size} added=${hunk.addedLines.size}",
-            )
 
             if (hunk.addedLines.isNotEmpty() && document.lineCount > 0) {
                 val startLine = hunk.startLine.coerceIn(0, document.lineCount - 1)
@@ -125,7 +118,9 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         }
 
         markupByFile[filePath] = markup
-        log.debug("EditorDiffRenderer: done - ${markup.highlighters.size} highlighters, ${markup.inlays.size} inlays")
+        log.debug(
+            "EditorDiffRenderer: render complete file=$filePath editorCount=${editors.size} highlighterCount=${markup.highlighters.size} inlayCount=${markup.inlays.size} pendingHunkCount=${hunks.size}",
+        )
     }
 
     private fun clearMarkup(filePath: String) {

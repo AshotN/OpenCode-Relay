@@ -112,16 +112,18 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             is OpenCodeEvent.SessionDiff -> handleSessionDiff(event, fromHistory = false, generation = generation)
             is OpenCodeEvent.SessionBusy -> {
                 markSessionBusy(event.sessionId, true, generation)
-                log.debug("OpenCodeDiffService: session busy ${event.sessionId}")
             }
 
             is OpenCodeEvent.SessionIdle -> {
                 markSessionBusy(event.sessionId, false, generation)
-                log.debug("OpenCodeDiffService: session idle ${event.sessionId}")
             }
 
             is OpenCodeEvent.TurnPatch -> {
-                val projectBase = project.basePath ?: return
+                val projectBase = project.basePath
+                if (projectBase == null) {
+                    log.debug("OpenCodeDiffService: skip turn.patch reason=missingProjectBase generation=$generation")
+                    return
+                }
                 val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(projectBase, event.files)
                 if (generation != lifecycleGeneration.get()) return
                 val committed = eventReducer.commitTurnPatch(
@@ -133,7 +135,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     currentGeneration = { lifecycleGeneration.get() },
                 )
                 if (!committed) return
-                log.debug("OpenCodeDiffService: stashed turn patch session=${event.sessionId} files=${touchedPaths.size}")
+                log.debug("OpenCodeDiffService: turn.patch recorded session=${event.sessionId} touchedFileCount=${touchedPaths.size} generation=$generation")
             }
 
             is OpenCodeEvent.PermissionAsked -> permissionService.handlePermissionAsked(event)
@@ -161,7 +163,11 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun handleSessionDiff(event: OpenCodeEvent.SessionDiff, fromHistory: Boolean, generation: Long) {
         if (generation != lifecycleGeneration.get()) return
-        val projectBase = project.basePath ?: return
+        val projectBase = project.basePath
+        if (projectBase == null) {
+            log.debug("OpenCodeDiffService: skip session.diff reason=missingProjectBase session=${event.sessionId} generation=$generation")
+            return
+        }
 
         val applyDecision = eventReducer.beginSessionDiffApply(
             stateStore = stateStore,
@@ -174,11 +180,11 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         if (!applyDecision.shouldApply) {
             when (applyDecision.skipReason) {
                 DiffEventReducer.SessionDiffSkipReason.UNSCOPED_LIVE -> {
-                    log.debug("OpenCodeDiffService: ignoring unscoped live session.diff for ${event.sessionId}")
+                    log.debug("OpenCodeDiffService: skip session.diff reason=unscopedLive session=${event.sessionId} generation=$generation")
                 }
 
                 DiffEventReducer.SessionDiffSkipReason.STALE_OR_ALREADY_LOADED -> {
-                    log.debug("OpenCodeDiffService: skipping history apply for already-seen session ${event.sessionId}")
+                    log.debug("OpenCodeDiffService: skip session.diff reason=historyAlreadyLoaded session=${event.sessionId} generation=$generation")
                 }
 
                 null -> {
@@ -193,7 +199,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
             log.debug(
-                "OpenCodeDiffService: apply session.diff session=${event.sessionId} revision=$revision files=${event.files.size} fromHistory=$fromHistory",
+                "OpenCodeDiffService: apply session.diff session=${event.sessionId} revision=$revision fileCount=${event.files.size} fromHistory=$fromHistory generation=$generation",
             )
 
             val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
@@ -224,7 +230,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 currentGeneration = { lifecycleGeneration.get() },
             )
             if (commitResult == null) {
-                log.debug("OpenCodeDiffService: skipping stale session.diff apply revision=$revision")
+                log.debug("OpenCodeDiffService: skip session.diff reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
                 return@executeOnPooledThread
             }
 
@@ -232,7 +238,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             val changedFiles = commitResult.changedFiles
 
             log.debug(
-                "OpenCodeDiffService: applied session=${event.sessionId} trackedFiles=${computedState.newHunksByFile.size} deletedFiles=${computedState.newDeleted.size} addedFiles=${computedState.newAdded.size}",
+                "OpenCodeDiffService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} removedFileCount=${removedFiles.size} generation=$generation",
             )
 
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
@@ -294,8 +300,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             readCurrentContent = { absPath -> documentSyncService.readCurrentContent(absPath) },
         ) ?: return
 
-        reconcileDecision.removedPaths.forEach { path ->
-            log.debug("OpenCodeDiffService: reconcile removed baseline-matching file=$path")
+        if (reconcileDecision.removedPaths.isNotEmpty()) {
+            log.debug(
+                "OpenCodeDiffService: reconcile session=$sessionId revision=$revision removedBaselineMatchCount=${reconcileDecision.removedPaths.size} generation=$generation",
+            )
         }
 
         val committed = stateStore.commitReconcile(
@@ -500,13 +508,18 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
                 val result = sessionApiClient.fetchSessionDiffSnapshot(currentPort, sessionId)
-                if (!result.success) return@executeOnPooledThread
+                if (!result.success) {
+                    log.debug(
+                        "OpenCodeDiffService: skip historical snapshot reason=requestFailed session=$sessionId port=$currentPort generation=$generation",
+                    )
+                    return@executeOnPooledThread
+                }
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
                 val event = result.event ?: return@executeOnPooledThread
                 handleSessionDiff(event, fromHistory = true, generation = generation)
             } catch (e: Exception) {
-                log.debug("OpenCodeDiffService: failed historical diff load for $sessionId", e)
+                log.debug("OpenCodeDiffService: failed historical snapshot load session=$sessionId port=$currentPort generation=$generation", e)
             } finally {
                 historicalDiffLoadInFlight.remove(sessionId)
             }
@@ -525,7 +538,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
                 val snapshot = sessionApiClient.fetchSessionHierarchy(currentPort)
-                if (snapshot.sessionIds.isEmpty()) return@executeOnPooledThread
+                if (snapshot.sessionIds.isEmpty()) {
+                    log.debug("OpenCodeDiffService: skip hierarchy refresh reason=emptySnapshot port=$currentPort generation=$generation")
+                    return@executeOnPooledThread
+                }
 
                 val changed = synchronized(stateLock) {
                     if (generation != lifecycleGeneration.get()) return@synchronized false
@@ -567,7 +583,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     ensureHistoricalFamilyLoadedAsync(selected, generation)
                 }
             } catch (e: Exception) {
-                log.debug("OpenCodeDiffService: failed to refresh session hierarchy", e)
+                log.debug("OpenCodeDiffService: failed hierarchy refresh port=$currentPort generation=$generation", e)
             } finally {
                 hierarchyRefreshInFlight.set(false)
             }
