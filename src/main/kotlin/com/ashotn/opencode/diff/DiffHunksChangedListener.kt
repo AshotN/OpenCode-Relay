@@ -4,7 +4,7 @@ import com.intellij.util.messages.Topic
 
 /**
  * Published on the project message bus whenever the set of [DiffHunk]s for a
- * file changes (new diffs arrived, or hunks were accepted/rejected/cleared).
+ * file changes (new diffs arrived, or hunks were cleared).
  *
  * Subscribers ([EditorDiffRenderer]) refresh their markup for the given file.
  */

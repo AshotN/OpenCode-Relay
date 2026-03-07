@@ -64,7 +64,7 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         clearMarkup(filePath)
 
         val diffService = OpenCodeDiffService.getInstance(project)
-        val hunks = diffService.getHunks(filePath).filter { it.state == HunkState.PENDING }
+        val hunks = diffService.getHunks(filePath)
         log.debug("EditorDiffRenderer: refresh file=$filePath pendingHunkCount=${hunks.size}")
         if (hunks.isEmpty()) return
 

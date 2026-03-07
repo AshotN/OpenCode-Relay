@@ -411,7 +411,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     fun hasPendingHunks(filePath: String): Boolean {
         return synchronized(stateLock) {
-            inlineHunks(filePath).any { it.state == HunkState.PENDING }
+            inlineHunks(filePath).isNotEmpty()
         }
     }
 

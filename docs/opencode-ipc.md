@@ -245,7 +245,7 @@ Use exact path parameter names as shown.
 - `POST /tui/select-session` (`tui.selectSession`)
 - `GET /tui/control/next` (`tui.control.next`)
 - `POST /tui/control/response` (`tui.control.response`)
-- `POST /instance/dispose` (`instance.dispose`)
+- `POST /instance/dispose` (`instance.dispose`) - Does not shutdown the server
 
 ### Other
 

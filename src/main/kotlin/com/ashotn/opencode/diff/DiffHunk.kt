@@ -17,5 +17,4 @@ data class DiffHunk(
     val removedLines: List<String>,
     val addedLines: List<String>,
     val sessionId: String,
-    val state: HunkState = HunkState.PENDING,
 )
