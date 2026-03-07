@@ -1,499 +1,314 @@
-# OpenCode IDE ↔ Process Communication
+# OpenCode IDE <-> Process Communication (LLM Reference)
 
-Reference document for how a JetBrains plugin communicates with a running OpenCode process.
-Sources: https://opencode.ai/docs/server/, https://opencode.ai/docs/sdk/, https://opencode.ai/docs/ide/, https://opencode.ai/docs/cli/, https://opencode.ai/docs/plugins/
+This document is a practical, LLM-oriented guide for calling a running OpenCode server from an IDE/plugin process.
 
----
+Canonical source of truth: `http://localhost:4096/doc` (OpenAPI JSON).
+This file is synchronized against live spec `openapi: 3.1.1`, `info.version: 0.0.3`.
 
-## Architecture Overview
+## What `/doc` Returns
 
-When `opencode` (or `opencode serve`) runs, it starts an **HTTP server** on `127.0.0.1:4096` by default.
-The TUI is just a client to this server — meaning any external process (like a JetBrains plugin) can
-interact with OpenCode entirely over HTTP.
-
-```
-JetBrains Plugin  ──HTTP REST──►  OpenCode HTTP Server (localhost:4096)
-                  ◄──SSE events──
-```
-
-The full OpenAPI 3.1 spec is published at:
-```
-http://<hostname>:<port>/doc
-```
+- `GET /doc` serves OpenAPI JSON (`Content-Type: application/json`), not HTML.
+- The payload includes all paths, request bodies, query/path params, and schemas.
+- When behavior here and `/doc` differ, trust `/doc`.
 
 ---
 
-## Starting the Server
+## Architecture
 
-### `opencode serve` (headless, no TUI)
+When `opencode` or `opencode serve` runs, an HTTP server is exposed on `127.0.0.1:4096` by default.
 
-```
-opencode serve [--port <number>] [--hostname <string>] [--cors <origin>]
-```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--port` | `4096` | Port to listen on |
-| `--hostname` | `127.0.0.1` | Hostname to listen on |
-| `--mdns` | `false` | Enable mDNS discovery |
-| `--cors` | `[]` | Additional browser origins to allow |
-
-### `opencode` (TUI + server)
-
-When you run the plain TUI it also starts a server. Use `--port` and `--hostname` flags to pin the port:
-
-```
-opencode --port 4096 --hostname 127.0.0.1
+```text
+JetBrains Plugin  -- HTTP JSON --> OpenCode Server
+                 <-- SSE events --
 ```
 
-You can then connect to its server from the plugin using the known port.
-
-### Authentication (optional)
-
-Set `OPENCODE_SERVER_PASSWORD` to protect the server with HTTP basic auth (username defaults to `opencode`,
-or override with `OPENCODE_SERVER_USERNAME`):
-
-```
-OPENCODE_SERVER_PASSWORD=your-password opencode serve
-```
+The plugin can drive the TUI and/or use direct session APIs.
 
 ---
 
-## IDE Integration Pattern
+## Authentication
 
-The docs explicitly describe this pattern for IDE plugins:
+If server-side basic auth is enabled, include an `Authorization: Basic ...` header on API calls.
 
-> "The `/tui` endpoint can be used to drive the TUI through the server. For example, you can prefill or
-> run a prompt. **This setup is used by the OpenCode IDE plugins.**"
-
-Recommended flow:
-1. Plugin starts `opencode serve --port <port>` as a child process (or detects a running instance)
-2. Plugin polls `GET /global/health` to confirm the server is up
-3. Plugin subscribes to `GET /event` (SSE) for real-time updates
-4. Plugin uses `POST /tui/append-prompt` + `POST /tui/submit-prompt` to send prompts from IDE actions
-5. Plugin uses `POST /session/:id/message` for direct session-level messaging
+Environment variables used by the server:
+- `OPENCODE_SERVER_PASSWORD`
+- `OPENCODE_SERVER_USERNAME` (defaults to `opencode`)
 
 ---
 
-## HTTP API Reference
+## SSE Event Model
 
-### Global
+### Streams
 
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/global/health` | Server health and version | `{ healthy: true, version: string }` |
-| `GET` | `/global/event` | Global SSE event stream | Event stream |
+- `GET /event`: standard event stream.
+- `GET /global/event`: global event stream with wrapper object.
 
-### Project
+`/global/event` yields:
 
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/project` | List all projects | `Project[]` |
-| `GET` | `/project/current` | Get the current project | `Project` |
+```json
+{
+  "directory": "...",
+  "payload": { "type": "...", "properties": { ... } }
+}
+```
 
-### Path & VCS
+### Event types in current schema
 
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/path` | Get the current path | `Path` |
-| `GET` | `/vcs` | Get VCS info for current project | `VcsInfo` |
-
-### Instance
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `POST` | `/instance/dispose` | Dispose the current instance | `boolean` |
-
-### Config
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/config` | Get config info | `Config` |
-| `PATCH` | `/config` | Update config | `Config` |
-| `GET` | `/config/providers` | List providers and default models | `{ providers: Provider[], default: { [key: string]: string } }` |
-
-### Provider
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/provider` | List all providers | `{ all: Provider[], default: {...}, connected: string[] }` |
-| `GET` | `/provider/auth` | Get provider auth methods | `{ [providerID: string]: ProviderAuthMethod[] }` |
-| `POST` | `/provider/{id}/oauth/authorize` | Authorize a provider via OAuth | `ProviderAuthAuthorization` |
-| `POST` | `/provider/{id}/oauth/callback` | Handle OAuth callback | `boolean` |
-
-### Sessions
-
-| Method | Path | Description | Notes |
-|---|---|---|---|
-| `GET` | `/session` | List all sessions | Returns `Session[]` |
-| `POST` | `/session` | Create a new session | body: `{ parentID?, title? }` |
-| `GET` | `/session/status` | Get status for all sessions | Returns `{ [sessionID]: SessionStatus }` |
-| `GET` | `/session/:id` | Get session details | Returns `Session` |
-| `DELETE` | `/session/:id` | Delete a session | Returns `boolean` |
-| `PATCH` | `/session/:id` | Update session properties | body: `{ title? }` |
-| `GET` | `/session/:id/children` | Get child sessions | Returns `Session[]` |
-| `GET` | `/session/:id/todo` | Get todo list for a session | Returns `Todo[]` |
-| `POST` | `/session/:id/init` | Analyze app, create `AGENTS.md` | body: `{ messageID, providerID, modelID }` |
-| `POST` | `/session/:id/fork` | Fork a session at a message | body: `{ messageID? }` |
-| `POST` | `/session/:id/abort` | Abort a running session | Returns `boolean` |
-| `POST` | `/session/:id/share` | Share a session | Returns `Session` |
-| `DELETE` | `/session/:id/share` | Unshare a session | Returns `Session` |
-| `GET` | `/session/:id/diff` | Get the diff for this session | query: `messageID?` |
-| `POST` | `/session/:id/summarize` | Summarize the session | body: `{ providerID, modelID }` |
-| `POST` | `/session/:id/revert` | Revert a message | body: `{ messageID, partID? }` |
-| `POST` | `/session/:id/unrevert` | Restore reverted messages | Returns `boolean` |
-| `POST` | `/session/:id/permissions/:permissionID` | Respond to a permission request | body: `{ response, remember? }` |
-
-### Messages
-
-| Method | Path | Description | Notes |
-|---|---|---|---|
-| `GET` | `/session/:id/message` | List messages | query: `limit?` |
-| `POST` | `/session/:id/message` | Send a message and **wait** for response | body: `{ messageID?, model?, agent?, noReply?, system?, tools?, parts }` |
-| `GET` | `/session/:id/message/:messageID` | Get message details | |
-| `POST` | `/session/:id/prompt_async` | Send a message **asynchronously** (no wait) | Returns `204 No Content` |
-| `POST` | `/session/:id/command` | Execute a slash command | body: `{ messageID?, agent?, model?, command, arguments }` |
-| `POST` | `/session/:id/shell` | Run a shell command | body: `{ agent, model?, command }` |
-
-#### Sending a message (body parts)
-
-The `parts` array supports:
-- `{ type: "text", text: "..." }` — plain text
-- File attachments and other part types per OpenAPI spec
-
-Setting `noReply: true` injects context into the session without triggering an AI response — useful for providing editor context.
-
-### Commands
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/command` | List all available commands | `Command[]` |
-
-### Files
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/find?pattern=<pat>` | Search for text in files | Array of match objects |
-| `GET` | `/find/file?query=<q>` | Find files by name (fuzzy) | `string[]` |
-| `GET` | `/find/symbol?query=<q>` | Find workspace symbols | `Symbol[]` |
-| `GET` | `/file?path=<path>` | List files and directories | `FileNode[]` |
-| `GET` | `/file/content?path=<p>` | Read a file | `FileContent` |
-| `GET` | `/file/status` | Get status for tracked files | `File[]` |
-
-### Tools (Experimental)
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/experimental/tool/ids` | List all tool IDs | `ToolIDs` |
-| `GET` | `/experimental/tool?provider=<p>&model=<m>` | List tools with JSON schemas | `ToolList` |
-
-### LSP, Formatters & MCP
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/lsp` | Get LSP server status | `LSPStatus[]` |
-| `GET` | `/formatter` | Get formatter status | `FormatterStatus[]` |
-| `GET` | `/mcp` | Get MCP server status | `{ [name: string]: MCPStatus }` |
-| `POST` | `/mcp` | Add MCP server dynamically | body: `{ name, config }` |
-
-### Agents
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/agent` | List all available agents | `Agent[]` |
-
-### Logging
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `POST` | `/log` | Write log entry | body: `{ service, level, message, extra? }` |
-
-### TUI Control (Key endpoints for IDE plugins)
-
-These endpoints drive the TUI from outside — the primary mechanism used by IDE plugins.
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `POST` | `/tui/append-prompt` | Append text to the prompt input | `boolean` |
-| `POST` | `/tui/submit-prompt` | Submit the current prompt | `boolean` |
-| `POST` | `/tui/clear-prompt` | Clear the prompt | `boolean` |
-| `POST` | `/tui/execute-command` | Execute a command (`{ command }`) | `boolean` |
-| `POST` | `/tui/show-toast` | Show toast (`{ title?, message, variant }`) | `boolean` |
-| `POST` | `/tui/open-help` | Open the help dialog | `boolean` |
-| `POST` | `/tui/open-sessions` | Open the session selector | `boolean` |
-| `POST` | `/tui/open-themes` | Open the theme selector | `boolean` |
-| `POST` | `/tui/open-models` | Open the model selector | `boolean` |
-| `GET` | `/tui/control/next` | Wait for next control request | Control request object |
-| `POST` | `/tui/control/response` | Respond to a control request (`{ body }`) | `boolean` |
-
-### Auth
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `PUT` | `/auth/:id` | Set authentication credentials | `boolean` |
-
-### Events (SSE)
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/event` | Subscribe to server-sent events | SSE stream |
-
-The first event is always `server.connected`, then bus events follow.
-
-### Docs
-
-| Method | Path | Description | Response |
-|---|---|---|---|
-| `GET` | `/doc` | OpenAPI 3.1 specification | HTML with spec |
-
----
-
-## Server-Sent Events (SSE)
-
-Subscribe to `GET /event` (or `GET /global/event`) to receive real-time events.
-
-### Available Event Types
-
-#### Command Events
-- `command.executed`
-
-#### File Events
-- `file.edited`
-- `file.watcher.updated`
-
-#### Installation Events
-- `installation.updated`
-
-#### LSP Events
-- `lsp.client.diagnostics`
-- `lsp.updated`
-
-#### Message Events
-- `message.part.removed`
-- `message.part.updated`
-- `message.removed`
-- `message.updated`
-
-#### Permission Events
-- `permission.asked`
-- `permission.replied`
-
-#### Server Events
-- `server.connected` ← always first event on connection
-
-#### Session Events
-- `session.created`
-- `session.compacted`
-- `session.deleted`
-- `session.diff`
-- `session.error`
-- `session.idle` ← AI finished responding
-- `session.status`
-- `session.updated`
-
-#### Todo Events
-- `todo.updated`
-
-#### Shell Events
-- `shell.env`
-
-#### Tool Events
-- `tool.execute.after`
-- `tool.execute.before`
-
-#### TUI Events
+- `server.connected`
+- `global.disposed`
 - `tui.prompt.append`
 - `tui.command.execute`
 - `tui.toast.show`
+- `tui.session.select`
+- `installation.updated`
+- `installation.update-available`
+- `project.updated`
+- `workspace.ready`
+- `workspace.failed`
+- `server.instance.disposed`
+- `file.edited`
+- `worktree.ready`
+- `worktree.failed`
+- `lsp.client.diagnostics`
+- `permission.asked`
+- `permission.replied`
+- `session.status`
+- `session.idle`
+- `question.asked`
+- `question.replied`
+- `question.rejected`
+- `todo.updated`
+- `pty.created`
+- `pty.updated`
+- `pty.exited`
+- `pty.deleted`
+- `file.watcher.updated`
+- `mcp.tools.changed`
+- `mcp.browser.open.failed`
+- `lsp.updated`
+- `vcs.branch.updated`
+- `command.executed`
+- `message.updated`
+- `message.removed`
+- `message.part.updated`
+- `message.part.delta`
+- `message.part.removed`
+- `session.compacted`
+- `session.created`
+- `session.updated`
+- `session.deleted`
+- `session.diff`
+- `session.error`
+
+Operationally, expect `server.connected` as the initial event on new stream subscriptions.
 
 ---
 
-## CLI Commands Relevant to Plugin Lifecycle
+## Complete Endpoint Inventory (Spec 0.0.3)
 
-```
-# Start headless server (no TUI)
-opencode serve --port 4096
+Use exact path parameter names as shown.
 
-# Start TUI with pinned port (server accessible at same port)
-opencode --port 4096
+### Global
 
-# Run a single prompt non-interactively (scripting/automation)
-opencode run "Explain closures in JavaScript"
+- `GET /global/health` (`global.health`)
+- `GET /global/event` (`global.event`)
+- `GET /global/config` (`global.config.get`)
+- `PATCH /global/config` (`global.config.update`)
+- `POST /global/dispose` (`global.dispose`)
 
-# Attach to a running serve instance (avoids MCP cold boot)
-opencode run --attach http://localhost:4096 "Refactor this function"
+### Auth
 
-# Attach TUI to a remote/already-running backend
-opencode attach http://localhost:4096
-```
+- `PUT /auth/{providerID}` (`auth.set`)
+- `DELETE /auth/{providerID}` (`auth.remove`)
 
-### Global Flags
+### Project
 
-| Flag | Description |
-|---|---|
-| `--port` | Port to listen on |
-| `--hostname` | Hostname to listen on |
-| `--continue` / `-c` | Continue the last session |
-| `--session` / `-s` | Session ID to continue |
-| `--model` / `-m` | Model to use (`provider/model`) |
-| `--agent` | Agent to use |
-| `--prompt` | Prompt to use on startup |
+- `GET /project` (`project.list`)
+- `GET /project/current` (`project.current`)
+- `PATCH /project/{projectID}` (`project.update`)
 
-### Relevant Environment Variables
+### PTY
 
-| Variable | Type | Description |
-|---|---|---|
-| `OPENCODE_SERVER_PASSWORD` | string | Enable basic auth for `serve`/`web` |
-| `OPENCODE_SERVER_USERNAME` | string | Override basic auth username (default `opencode`) |
-| `OPENCODE_CLIENT` | string | Client identifier (defaults to `cli`) |
-| `OPENCODE_CONFIG` | string | Path to config file |
-| `OPENCODE_CONFIG_DIR` | string | Path to config directory |
+- `GET /pty` (`pty.list`)
+- `POST /pty` (`pty.create`)
+- `GET /pty/{ptyID}` (`pty.get`)
+- `PUT /pty/{ptyID}` (`pty.update`)
+- `DELETE /pty/{ptyID}` (`pty.remove`)
+- `GET /pty/{ptyID}/connect` (`pty.connect`)
+
+### Config
+
+- `GET /config` (`config.get`)
+- `PATCH /config` (`config.update`)
+- `GET /config/providers` (`config.providers`)
+
+### Providers
+
+- `GET /provider` (`provider.list`)
+- `GET /provider/auth` (`provider.auth`)
+- `POST /provider/{providerID}/oauth/authorize` (`provider.oauth.authorize`)
+- `POST /provider/{providerID}/oauth/callback` (`provider.oauth.callback`)
+
+### Sessions and Messages
+
+- `GET /session` (`session.list`)
+- `POST /session` (`session.create`)
+- `GET /session/status` (`session.status`)
+- `GET /session/{sessionID}` (`session.get`)
+- `DELETE /session/{sessionID}` (`session.delete`)
+- `PATCH /session/{sessionID}` (`session.update`)
+- `GET /session/{sessionID}/children` (`session.children`)
+- `GET /session/{sessionID}/todo` (`session.todo`)
+- `POST /session/{sessionID}/init` (`session.init`)
+- `POST /session/{sessionID}/fork` (`session.fork`)
+- `POST /session/{sessionID}/abort` (`session.abort`)
+- `POST /session/{sessionID}/share` (`session.share`)
+- `DELETE /session/{sessionID}/share` (`session.unshare`)
+- `GET /session/{sessionID}/diff` (`session.diff`)
+- `POST /session/{sessionID}/summarize` (`session.summarize`)
+- `GET /session/{sessionID}/message` (`session.messages`)
+- `POST /session/{sessionID}/message` (`session.prompt`)
+- `GET /session/{sessionID}/message/{messageID}` (`session.message`)
+- `DELETE /session/{sessionID}/message/{messageID}` (`session.deleteMessage`)
+- `DELETE /session/{sessionID}/message/{messageID}/part/{partID}` (`part.delete`)
+- `PATCH /session/{sessionID}/message/{messageID}/part/{partID}` (`part.update`)
+- `POST /session/{sessionID}/prompt_async` (`session.prompt_async`)
+- `POST /session/{sessionID}/command` (`session.command`)
+- `POST /session/{sessionID}/shell` (`session.shell`)
+- `POST /session/{sessionID}/revert` (`session.revert`)
+- `POST /session/{sessionID}/unrevert` (`session.unrevert`)
+- `POST /session/{sessionID}/permissions/{permissionID}` (`permission.respond`)
+
+### Permission and Questions
+
+- `GET /permission` (`permission.list`)
+- `POST /permission/{requestID}/reply` (`permission.reply`)
+- `GET /question` (`question.list`)
+- `POST /question/{requestID}/reply` (`question.reply`)
+- `POST /question/{requestID}/reject` (`question.reject`)
+
+### Commands, Agents, Skills, Logging
+
+- `GET /command` (`command.list`)
+- `GET /agent` (`app.agents`)
+- `GET /skill` (`app.skills`)
+- `POST /log` (`app.log`)
+
+### Files and Search
+
+- `GET /find` (`find.text`)
+- `GET /find/file` (`find.files`)
+- `GET /find/symbol` (`find.symbols`)
+- `GET /file` (`file.list`)
+- `GET /file/content` (`file.read`)
+- `GET /file/status` (`file.status`)
+
+### MCP, LSP, Formatter
+
+- `GET /mcp` (`mcp.status`)
+- `POST /mcp` (`mcp.add`)
+- `POST /mcp/{name}/auth` (`mcp.auth.start`)
+- `DELETE /mcp/{name}/auth` (`mcp.auth.remove`)
+- `POST /mcp/{name}/auth/callback` (`mcp.auth.callback`)
+- `POST /mcp/{name}/auth/authenticate` (`mcp.auth.authenticate`)
+- `POST /mcp/{name}/connect` (`mcp.connect`)
+- `POST /mcp/{name}/disconnect` (`mcp.disconnect`)
+- `GET /lsp` (`lsp.status`)
+- `GET /formatter` (`formatter.status`)
+
+### Experimental
+
+- `GET /experimental/tool/ids` (`tool.ids`)
+- `GET /experimental/tool` (`tool.list`) - requires query `provider` and `model`; optional `directory`, `workspace`
+- `POST /experimental/workspace` (`experimental.workspace.create`)
+- `GET /experimental/workspace` (`experimental.workspace.list`)
+- `DELETE /experimental/workspace/{id}` (`experimental.workspace.remove`)
+- `POST /experimental/worktree` (`worktree.create`)
+- `GET /experimental/worktree` (`worktree.list`)
+- `DELETE /experimental/worktree` (`worktree.remove`)
+- `POST /experimental/worktree/reset` (`worktree.reset`)
+- `GET /experimental/session` (`experimental.session.list`)
+- `GET /experimental/resource` (`experimental.resource.list`)
+
+### TUI and Instance
+
+- `POST /tui/append-prompt` (`tui.appendPrompt`)
+- `POST /tui/open-help` (`tui.openHelp`)
+- `POST /tui/open-sessions` (`tui.openSessions`)
+- `POST /tui/open-themes` (`tui.openThemes`)
+- `POST /tui/open-models` (`tui.openModels`)
+- `POST /tui/submit-prompt` (`tui.submitPrompt`)
+- `POST /tui/clear-prompt` (`tui.clearPrompt`)
+- `POST /tui/execute-command` (`tui.executeCommand`)
+- `POST /tui/show-toast` (`tui.showToast`)
+- `POST /tui/publish` (`tui.publish`)
+- `POST /tui/select-session` (`tui.selectSession`)
+- `GET /tui/control/next` (`tui.control.next`)
+- `POST /tui/control/response` (`tui.control.response`)
+- `POST /instance/dispose` (`instance.dispose`)
+
+### Other
+
+- `GET /path` (`path.get`)
+- `GET /vcs` (`vcs.get`)
+- `GET /event` (`event.subscribe`)
 
 ---
 
-## MCP: OpenCode Calling Back into the IDE
+## Query/Path Parameter Notes for LLMs
 
-The reverse direction — OpenCode calling tools exposed by the JetBrains IDE — is handled via MCP.
-
-The JetBrains IDE exposes an MCP server (via the JetBrains MCP plugin) on `localhost:64342/sse`.
-This is configured in `opencode.json` so OpenCode can call IDE tools as part of its tool execution:
-
-```json
-{
-  "mcp": {
-    "jetbrains": {
-      "type": "remote",
-      "url": "http://localhost:64342/sse",
-      "enabled": true
-    }
-  }
-}
-```
-
-This is already set up in this project's `opencode.json`.
-
-### MCP Config Options
-
-#### Local MCP Server
-```json
-{
-  "mcp": {
-    "my-local-mcp": {
-      "type": "local",
-      "command": ["npx", "-y", "my-mcp-command"],
-      "enabled": true,
-      "environment": { "MY_ENV_VAR": "value" }
-    }
-  }
-}
-```
-
-#### Remote MCP Server (SSE)
-```json
-{
-  "mcp": {
-    "my-remote-mcp": {
-      "type": "remote",
-      "url": "https://my-mcp-server.com",
-      "enabled": true,
-      "headers": { "Authorization": "Bearer MY_API_KEY" }
-    }
-  }
-}
-```
+- Use exact path params from spec (`{sessionID}`, `{messageID}`, `{providerID}`, `{projectID}`, `{ptyID}`, `{requestID}`, `{permissionID}`, `{name}`).
+- Do not rewrite params as `:id` in generated code unless your HTTP client/router requires conversion.
+- Common query params to support explicitly:
+  - `/session/{sessionID}/message?limit=...`
+  - `/session/{sessionID}/diff?messageID=...`
+  - `/experimental/tool?provider=...&model=...&directory=...&workspace=...`
+  - `/file?path=...`, `/file/content?path=...`
+  - `/find?pattern=...`, `/find/file?query=...`, `/find/symbol?query=...`
 
 ---
 
-## JavaScript/TypeScript SDK (Reference — not for JVM)
+## JVM/Kotlin Integration Notes
 
-The `@opencode-ai/sdk` package provides a typed client for JS/TS environments. The JetBrains plugin
-cannot use this directly (JVM), but the API shapes are instructive for making equivalent HTTP calls from Kotlin.
+- HTTP: `java.net.http.HttpClient` or OkHttp.
+- JSON: kotlinx.serialization or Gson.
+- SSE: streaming HTTP response (manual parser) or OkHttp EventSource.
 
-### Key SDK Methods (maps to HTTP endpoints above)
-
-```typescript
-import { createOpencodeClient } from "@opencode-ai/sdk"
-
-const client = createOpencodeClient({ baseUrl: "http://localhost:4096" })
-
-// Health
-await client.global.health()
-
-// Sessions
-const session = await client.session.create({ body: { title: "My session" } })
-await client.session.list()
-
-// Send a prompt and wait for AI response
-const result = await client.session.prompt({
-  path: { id: session.id },
-  body: {
-    parts: [{ type: "text", text: "Hello!" }],
-    model: { providerID: "anthropic", modelID: "claude-3-5-sonnet-20241022" },
-  },
-})
-
-// Inject context without triggering AI response
-await client.session.prompt({
-  path: { id: session.id },
-  body: { noReply: true, parts: [{ type: "text", text: "Current file: Foo.kt" }] },
-})
-
-// TUI control
-await client.tui.appendPrompt({ body: { text: "Add this to prompt" } })
-await client.tui.submitPrompt()
-await client.tui.showToast({ body: { message: "Done", variant: "success" } })
-
-// Real-time events
-const events = await client.event.subscribe()
-for await (const event of events.stream) {
-  console.log(event.type, event.properties)
-}
-```
-
----
-
-## Kotlin/JVM Implementation Notes
-
-Since `@opencode-ai/sdk` is JS-only, HTTP calls from the plugin must be made with a JVM HTTP client.
-
-### Recommended approach
-
-- **HTTP client**: Java 11+ built-in `java.net.http.HttpClient` (no extra dependencies), or OkHttp
-- **JSON**: Gson or kotlinx.serialization (already available in IntelliJ plugin SDK)
-- **SSE**: Use `java.net.http.HttpClient` with a streaming body handler, or OkHttp's `EventSource`
-
-### Example: Health check (replaces raw TCP probe in `InstalledPanel.kt`)
+Minimal health check example:
 
 ```kotlin
 val client = HttpClient.newHttpClient()
 val request = HttpRequest.newBuilder()
-    .uri(URI.create("http://localhost:$port/global/health"))
+    .uri(URI.create("http://localhost:4096/global/health"))
     .GET()
     .build()
 val response = client.send(request, HttpResponse.BodyHandlers.ofString())
-val healthy = response.statusCode() == 200
+val ok = response.statusCode() == 200
 ```
 
-### Example: Append prompt from current editor selection
+Minimal prompt example:
 
 ```kotlin
-val body = """{"text": "$selectedText"}"""
+val body = """
+  {
+    "parts": [{ "type": "text", "text": "Hello from IDE" }]
+  }
+""".trimIndent()
+
 val request = HttpRequest.newBuilder()
-    .uri(URI.create("http://localhost:$port/tui/append-prompt"))
+    .uri(URI.create("http://localhost:4096/session/$sessionID/message"))
     .header("Content-Type", "application/json")
     .POST(HttpRequest.BodyPublishers.ofString(body))
     .build()
-client.send(request, HttpResponse.BodyHandlers.ofString())
 ```
 
-### Example: Subscribe to SSE events
+---
 
-```kotlin
-// Use OkHttp EventSource or manually read the chunked stream
-val request = HttpRequest.newBuilder()
-    .uri(URI.create("http://localhost:$port/event"))
-    .header("Accept", "text/event-stream")
-    .GET()
-    .build()
-// Stream with a Flow or coroutine-based line reader
-```
+## Maintenance Checklist
+
+When updating this file:
+
+1. Pull fresh spec from `/doc`.
+2. Verify endpoint inventory count and path/method exactness.
+3. Refresh SSE event names from `components.schemas.Event.anyOf`.
+4. Re-check high-value request body notes for session and TUI calls.

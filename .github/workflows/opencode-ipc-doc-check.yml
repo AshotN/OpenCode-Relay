@@ -1,0 +1,52 @@
+name: Validate OpenCode IPC docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/opencode-ipc.md"
+      - "scripts/validate_opencode_ipc_doc.py"
+      - ".github/workflows/opencode-ipc-doc-check.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/opencode-ipc.md"
+      - "scripts/validate_opencode_ipc_doc.py"
+      - ".github/workflows/opencode-ipc-doc-check.yml"
+
+jobs:
+  validate-opencode-ipc-doc:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate docs/opencode-ipc.md against live /doc
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if ! command -v opencode >/dev/null 2>&1; then
+            echo "opencode binary not found in PATH"
+            exit 1
+          fi
+
+          opencode serve --port 4096 --hostname 127.0.0.1 > /tmp/opencode-server.log 2>&1 &
+          OPENCODE_PID=$!
+          trap 'kill ${OPENCODE_PID} >/dev/null 2>&1 || true' EXIT
+
+          for i in {1..60}; do
+            if curl -fsS http://127.0.0.1:4096/global/health >/dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+
+          curl -fsS http://127.0.0.1:4096/global/health >/dev/null
+          python scripts/validate_opencode_ipc_doc.py --spec-url http://127.0.0.1:4096/doc
