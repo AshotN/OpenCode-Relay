@@ -1,7 +1,9 @@
 package com.ashotn.opencode.diff
 
+import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.SessionDiffStatus
 import org.junit.Test
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -137,6 +139,161 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
+    // When the AI delegates work to parallel sub-agents, every file touched by
+    // any sub-agent must show a green highlight in the editor. All files must
+    // be visible simultaneously, not just the file from the last sub-agent to
+    // finish.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to spin up 5 sub-agents, each creating a different file with some content.
+    //   2. All 5 files should show a green addition highlight simultaneously.
+    //   3. If only one file shows green, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `parallel sub-agent files are all visible simultaneously`() {
+        val projectBase = "/project"
+        val generation = 1L
+        val rootSession = "ses_root"
+        val childSessions = (1..5).map { "ses_child$it" }
+        val files = childSessions.mapIndexed { i, sid -> sid to "notes/note${i + 1}.md" }
+
+        val stateStore = DiffStateStore()
+        val stateLock = Any()
+        val eventReducer = DiffEventReducer()
+        val disk = mutableMapOf<String, String>()
+
+        val computer = SessionDiffApplyComputer(
+            contentReader = { absPath -> disk[absPath] ?: "" },
+            hunkComputer = { fileDiff, sid ->
+                if (fileDiff.before == fileDiff.after) emptyList()
+                else listOf(
+                    DiffHunk(fileDiff.file, 0,
+                        emptyList(),
+                        if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
+                        sid)
+                )
+            },
+            log = NoOpLogger,
+            tracer = NoOpDiffTracer,
+        )
+
+        // Each child session does its own turn.patch + session.diff for its one file.
+        for ((childSessionId, relPath) in files) {
+            val absPath = "$projectBase/$relPath"
+            disk[absPath] = "# Note\n"
+
+            val touchedPaths = setOf(absPath)
+            stateStore.commitTurnPatch(
+                stateLock = stateLock,
+                sessionId = childSessionId,
+                touchedPaths = touchedPaths,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+
+            val revision = stateStore.reserveRevisionForSessionDiffApply(
+                stateLock = stateLock,
+                sessionId = childSessionId,
+                fromHistory = false,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )!!
+
+            val turnScope = stateStore.consumeTurnScopeForDiff(
+                stateLock = stateLock,
+                sessionId = childSessionId,
+                fromHistory = false,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+
+            val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
+                stateLock = stateLock,
+                sessionId = childSessionId,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )!!
+
+            val event = OpenCodeEvent.SessionDiff(
+                sessionId = childSessionId,
+                files = listOf(
+                    OpenCodeEvent.SessionDiffFile(
+                        file = absPath,
+                        before = "",
+                        after = "",
+                        additions = 1,
+                        deletions = 0,
+                        status = SessionDiffStatus.ADDED,
+                    )
+                ),
+            )
+
+            val computedState = computer.compute(
+                projectBase = projectBase,
+                event = event,
+                fromHistory = false,
+                turnScope = turnScope,
+                previousAfterByFile = prepareSnapshot.previousAfterByFile,
+            )
+
+            stateStore.commitSessionDiffApply(
+                stateLock = stateLock,
+                sessionId = childSessionId,
+                revision = revision,
+                fromHistory = false,
+                computedState = computedState,
+                nowMillis = 0L,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+        }
+
+        val allExpectedFiles = files.map { (_, rel) -> "$projectBase/$rel" }.toSet()
+
+        // Simulate: hierarchy refresh has NOT returned yet — parentBySessionId is empty.
+        // With no hierarchy, the root session has no children, so its family = {root} only,
+        // and root has no liveHunks. The selected child session family = {child} only,
+        // so only that child's one file is visible.
+        val parentBySessionId = ConcurrentHashMap<String, String>() // empty — race condition
+
+        val scopeResolver = SessionScopeResolver()
+        val queryService = DiffQueryService()
+
+        // Select the root session (user is viewing the parent conversation).
+        stateStore.commitSelectedSession(
+            stateLock = stateLock,
+            requestedSessionId = rootSession,
+            sessionExists = { true },
+        )
+
+        val familyWithoutHierarchy = scopeResolver.familySessionIds(
+            selectedSessionId = rootSession,
+            parentBySessionId = parentBySessionId,
+            knownSessionIds = (childSessions + rootSession).toSet(),
+            busyBySession = stateStore.busyBySession,
+            updatedAtBySession = stateStore.updatedAtBySession,
+            hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
+            nowMillis = 0L,
+        )
+
+        val liveVisibleWithoutHierarchy = queryService.liveVisibleFiles(
+            familySessionIds = { familyWithoutHierarchy },
+            liveHunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
+            addedBySession = stateStore.addedBySession,
+            deletedBySession = stateStore.deletedBySession,
+        )
+
+        // All 5 child files must be visible even before hierarchy refresh completes.
+        // Currently fails: without parentBySessionId the family resolves to {root} only,
+        // root has no liveHunks, so nothing is visible.
+        assertEquals(
+            allExpectedFiles,
+            liveVisibleWithoutHierarchy,
+            "All child-session files must be visible under the root session even before hierarchy refresh, got: $liveVisibleWithoutHierarchy",
+        )
+    }
+
+    // -------------------------------------------------------------------------
     // Each turn's diff must be computed relative to the file content at the
     // start of that turn, not the original file. The pipeline advances the
     // baseline (effectiveBefore) to lastAfter after each turn. If it does not,
@@ -160,5 +317,131 @@ class SessionDiffPipelineTest {
         h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
         assertEquals("line1\n", h.baseline(file), "turn 2 baseline should be turn 1's final content")
+    }
+
+    // -------------------------------------------------------------------------
+    // When you double-click a file in the diff viewer after the AI has modified
+    // it across multiple turns (e.g. add poem, then add signature), the diff
+    // must show all changes from the original file — not just the most recent
+    // turn's change. The "before" side of the diff must always be the content
+    // the file had before the AI touched it at all in this conversation.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to append a poem to a note file.
+    //   2. In a second turn, ask the AI to sign the note with an author name.
+    //   3. Double-click the file in the diff viewer.
+    //   4. The "before" side must show the original file (no poem, no signature).
+    //      If it shows the file with the poem already present, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `diff preview before shows original content across multiple turns`() {
+        val projectBase = "/project"
+        val generation = 1L
+        val file = "notes/note1.md"
+        val absFile = "$projectBase/$file"
+        val originalContent = "# Note\n\nOriginal content.\n"
+        val afterPoem = originalContent + "\n## Poem\n\nRoses are red.\n"
+        val afterSignature = afterPoem + "\n— Cipher Moonwhisper\n"
+
+        val stateStore = DiffStateStore()
+        val stateLock = Any()
+        val eventReducer = DiffEventReducer()
+        val disk = mutableMapOf<String, String>()
+
+        val computer = SessionDiffApplyComputer(
+            contentReader = { absPath -> disk[absPath] ?: "" },
+            hunkComputer = { fileDiff, sid ->
+                if (fileDiff.before == fileDiff.after) emptyList()
+                else listOf(DiffHunk(fileDiff.file, 0,
+                    if (fileDiff.before.isEmpty()) emptyList() else listOf(fileDiff.before),
+                    if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
+                    sid))
+            },
+            log = NoOpLogger,
+            tracer = NoOpDiffTracer,
+        )
+
+        fun runTurn(sessionId: String, content: String, nowMillis: Long) {
+            disk[absFile] = content
+            stateStore.commitTurnPatch(
+                stateLock = stateLock,
+                sessionId = sessionId,
+                touchedPaths = setOf(absFile),
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+            val revision = stateStore.reserveRevisionForSessionDiffApply(
+                stateLock = stateLock,
+                sessionId = sessionId,
+                fromHistory = false,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )!!
+            val turnScope = stateStore.consumeTurnScopeForDiff(
+                stateLock = stateLock,
+                sessionId = sessionId,
+                fromHistory = false,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+            val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
+                stateLock = stateLock,
+                sessionId = sessionId,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )!!
+            val event = OpenCodeEvent.SessionDiff(
+                sessionId = sessionId,
+                files = listOf(OpenCodeEvent.SessionDiffFile(
+                    file = absFile, before = "", after = "", additions = 1, deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )),
+            )
+            val computedState = computer.compute(
+                projectBase = projectBase,
+                event = event,
+                fromHistory = false,
+                turnScope = turnScope,
+                previousAfterByFile = prepareSnapshot.previousAfterByFile,
+            )
+            stateStore.commitSessionDiffApply(
+                stateLock = stateLock,
+                sessionId = sessionId,
+                revision = revision,
+                fromHistory = false,
+                computedState = computedState,
+                nowMillis = nowMillis,
+                expectedGeneration = generation,
+                currentGeneration = { generation },
+            )
+        }
+
+        // File starts at original content; poem session runs first.
+        disk[absFile] = originalContent
+        runTurn("ses_poem", afterPoem, nowMillis = 1000L)
+
+        // Sign session runs after; its baseline is afterPoem, not originalContent.
+        runTurn("ses_sign", afterSignature, nowMillis = 2000L)
+
+        // Simulate getFileDiffPreview: pick the session with the most-recent updatedAt
+        // that has a baseline for this file, return (before=baseline, after=currentDisk).
+        val candidateSessionIds = listOf("ses_poem", "ses_sign")
+            .sortedByDescending { stateStore.updatedAtBySession[it] ?: 0L }
+
+        val (pickedSessionId, pickedBefore) = candidateSessionIds
+            .mapNotNull { sessionId ->
+                val before = stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(absFile)
+                    ?: return@mapNotNull null
+                sessionId to before
+            }
+            .first()
+
+        // The diff preview must use the original content as "before" so that opening
+        // the diff viewer shows ALL AI changes, not just the signature.
+        assertEquals(
+            originalContent,
+            pickedBefore,
+            "diff preview 'before' must be the original file content, but picked session=$pickedSessionId with before.length=${pickedBefore.length} (afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
+        )
     }
 }

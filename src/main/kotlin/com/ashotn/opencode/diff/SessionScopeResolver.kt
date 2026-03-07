@@ -73,14 +73,22 @@ internal class SessionScopeResolver {
         val result = strictFamily.toMutableSet()
 
         val selectedUpdatedAt = updatedAtBySession[selectedSessionId] ?: 0L
+        val selectedIsRoot = !parentBySessionId.containsKey(selectedSessionId)
         val selectedIsActive =
             (busyBySession[selectedSessionId] == true) ||
-                (selectedUpdatedAt > 0L && nowMillis - selectedUpdatedAt <= RECENT_WINDOW_MILLIS)
+                (selectedUpdatedAt > 0L && nowMillis - selectedUpdatedAt <= RECENT_WINDOW_MILLIS) ||
+                (selectedIsRoot && knownSessionIds.any { sid ->
+                    sid !in result &&
+                        parentBySessionId[sid].let { it == null || it == selectedSessionId } &&
+                        (busyBySession[sid] == true ||
+                            (updatedAtBySession[sid] ?: 0L).let { it > 0L && nowMillis - it <= RECENT_WINDOW_MILLIS }) &&
+                        hunksBySessionAndFile.containsKey(sid)
+                })
 
         if (selectedIsActive) {
             knownSessionIds.forEach { sessionId ->
                 if (sessionId in result) return@forEach
-                if (parentBySessionId.containsKey(sessionId)) return@forEach
+                if (parentBySessionId[sessionId].let { it != null && it !in result }) return@forEach
 
                 val updatedAt = updatedAtBySession[sessionId] ?: 0L
                 val isBusy = busyBySession[sessionId] == true
