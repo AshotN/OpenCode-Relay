@@ -1,10 +1,11 @@
 package com.ashotn.opencode.actions
 
-import com.ashotn.opencode.OpenCodeConstants
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.util.applyStrings
+import com.ashotn.opencode.util.showNotification
+import com.ashotn.opencode.util.toProjectRelativePath
 import com.intellij.icons.AllIcons
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
@@ -40,9 +41,7 @@ class SendSelectionAction : AnAction(
 
         // Hide entirely when invoked outside an editor context (e.g. tool window, global shortcut)
         e.presentation.isVisible = editor != null
-        e.presentation.isEnabled = running && hasSelection
-        e.presentation.text = if (running) strings.text else strings.disabledText
-        e.presentation.description = if (running) strings.description else strings.disabledDescription
+        e.applyStrings(strings, running && hasSelection)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -99,11 +98,8 @@ class SendSelectionAction : AnAction(
         val filePath = when {
             virtualFile != null -> {
                 val projectBase = project.basePath
-                if (projectBase != null && virtualFile.path.startsWith(projectBase)) {
-                    virtualFile.path.removePrefix(projectBase).trimStart('/')
-                } else {
-                    virtualFile.path
-                }
+                if (projectBase != null) virtualFile.path.toProjectRelativePath(projectBase)
+                else virtualFile.path
             }
             else -> "untitled"
         }
@@ -120,9 +116,6 @@ class SendSelectionAction : AnAction(
     }
 
     private fun showNotification(project: Project, title: String, content: String, type: NotificationType) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
-            .createNotification(title, content, type)
-            .notify(project)
+        project.showNotification(title, content, type)
     }
 }

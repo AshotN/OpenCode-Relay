@@ -1,6 +1,7 @@
 package com.ashotn.opencode.actions
 
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.util.applyStrings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -25,9 +26,7 @@ class ClearInstanceAction(private val project: Project? = null) :
             return
         }
         val hasSelectedSession = OpenCodeDiffService.getInstance(proj).selectedSessionId() != null
-        e.presentation.isEnabled = hasSelectedSession
-        e.presentation.text = if (hasSelectedSession) strings.text else strings.disabledText
-        e.presentation.description = if (hasSelectedSession) strings.description else strings.disabledDescription
+        e.applyStrings(strings, hasSelectedSession)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

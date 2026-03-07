@@ -3,6 +3,7 @@ package com.ashotn.opencode.permission
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.ipc.PermissionReply
+import com.ashotn.opencode.util.serverUrl
 import com.google.gson.Gson
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -67,7 +68,7 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
         }
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val url = URI("http://localhost:$currentPort/session/${event.sessionId}/permissions/${event.requestId}").toURL()
+            val url = URI(serverUrl(currentPort, "/session/${event.sessionId}/permissions/${event.requestId}")).toURL()
             val conn = url.openConnection() as HttpURLConnection
             try {
                 conn.connectTimeout = CONNECT_TIMEOUT_MS

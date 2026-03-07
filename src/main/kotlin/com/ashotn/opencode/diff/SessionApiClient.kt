@@ -2,6 +2,10 @@ package com.ashotn.opencode.diff
 
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.SessionDiffStatus
+import com.ashotn.opencode.util.getIntOrNull
+import com.ashotn.opencode.util.getObjectOrNull
+import com.ashotn.opencode.util.getStringOrNull
+import com.ashotn.opencode.util.serverUrl
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.net.HttpURLConnection
@@ -27,7 +31,7 @@ internal class SessionApiClient {
     )
 
     fun fetchSessionDiffSnapshot(currentPort: Int, sessionId: String): DiffSnapshotResult {
-        val url = URI("http://localhost:$currentPort/session/$sessionId/diff").toURL()
+        val url = URI(serverUrl(currentPort, "/session/$sessionId/diff")).toURL()
         val conn = url.openConnection() as HttpURLConnection
         return try {
             conn.connectTimeout = 2_000
@@ -59,8 +63,8 @@ internal class SessionApiClient {
                 val file = obj.getStringOrNull("file") ?: return@mapNotNull null
                 val before = obj.getStringOrNull("before") ?: ""
                 val after = obj.getStringOrNull("after") ?: ""
-                val additions = obj.getIntOrZero("additions")
-                val deletions = obj.getIntOrZero("deletions")
+                val additions = obj.getIntOrNull("additions") ?: 0
+                val deletions = obj.getIntOrNull("deletions") ?: 0
                 val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
 
                 OpenCodeEvent.SessionDiffFile(
@@ -89,7 +93,7 @@ internal class SessionApiClient {
     }
 
     fun fetchSessionHierarchy(currentPort: Int): HierarchySnapshot {
-        val url = URI("http://localhost:$currentPort/session").toURL()
+        val url = URI(serverUrl(currentPort, "/session")).toURL()
         val conn = url.openConnection() as HttpURLConnection
         return try {
             conn.connectTimeout = 2_000
@@ -149,7 +153,7 @@ internal class SessionApiClient {
     data class AppendPromptResult(val success: Boolean, val statusCode: Int)
 
     fun appendPrompt(currentPort: Int, text: String): AppendPromptResult {
-        val url = URI("http://localhost:$currentPort/tui/append-prompt").toURL()
+        val url = URI(serverUrl(currentPort, "/tui/append-prompt")).toURL()
         val conn = url.openConnection() as HttpURLConnection
         return try {
             conn.connectTimeout = 3_000
@@ -169,18 +173,4 @@ internal class SessionApiClient {
         }
     }
 
-    private fun JsonObject.getStringOrNull(key: String): String? {
-        val element = get(key) ?: return null
-        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) return null
-        return element.asString
-    }
-
-    private fun JsonObject.getIntOrZero(key: String): Int {
-        val element = get(key) ?: return 0
-        return if (element.isJsonPrimitive && element.asJsonPrimitive.isNumber) {
-            element.asInt
-        } else {
-            0
-        }
-    }
 }

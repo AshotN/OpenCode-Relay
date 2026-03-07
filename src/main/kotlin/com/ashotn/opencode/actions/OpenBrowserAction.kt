@@ -2,6 +2,8 @@ package com.ashotn.opencode.actions
 
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.settings.OpenCodeSettings
+import com.ashotn.opencode.util.applyStrings
+import com.ashotn.opencode.util.serverUrl
 import com.intellij.icons.AllIcons
 import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.actionSystem.AnAction
@@ -14,14 +16,11 @@ class OpenBrowserAction(private val project: Project) :
 
     override fun update(e: AnActionEvent) {
         val running = OpenCodePlugin.getInstance(project).isRunning
-        val strings = ActionStrings.OPEN_BROWSER
-        e.presentation.isEnabled = running
-        e.presentation.text = if (running) strings.text else strings.disabledText
-        e.presentation.description = if (running) strings.description else strings.disabledDescription
+        e.applyStrings(ActionStrings.OPEN_BROWSER, running)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val port = OpenCodeSettings.getInstance(project).serverPort
-        BrowserUtil.browse(URI("http://localhost:$port"))
+        BrowserUtil.browse(URI(serverUrl(port)))
     }
 }

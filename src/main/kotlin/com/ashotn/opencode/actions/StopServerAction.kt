@@ -2,6 +2,7 @@ package com.ashotn.opencode.actions
 
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.ServerState
+import com.ashotn.opencode.util.applyStrings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -23,9 +24,7 @@ class StopServerAction(private val project: Project) :
         }
 
         val canStop = plugin.ownsProcess && plugin.isRunning
-        e.presentation.isEnabled = canStop
-        e.presentation.text = if (canStop) strings.text else strings.disabledText
-        e.presentation.description = if (canStop) strings.description else strings.disabledDescription
+        e.applyStrings(strings, canStop)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

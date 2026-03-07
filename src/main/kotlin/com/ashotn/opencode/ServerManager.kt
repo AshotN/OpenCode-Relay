@@ -1,6 +1,7 @@
 package com.ashotn.opencode
 
-import com.intellij.notification.NotificationGroupManager
+import com.ashotn.opencode.util.showNotification
+import com.ashotn.opencode.util.serverUrl
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -136,7 +137,7 @@ class ServerManager(
 
         externalHealthRevision.incrementAndGet()
         if (wasPortOpen) {
-            notify(
+            project.showNotification(
                 "OpenCode stopped unexpectedly",
                 "The OpenCode server process was terminated externally.",
                 NotificationType.WARNING,
@@ -187,7 +188,7 @@ class ServerManager(
     }
 
     private fun checkHealthOnce(port: Int): Boolean {
-        val conn = URI("http://localhost:$port/global/health").toURL().openConnection() as HttpURLConnection
+        val conn = URI(serverUrl(port, "/global/health")).toURL().openConnection() as HttpURLConnection
         return try {
             conn.connectTimeout = HEALTH_CONNECT_TIMEOUT_MS
             conn.readTimeout = HEALTH_READ_TIMEOUT_MS
@@ -255,7 +256,7 @@ class ServerManager(
     fun startServer(port: Int, executablePath: String) {
         val executable = File(executablePath)
         if (!executable.isFile || !executable.canExecute()) {
-            notify(
+            project.showNotification(
                 "Failed to start OpenCode",
                 "OpenCode executable is not valid or executable: $executablePath",
                 NotificationType.ERROR,
@@ -301,7 +302,7 @@ class ServerManager(
             } catch (e: Exception) {
                 val message = e.message ?: e.javaClass.simpleName
                 SwingUtilities.invokeLater {
-                    notify(
+                    project.showNotification(
                         "Failed to start OpenCode",
                         "Could not launch the OpenCode process: $message",
                         NotificationType.ERROR,
@@ -353,10 +354,4 @@ class ServerManager(
         scheduler.shutdownNow()
     }
 
-    private fun notify(title: String, content: String, type: NotificationType = NotificationType.ERROR) {
-        NotificationGroupManager.getInstance()
-            .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
-            .createNotification(title, content, type)
-            .notify(project)
-    }
 }

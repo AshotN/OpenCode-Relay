@@ -1,5 +1,9 @@
 package com.ashotn.opencode.ipc
 
+import com.ashotn.opencode.util.getIntOrNull
+import com.ashotn.opencode.util.getObjectOrNull
+import com.ashotn.opencode.util.getStringOrNull
+import com.ashotn.opencode.util.serverUrl
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.logger
@@ -93,8 +97,8 @@ class SseClient(
     }
 
     private fun connect() {
-        log.info("SseClient: connecting to http://localhost:$port/event")
-        val url = URI("http://localhost:$port/event").toURL()
+        log.info("SseClient: connecting to ${serverUrl(port, "/event")}")
+        val url = URI(serverUrl(port, "/event")).toURL()
         val conn = url.openConnection() as HttpURLConnection
         activeConnection = conn
 
@@ -265,21 +269,4 @@ class SseClient(
         return OpenCodeEvent.SessionIdle(sessionId)
     }
 
-    private fun JsonObject.getStringOrNull(key: String): String? {
-        val element = get(key) ?: return null
-        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isString) return null
-        return element.asString
-    }
-
-    private fun JsonObject.getIntOrNull(key: String): Int? {
-        val element = get(key) ?: return null
-        if (!element.isJsonPrimitive || !element.asJsonPrimitive.isNumber) return null
-        return runCatching { element.asInt }.getOrNull()
-    }
-
-    private fun JsonObject.getObjectOrNull(key: String): JsonObject? {
-        val element = get(key) ?: return null
-        if (!element.isJsonObject) return null
-        return element.asJsonObject
-    }
 }

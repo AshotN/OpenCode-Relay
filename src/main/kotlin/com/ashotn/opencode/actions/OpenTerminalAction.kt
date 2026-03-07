@@ -1,10 +1,11 @@
 package com.ashotn.opencode.actions
 
-import com.ashotn.opencode.OpenCodeConstants
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.settings.OpenCodeSettings
+import com.ashotn.opencode.util.applyStrings
+import com.ashotn.opencode.util.showNotification
+import com.ashotn.opencode.util.serverUrl
 import com.intellij.icons.AllIcons
-import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
@@ -16,15 +17,12 @@ class OpenTerminalAction(private val project: Project) :
 
     override fun update(e: AnActionEvent) {
         val running = OpenCodePlugin.getInstance(project).isRunning
-        val strings = ActionStrings.OPEN_TERMINAL
-        e.presentation.isEnabled = running
-        e.presentation.text = if (running) strings.text else strings.disabledText
-        e.presentation.description = if (running) strings.description else strings.disabledDescription
+        e.applyStrings(ActionStrings.OPEN_TERMINAL, running)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val port = OpenCodeSettings.getInstance(project).serverPort
-        val command = "opencode attach http://localhost:$port"
+        val command = "opencode attach ${serverUrl(port)}"
 
         val processCommand: List<String> = when {
             SystemInfo.isWindows -> listOf("cmd", "/c", "start", "cmd", "/k", command)
@@ -36,14 +34,11 @@ class OpenTerminalAction(private val project: Project) :
         }
 
         if (processCommand.isEmpty()) {
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
-                .createNotification(
-                    "Cannot open terminal",
-                    "No supported terminal emulator found. Install xterm, gnome-terminal, konsole, or xfce4-terminal.",
-                    NotificationType.WARNING
-                )
-                .notify(project)
+            project.showNotification(
+                "Cannot open terminal",
+                "No supported terminal emulator found. Install xterm, gnome-terminal, konsole, or xfce4-terminal.",
+                NotificationType.WARNING,
+            )
             return
         }
 
@@ -52,14 +47,11 @@ class OpenTerminalAction(private val project: Project) :
                 .inheritIO()
                 .start()
         } catch (ex: Exception) {
-            NotificationGroupManager.getInstance()
-                .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
-                .createNotification(
-                    "Failed to open terminal",
-                    "Could not launch terminal: ${ex.message}",
-                    NotificationType.ERROR
-                )
-                .notify(project)
+            project.showNotification(
+                "Failed to open terminal",
+                "Could not launch terminal: ${ex.message}",
+                NotificationType.ERROR,
+            )
         }
     }
 

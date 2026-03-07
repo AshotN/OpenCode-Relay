@@ -5,6 +5,7 @@ import com.ashotn.opencode.diff.DiffHighlightStyles
 import com.ashotn.opencode.diff.DiffHunksChangedListener
 import com.ashotn.opencode.diff.OpenCodeDiffService
 import com.ashotn.opencode.diff.SessionStateChangedListener
+import com.ashotn.opencode.util.toProjectRelativePath
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.ipc.PermissionReply
@@ -333,11 +334,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 val name = path.substringAfterLast('/')
                 val fullDir = path.substringBeforeLast('/', "")
                 val projectBase = project.basePath ?: ""
-                val relativeDir = if (projectBase.isNotBlank() && fullDir.startsWith(projectBase)) {
-                    fullDir.removePrefix(projectBase).trimStart('/')
-                } else {
-                    fullDir
-                }
+                val relativeDir = if (projectBase.isNotBlank()) fullDir.toProjectRelativePath(projectBase) else fullDir
                 PendingFileRow(
                     path = path,
                     name = name,
