@@ -1,5 +1,7 @@
 package com.ashotn.opencode.diff
 
+import com.ashotn.opencode.diff.DiffTracer
+import com.ashotn.opencode.diff.JsonlDiffTracer
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.SseClient
 import com.ashotn.opencode.permission.OpenCodePermissionService
@@ -39,6 +41,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     )
 
     private val log = logger<OpenCodeDiffService>()
+    private val tracer: DiffTracer = DiffTracer.fromEnvironment(project, log)
 
     /** childSessionId -> parentSessionId */
     private val parentBySessionId = ConcurrentHashMap<String, String>()
@@ -58,7 +61,16 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private val documentSyncService = DocumentSyncService(project)
     private val sessionApiClient = SessionApiClient()
     private val hunkComputer = DiffHunkComputer(log)
-    private val sessionDiffApplyComputer = SessionDiffApplyComputer(documentSyncService, hunkComputer, log)
+    private val sessionDiffApplyComputer = SessionDiffApplyComputer(
+        contentReader = documentSyncService::readCurrentContent,
+        hunkComputer = hunkComputer::compute,
+        onFileProcessing = { absPath, status ->
+            documentSyncService.queueVfsRefresh(absPath, status)
+            documentSyncService.reloadOpenDocument(absPath)
+        },
+        log = log,
+        tracer = tracer,
+    )
     private val publishService = DiffPublishService(project)
     private val scopeResolver = SessionScopeResolver()
     private val queryService = DiffQueryService()
@@ -84,12 +96,28 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         permissionService.setPort(port)
         log.info("OpenCodeDiffService: starting SSE listener on port $port")
         EditorDiffRenderer.getInstance(project)
-        sseClient = SseClient(port) { event -> handleEvent(event, generation) }.also { it.start() }
+        sseClient = SseClient(
+            port = port,
+            onEvent = { event -> handleEvent(event, generation) },
+        ).also { it.start() }
+        trace("listener.started") {
+            val traceFilePath = (tracer as? JsonlDiffTracer)?.traceFilePath()
+            mapOf(
+                "port" to port,
+                "generation" to generation,
+                "traceFile" to traceFilePath,
+            )
+        }
         refreshSessionHierarchyAsync(generation)
     }
 
     fun stopListening() {
-        advanceLifecycleGeneration()
+        val generation = advanceLifecycleGeneration()
+        trace("listener.stopping") {
+            mapOf(
+                "generation" to generation,
+            )
+        }
         sseClient?.stop()
         sseClient = null
         port = 0
@@ -126,6 +154,13 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     currentGeneration = { lifecycleGeneration.get() },
                 )
                 if (!committed) return
+                trace("turn.patch.committed") {
+                    mapOf(
+                        "sessionId" to event.sessionId,
+                        "touchedPaths" to touchedPaths.toList(),
+                        "generation" to generation,
+                    )
+                }
                 log.debug("OpenCodeDiffService: turn.patch recorded session=${event.sessionId} touchedFileCount=${touchedPaths.size} generation=$generation")
             }
 
@@ -189,6 +224,18 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             generation = generation,
             currentGeneration = { lifecycleGeneration.get() },
         )
+        trace("session.diff.decision", fromHistory = fromHistory) {
+            mapOf(
+                "sessionId" to event.sessionId,
+                "fromHistory" to fromHistory,
+                "fileCount" to event.files.size,
+                "shouldApply" to applyDecision.shouldApply,
+                "skipReason" to applyDecision.skipReason?.name,
+                "revision" to applyDecision.revision,
+                "turnScope" to applyDecision.turnScope?.toList(),
+                "generation" to generation,
+            )
+        }
         if (!applyDecision.shouldApply) {
             when (applyDecision.skipReason) {
                 DiffEventReducer.SessionDiffSkipReason.UNSCOPED_LIVE -> {
@@ -250,10 +297,24 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             )
             if (commitResult == null) {
                 log.debug("OpenCodeDiffService: skip session.diff reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
+                trace("session.diff.commitSkipped", fromHistory = fromHistory) {
+                    mapOf(
+                        "sessionId" to event.sessionId,
+                        "revision" to revision,
+                        "generation" to generation,
+                    )
+                }
                 return@executeOnPooledThread
             }
 
             val changedFiles = commitResult.changedFiles
+            traceSessionDiffCommitted(
+                sessionId = event.sessionId,
+                revision = revision,
+                generation = generation,
+                fromHistory = fromHistory,
+                changedFiles = changedFiles,
+            )
             val nextLiveVisibleFiles = synchronized(stateLock) {
                 if (generation != lifecycleGeneration.get()) {
                     return@synchronized emptySet()
@@ -349,6 +410,49 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         publishService.publishSessionStateChanged()
     }
 
+    private inline fun trace(kind: String, fromHistory: Boolean = false, fields: () -> Map<String, Any?>) {
+        if (!tracer.enabled) return
+        if (fromHistory && !tracer.includeHistory) return
+        tracer.record(kind, fields())
+    }
+
+    private fun traceSessionDiffCommitted(
+        sessionId: String,
+        revision: Long,
+        generation: Long,
+        fromHistory: Boolean,
+        changedFiles: Set<String>,
+    ) {
+        trace("session.diff.committed", fromHistory = fromHistory) {
+            // Only record file names and byte-length summaries — never store full file content
+            // in a trace field, as that causes unbounded memory growth during active sessions.
+            val stateSnapshot = synchronized(stateLock) {
+                val baselineSizes = stateStore.baselineBeforeBySessionAndFile[sessionId]
+                    ?.mapValues { (_, v) -> v.length }
+                    ?: emptyMap<String, Int>()
+                val lastAfterSizes = stateStore.lastAfterBySessionAndFile[sessionId]
+                    ?.mapValues { (_, v) -> v.length }
+                    ?: emptyMap<String, Int>()
+                mapOf(
+                    "hunkFiles" to (stateStore.hunksBySessionAndFile[sessionId]?.keys?.sorted() ?: emptyList<String>()),
+                    "liveHunkFiles" to (stateStore.liveHunksBySessionAndFile[sessionId]?.keys?.sorted()
+                        ?: emptyList<String>()),
+                    "deletedFiles" to (stateStore.deletedBySession[sessionId]?.sorted() ?: emptyList<String>()),
+                    "addedFiles" to (stateStore.addedBySession[sessionId]?.sorted() ?: emptyList<String>()),
+                    "baselineBeforeSizeByFile" to baselineSizes,
+                    "lastAfterSizeByFile" to lastAfterSizes,
+                )
+            }
+            mapOf(
+                "sessionId" to sessionId,
+                "revision" to revision,
+                "generation" to generation,
+                "changedFiles" to changedFiles.sorted(),
+                "state" to stateSnapshot,
+            )
+        }
+    }
+
     private fun currentSessionRevision(sessionId: String): Long =
         stateStore.currentSessionRevision(stateLock, sessionId)
 
@@ -421,6 +525,8 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             descriptionBySessionId = sessionDescriptionById,
             busyBySession = stateStore.busyBySession,
             hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
+            addedBySession = stateStore.addedBySession,
+            deletedBySession = stateStore.deletedBySession,
             updatedAtBySession = stateStore.updatedAtBySession,
         )
     }
@@ -662,6 +768,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         }
         documentSyncService.dispose()
         hierarchyRefreshInFlight.set(false)
+        tracer.close()
     }
 
     companion object {

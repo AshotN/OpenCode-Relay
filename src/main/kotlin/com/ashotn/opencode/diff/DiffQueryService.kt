@@ -61,6 +61,8 @@ internal class DiffQueryService {
         descriptionBySessionId: Map<String, String>,
         busyBySession: Map<String, Boolean>,
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
+        addedBySession: Map<String, Set<String>>,
+        deletedBySession: Map<String, Set<String>>,
         updatedAtBySession: Map<String, Long>,
     ): List<OpenCodeDiffService.SessionInfo> {
         return knownSessionIds
@@ -71,7 +73,9 @@ internal class DiffQueryService {
                     title = titleBySessionId[sessionId],
                     description = descriptionBySessionId[sessionId],
                     isBusy = busyBySession[sessionId] == true,
-                    trackedFileCount = hunksBySessionAndFile[sessionId]?.size ?: 0,
+                    trackedFileCount = ((hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
+                        (addedBySession[sessionId] ?: emptySet()) +
+                        (deletedBySession[sessionId] ?: emptySet())).size,
                     updatedAtMillis = updatedAtBySession[sessionId] ?: 0L,
                 )
             }

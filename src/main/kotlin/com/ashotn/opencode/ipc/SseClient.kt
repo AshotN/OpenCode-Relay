@@ -44,7 +44,8 @@ class SseClient(
     private val unknownEventTypes = Collections.synchronizedSet(mutableSetOf<String>())
 
     private var future: Future<*>? = null
-    @Volatile private var activeConnection: HttpURLConnection? = null
+    @Volatile
+    private var activeConnection: HttpURLConnection? = null
 
     fun start() {
         if (executor.isShutdown) return
