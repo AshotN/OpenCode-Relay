@@ -14,6 +14,7 @@ import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.requests.SimpleDiffRequest
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
@@ -320,11 +321,24 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val diffService = OpenCodeDiffService.getInstance(project)
         val preview = diffService.getFileDiffPreview(row.path) ?: return
 
+        val contentFactory = DiffContentFactory.getInstance()
+        val vFile = LocalFileSystem.getInstance().findFileByPath(row.path)
+        val beforeContent = if (vFile != null) {
+            contentFactory.create(project, preview.before, vFile)
+        } else {
+            contentFactory.create(project, preview.before)
+        }
+        val afterContent = if (vFile != null && vFile.exists()) {
+            contentFactory.create(project, vFile)
+        } else {
+            contentFactory.create(project, preview.after)
+        }
+
         val title = "OpenCode Diff: ${row.name}"
         val request = SimpleDiffRequest(
             title,
-            DiffContentFactory.getInstance().create(project, preview.before),
-            DiffContentFactory.getInstance().create(project, preview.after),
+            beforeContent,
+            afterContent,
             "Session baseline",
             "Current file",
         )
