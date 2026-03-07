@@ -33,5 +33,23 @@
 
     <actions>
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
+
+        <action
+            id="com.ashotn.opencode.actions.ClearInstanceAction"
+            class="com.ashotn.opencode.actions.ClearInstanceAction"
+            text="Clear Session"
+            description="Clear the selected session and remove all diff highlights">
+            <!-- Global shortcut when panel is not focused -->
+            <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
+        </action>
+
+        <action
+            id="com.ashotn.opencode.actions.SendSelectionAction"
+            class="com.ashotn.opencode.actions.SendSelectionAction"
+            text="Send Selection to OpenCode"
+            description="Append the selected code to the active OpenCode session's prompt input">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift 4"/>
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

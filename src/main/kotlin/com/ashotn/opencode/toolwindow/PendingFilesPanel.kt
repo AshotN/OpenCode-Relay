@@ -26,17 +26,25 @@ import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
-import java.awt.GridLayout
+import java.awt.FlowLayout
+import java.awt.Font
 import java.awt.Point
+import java.awt.RenderingHints
+import java.awt.event.ActionEvent
+import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.swing.AbstractAction
+import javax.swing.BorderFactory
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
+import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
+import javax.swing.KeyStroke
 import javax.swing.ListSelectionModel
 import javax.swing.border.MatteBorder
 
@@ -88,40 +96,40 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
 
     private val permissionPanel = JPanel(BorderLayout()).apply {
-        val allowButton = JButton("Allow").apply {
-            background = JBColor(Color(0x2E7D32), Color(0x1B5E20))
-            foreground = Color.WHITE
-            isFocusPainted = false
-            isOpaque = true
-            addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ONCE)
-            }
+        val allowButton = permissionButton(
+            label = "Allow",
+            bg = JBColor(Color(0x2E7D32), Color(0x388E3C)),
+            hover = JBColor(Color(0x388E3C), Color(0x43A047)),
+        ) {
+            OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ONCE)
         }
-        val allowAlwaysButton = JButton("Allow Always").apply {
-            background = JBColor(Color(0x1565C0), Color(0x0D47A1))
-            foreground = Color.WHITE
-            isFocusPainted = false
-            isOpaque = true
-            addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ALWAYS)
-            }
+        val allowAlwaysButton = permissionButton(
+            label = "Allow Always",
+            bg = JBColor(Color(0x1565C0), Color(0x1976D2)),
+            hover = JBColor(Color(0x1976D2), Color(0x1E88E5)),
+        ) {
+            OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.ALWAYS)
         }
-        val rejectButton = JButton("Reject").apply {
-            background = JBColor(Color(0xC62828), Color(0xB71C1C))
-            foreground = Color.WHITE
-            isFocusPainted = false
-            isOpaque = true
-            addActionListener {
-                OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.REJECT)
-            }
+        val rejectButton = permissionButton(
+            label = "Reject",
+            bg = JBColor(Color(0xC62828), Color(0xD32F2F)),
+            hover = JBColor(Color(0xD32F2F), Color(0xE53935)),
+        ) {
+            OpenCodePermissionService.getInstance(project).replyToPermission(PermissionReply.REJECT)
         }
-        val buttons = JPanel(GridLayout(1, 3)).apply {
+        val buttons = JPanel(FlowLayout(FlowLayout.CENTER, JBUI.scale(6), 0)).apply {
+            isOpaque = false
             add(allowButton)
             add(allowAlwaysButton)
             add(rejectButton)
         }
+        val buttonsWrapper = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            border = JBUI.Borders.empty(4, 8, 8, 8)
+            add(buttons, BorderLayout.CENTER)
+        }
         add(permissionLabel, BorderLayout.NORTH)
-        add(buttons, BorderLayout.CENTER)
+        add(buttonsWrapper, BorderLayout.CENTER)
         isVisible = false
     }
 
@@ -142,11 +150,9 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         sessionList.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
-                if (e.clickCount >= 1) {
-                    val row = sessionList.selectedValue ?: return
-                    OpenCodeDiffService.getInstance(project).selectSession(row.sessionId)
-                    refresh()
-                }
+                val row = sessionList.selectedValue ?: return
+                OpenCodeDiffService.getInstance(project).selectSession(row.sessionId)
+                refresh()
             }
         })
 
@@ -167,6 +173,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             override fun mouseClicked(e: MouseEvent) {
                 if (e.clickCount < 2) return
                 val row = fileList.selectedValue ?: return
+                if (row.isDeleted || row.isAdded) return
                 openBuiltInDiff(row)
             }
         })
@@ -195,6 +202,16 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         add(header, BorderLayout.NORTH)
         add(body, BorderLayout.CENTER)
         add(permissionPanel, BorderLayout.SOUTH)
+
+        // Esc clears the selected session when the panel (or any child) has focus.
+        val escAction = object : AbstractAction() {
+            override fun actionPerformed(event: ActionEvent) {
+                OpenCodeDiffService.getInstance(project).selectSession(null)
+            }
+        }
+        getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+            .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clearSession")
+        actionMap.put("clearSession", escAction)
 
         project.messageBus.connect().subscribe(
             DiffHunksChangedListener.TOPIC,
@@ -232,8 +249,8 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                 ?: event.patterns.firstOrNull()
                 ?: event.permission
             permissionLabel.text = "<html><b>${event.permission}</b>" +
-                    if (detail != event.permission) "&nbsp;&nbsp;$detail" else "" +
-                            "</html>"
+                    (if (detail != event.permission) "&nbsp;&nbsp;$detail" else "") +
+                    "</html>"
             permissionPanel.isVisible = true
         } else {
             permissionPanel.isVisible = false
@@ -323,17 +340,9 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             if (preview == null) return@getFileDiffPreview
             ApplicationManager.getApplication().invokeLater {
                 val contentFactory = DiffContentFactory.getInstance()
-                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path)
-                val beforeContent = if (vFile != null) {
-                    contentFactory.create(project, preview.before, vFile)
-                } else {
-                    contentFactory.create(project, preview.before)
-                }
-                val afterContent = if (vFile != null && vFile.exists()) {
-                    contentFactory.create(project, vFile)
-                } else {
-                    contentFactory.create(project, preview.after)
-                }
+                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return@invokeLater
+                val beforeContent = contentFactory.create(project, preview.before, vFile)
+                val afterContent = contentFactory.create(project, vFile)
 
                 val title = "OpenCode Diff: ${row.name}"
                 val request = SimpleDiffRequest(
@@ -344,6 +353,54 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
                     "Current file",
                 )
                 DiffManager.getInstance().showDiff(project, request)
+            }
+        }
+    }
+
+    private fun permissionButton(
+        label: String,
+        bg: JBColor,
+        hover: JBColor,
+        onClick: () -> Unit,
+    ): JButton {
+        var hovered = false
+        return object : JButton(label) {
+            init {
+                // Force BasicButtonUI so Darcula/IntelliJ L&F delegates cannot override
+                // isContentAreaFilled=false and paint their own opaque chrome.
+                setUI(javax.swing.plaf.basic.BasicButtonUI())
+                foreground = Color.WHITE
+                isContentAreaFilled = false
+                isBorderPainted = false
+                isFocusPainted = false
+                isOpaque = false
+                font = font.deriveFont(Font.BOLD).deriveFont(JBUI.scaleFontSize(11f))
+                border = BorderFactory.createEmptyBorder(
+                    JBUI.scale(5), JBUI.scale(12), JBUI.scale(5), JBUI.scale(12)
+                )
+                cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
+                addActionListener { onClick() }
+                addMouseListener(object : MouseAdapter() {
+                    override fun mouseEntered(e: MouseEvent) { hovered = true; repaint() }
+                    override fun mouseExited(e: MouseEvent) { hovered = false; repaint() }
+                })
+            }
+
+            override fun paintComponent(g: java.awt.Graphics) {
+                val g2 = g.create() as java.awt.Graphics2D
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                val arc = JBUI.scale(6)
+                g2.color = if (hovered) hover else bg
+                // width-1/height-1: fillRoundRect excludes the last pixel row/column
+                g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
+                if (isFocusOwner) {
+                    g2.color = Color(255, 255, 255, 180)
+                    g2.stroke = java.awt.BasicStroke(JBUI.scale(2).toFloat())
+                    val inset = JBUI.scale(2)
+                    g2.drawRoundRect(inset, inset, width - 1 - inset * 2, height - 1 - inset * 2, arc, arc)
+                }
+                g2.dispose()
+                super.paintComponent(g)
             }
         }
     }

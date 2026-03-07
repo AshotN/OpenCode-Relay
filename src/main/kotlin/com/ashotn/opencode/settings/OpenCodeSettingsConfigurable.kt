@@ -38,6 +38,28 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .enabled(!running)
                 }
             }
+            group("Diagnostics") {
+                row {
+                    checkBox("Enable diff trace logging")
+                        .bindSelected(settings::diffTraceEnabled)
+                        .comment(
+                            "Writes a JSONL trace file to the system temp directory " +
+                            "(opencode-diff-traces/) for debugging diff pipeline events. " +
+                            "Takes effect after restarting the IDE."
+                        )
+                        .enabled(!running)
+                }
+                row {
+                    checkBox("Include historical diffs in trace")
+                        .bindSelected(settings::diffTraceHistoryEnabled)
+                        .comment(
+                            "Also records events from historical (loaded-on-demand) session diffs " +
+                            "in the trace. Only relevant when diff trace logging is enabled. " +
+                            "Takes effect after restarting the IDE."
+                        )
+                        .enabled(!running)
+                }
+            }
         }
     }
 

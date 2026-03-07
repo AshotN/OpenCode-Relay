@@ -20,16 +20,17 @@ internal interface DiffTracer {
     fun close() {}
 
     companion object {
-        fun fromEnvironment(project: Project, logger: Logger): DiffTracer {
-            val envValue = System.getenv(TRACE_ENV_VAR)?.lowercase()
-            if (envValue != "1" && envValue != "true" && envValue != "yes") return NoOpDiffTracer
-            val historyEnvValue = System.getenv(TRACE_HISTORY_ENV_VAR)?.lowercase()
-            val includeHistory = historyEnvValue == "1" || historyEnvValue == "true" || historyEnvValue == "yes"
+        fun fromSettings(
+            project: Project,
+            logger: Logger,
+            traceEnabled: Boolean,
+            includeHistory: Boolean,
+        ): DiffTracer {
+            if (!traceEnabled) return NoOpDiffTracer
             return JsonlDiffTracer(project, logger, includeHistory)
         }
 
-        private const val TRACE_ENV_VAR = "OPENCODE_DIFF_TRACE"
-        private const val TRACE_HISTORY_ENV_VAR = "OPENCODE_DIFF_TRACE_HISTORY"
+
     }
 }
 

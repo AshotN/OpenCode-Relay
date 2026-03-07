@@ -12,7 +12,9 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
     data class State(
         var serverPort: Int = 4096,
-        var executablePath: String = ""
+        var executablePath: String = "",
+        var diffTraceEnabled: Boolean = false,
+        var diffTraceHistoryEnabled: Boolean = false,
     )
 
     private var state = State()
@@ -30,6 +32,14 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     var executablePath: String
         get() = state.executablePath
         set(value) { state.executablePath = value }
+
+    var diffTraceEnabled: Boolean
+        get() = state.diffTraceEnabled
+        set(value) { state.diffTraceEnabled = value }
+
+    var diffTraceHistoryEnabled: Boolean
+        get() = state.diffTraceHistoryEnabled
+        set(value) { state.diffTraceHistoryEnabled = value }
 
     companion object {
         fun getInstance(project: Project): OpenCodeSettings =

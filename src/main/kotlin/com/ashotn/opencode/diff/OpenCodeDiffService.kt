@@ -1,8 +1,7 @@
 package com.ashotn.opencode.diff
 
-import com.ashotn.opencode.diff.DiffTracer
-import com.ashotn.opencode.diff.JsonlDiffTracer
 import com.ashotn.opencode.ipc.OpenCodeEvent
+import com.ashotn.opencode.settings.OpenCodeSettings
 import com.ashotn.opencode.ipc.SseClient
 import com.ashotn.opencode.permission.OpenCodePermissionService
 import com.intellij.openapi.Disposable
@@ -41,7 +40,15 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     )
 
     private val log = logger<OpenCodeDiffService>()
-    private val tracer: DiffTracer = DiffTracer.fromEnvironment(project, log)
+    private val tracer: DiffTracer = run {
+        val settings = OpenCodeSettings.getInstance(project)
+        DiffTracer.fromSettings(
+            project = project,
+            logger = log,
+            traceEnabled = settings.diffTraceEnabled,
+            includeHistory = settings.diffTraceHistoryEnabled,
+        )
+    }
 
     /** childSessionId -> parentSessionId */
     private val parentBySessionId = ConcurrentHashMap<String, String>()
@@ -549,6 +556,37 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
         if (selectedAfter != null) {
             ensureHistoricalFamilyLoadedAsync(selectedAfter)
+        }
+    }
+
+    /**
+     * Appends [text] to the TUI's prompt input buffer via POST /tui/append-prompt.
+     *
+     * Note: the OpenCode server API provides no session-scoping for this endpoint. The text
+     * lands in whichever session the TUI currently has open — the plugin has no control over
+     * which session that is. Multiple TUI instances or background sessions on the same port
+     * are all reachable by the same server; the server decides where the text goes.
+     *
+     * Runs the HTTP call on a pooled thread and invokes [onResult] with (success, errorMessage).
+     */
+    fun appendToTuiPrompt(text: String, onResult: (success: Boolean, error: String?) -> Unit) {
+        val currentPort = port
+        if (currentPort <= 0) {
+            onResult(false, "OpenCode server is not running")
+            return
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                val result = sessionApiClient.appendPrompt(currentPort, text)
+                if (result.success) {
+                    onResult(true, null)
+                } else {
+                    onResult(false, "Server returned HTTP ${result.statusCode}")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.message ?: "Unknown error")
+            }
         }
     }
 
