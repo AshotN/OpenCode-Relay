@@ -108,6 +108,7 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
         }
 
         plugin.addListener(this)
+        onStateChanged(plugin.serverState)
         plugin.checkPort(settings.serverPort)
         plugin.startPolling(settings.serverPort)
 
@@ -138,6 +139,13 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
                     buttonCardLayout.show(buttonPanel, CARD_STOP)
                 }
                 buttonPanel.isVisible = owned
+            }
+            ServerState.STOPPING -> {
+                portStatusLabel.text = "Stopping OpenCode on port $port..."
+                portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+                stopButton.isEnabled = false
+                buttonCardLayout.show(buttonPanel, CARD_STOP)
+                buttonPanel.isVisible = true
             }
             ServerState.STOPPED -> {
                 portStatusLabel.text = "OpenCode is not running on port $port"

@@ -18,12 +18,15 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
 import com.intellij.ui.components.JBList
 import com.intellij.ui.components.JBScrollPane
+import com.intellij.ui.AnimatedIcon
+import com.intellij.util.ui.EmptyIcon
 import com.intellij.util.ui.JBUI
 import com.intellij.util.ui.UIUtil
 import java.awt.BorderLayout
 import java.awt.Color
 import java.awt.Component
 import java.awt.GridLayout
+import java.awt.Point
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicBoolean
@@ -71,8 +74,12 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         selectionMode = ListSelectionModel.SINGLE_SELECTION
         visibleRowCount = 5
     }
+    private val sessionScrollPane = JBScrollPane(sessionList)
 
     private val refreshScheduled = AtomicBoolean(false)
+    private var didApplyInitialSessionSelection = false
+    private val busySessionIcon = AnimatedIcon.Default.INSTANCE
+    private val idleSessionIcon = EmptyIcon.create(busySessionIcon.iconWidth, busySessionIcon.iconHeight)
 
     private val permissionLabel = JBLabel("").apply {
         font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
@@ -145,7 +152,7 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         val sessionSection = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.emptyBottom(4)
             add(sessionsHeader, BorderLayout.NORTH)
-            add(JBScrollPane(sessionList), BorderLayout.CENTER)
+            add(sessionScrollPane, BorderLayout.CENTER)
             minimumSize = JBUI.size(120, 90)
         }
 
@@ -207,7 +214,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         val permissionService = OpenCodePermissionService.getInstance(project)
         onPermissionChanged(permissionService.currentPermission())
-        refresh()
     }
 
     private fun requestRefresh() {
@@ -290,11 +296,22 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
         sessionListModel.clear()
         rows.forEach { sessionListModel.addElement(it) }
 
-        if (selectedSessionId != null) {
-            val index = rows.indexOfFirst { it.sessionId == selectedSessionId }
-            if (index >= 0) {
-                sessionList.selectedIndex = index
-                sessionList.ensureIndexIsVisible(index)
+        val selectedIndex = selectedSessionId
+            ?.let { sessionId -> rows.indexOfFirst { it.sessionId == sessionId } }
+            ?.takeIf { it >= 0 }
+
+        if (selectedIndex != null) {
+            sessionList.selectedIndex = selectedIndex
+        } else {
+            sessionList.clearSelection()
+        }
+
+        if (!didApplyInitialSessionSelection && rows.isNotEmpty()) {
+            didApplyInitialSessionSelection = true
+            ApplicationManager.getApplication().invokeLater {
+                if (sessionListModel.isEmpty) return@invokeLater
+                sessionScrollPane.viewport.viewPosition = Point(0, 0)
+                sessionList.ensureIndexIsVisible(0)
             }
         }
     }
@@ -325,12 +342,20 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
             val row = value as? SessionRow ?: return this
 
-            val marker = if (row.isBusy) "*" else "-"
+            icon = if (row.isBusy) busySessionIcon else idleSessionIcon
+            iconTextGap = JBUI.scale(6)
             val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
             val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
+            val titleColor = when {
+                isSelected -> foreground
+                row.isBusy -> JBColor(Color(0x1565C0), Color(0x90CAF9))
+                else -> foreground
+            }
+            val titleHex = String.format("%06x", titleColor.rgb and 0xFFFFFF)
+            val statusText = if (row.isBusy) "&nbsp;<font color='#$dimHex'>running...</font>" else ""
             val safeDescription = row.description.ifBlank { row.sessionId }
             text =
-                "<html><b>$marker ${row.title}</b>&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
+                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
             border = JBUI.Borders.empty(4, 8)
             return this
         }

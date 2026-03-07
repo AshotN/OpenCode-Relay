@@ -20,23 +20,12 @@ internal class SessionScopeResolver {
 
     fun resolveSelectedSessionId(
         selectedSessionId: String?,
-        latestActiveSessionId: String?,
         knownSessionIds: Set<String>,
-        updatedAtBySession: Map<String, Long>,
     ): String? {
         if (selectedSessionId != null && selectedSessionId in knownSessionIds) {
             return selectedSessionId
         }
-
-        if (latestActiveSessionId != null && latestActiveSessionId in knownSessionIds) {
-            return latestActiveSessionId
-        }
-
-        return knownSessionIds
-            .maxWithOrNull(
-                compareBy<String> { updatedAtBySession[it] ?: 0L }
-                    .thenBy { it },
-            )
+        return null
     }
 
     fun rootSessionId(sessionId: String, parentBySessionId: Map<String, String>): String {

@@ -1,6 +1,9 @@
 package com.ashotn.opencode.toolwindow
 
 import com.ashotn.opencode.OpenCodeChecker
+import com.ashotn.opencode.OpenCodePlugin
+import com.ashotn.opencode.ServerState
+import com.ashotn.opencode.ServerStateListener
 import com.ashotn.opencode.diff.DiffHunksChangedListener
 import com.ashotn.opencode.diff.OpenCodeDiffService
 import com.ashotn.opencode.diff.SessionStateChangedListener
@@ -29,6 +32,8 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project)
     private val syncScheduled = AtomicBoolean(false)
+    private val plugin = OpenCodePlugin.getInstance(project)
+    private val serverStateListener = ServerStateListener { requestSyncCard() }
 
     init {
         add(outerCardPanel, BorderLayout.CENTER)
@@ -53,6 +58,8 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
             PermissionChangedListener { requestSyncCard() }
         )
 
+        plugin.addListener(serverStateListener)
+
         buildContent()
     }
 
@@ -65,12 +72,20 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun syncCard() {
-        val diffService = OpenCodeDiffService.getInstance(project)
-        val permissionService = OpenCodePermissionService.getInstance(project)
-        val hasPending = diffService.allTrackedFiles().isNotEmpty()
-        val hasSessions = diffService.listSessions().isNotEmpty()
-        val hasPermission = permissionService.currentPermission() != null
-        outerCardLayout.show(outerCardPanel, if (hasPending || hasSessions || hasPermission) CARD_PENDING else CARD_CONTENT)
+        val showPending = when (plugin.serverState) {
+            ServerState.READY -> {
+                val diffService = OpenCodeDiffService.getInstance(project)
+                val permissionService = OpenCodePermissionService.getInstance(project)
+                val hasPending = diffService.allTrackedFiles().isNotEmpty()
+                val hasSessions = diffService.listSessions().isNotEmpty()
+                val hasPermission = permissionService.currentPermission() != null
+                hasPending || hasSessions || hasPermission
+            }
+
+            else -> false
+        }
+
+        outerCardLayout.show(outerCardPanel, if (showPending) CARD_PENDING else CARD_CONTENT)
     }
 
     fun refresh() {
@@ -100,5 +115,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         }
     }
 
-    override fun dispose() {}
+    override fun dispose() {
+        plugin.removeListener(serverStateListener)
+    }
 }

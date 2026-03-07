@@ -19,8 +19,6 @@ internal class DiffStateStore {
     @Volatile
     var selectedSessionId: String? = null
 
-    @Volatile
-    var latestActiveSessionId: String? = null
 
     val busyBySession = ConcurrentHashMap<String, Boolean>()
     val updatedAtBySession = ConcurrentHashMap<String, Long>()
@@ -135,7 +133,6 @@ internal class DiffStateStore {
         stateLock: Any,
         sessionId: String,
         isBusy: Boolean,
-        sessionExists: () -> Boolean,
         nowMillis: Long,
         expectedGeneration: Long,
         currentGeneration: () -> Long,
@@ -145,10 +142,6 @@ internal class DiffStateStore {
         }
         busyBySession[sessionId] = isBusy
         updatedAtBySession[sessionId] = nowMillis
-        latestActiveSessionId = sessionId
-        if (selectedSessionId == null && sessionExists()) {
-            selectedSessionId = sessionId
-        }
         true
     }
 
@@ -167,9 +160,9 @@ internal class DiffStateStore {
 
     fun resolveSelectedSessionId(
         stateLock: Any,
-        resolver: (selectedSessionId: String?, latestActiveSessionId: String?) -> String?,
+        resolver: (selectedSessionId: String?) -> String?,
     ): String? = synchronized(stateLock) {
-        val resolved = resolver(selectedSessionId, latestActiveSessionId)
+        val resolved = resolver(selectedSessionId)
         selectedSessionId = resolved
         resolved
     }
@@ -196,12 +189,8 @@ internal class DiffStateStore {
         val previousSessionFiles = hunksBySessionAndFile[sessionId]?.keys?.toSet() ?: emptySet()
 
         if (!fromHistory) {
-            latestActiveSessionId = sessionId
             busyBySession[sessionId] = true
             updatedAtBySession[sessionId] = nowMillis
-            if (selectedSessionId == null) {
-                selectedSessionId = sessionId
-            }
         }
 
         hunksBySessionAndFile[sessionId] = computedState.newHunksByFile
@@ -259,6 +248,5 @@ internal class DiffStateStore {
         pendingTurnFilesBySession.clear()
         diffApplyRevisionBySession.clear()
         selectedSessionId = null
-        latestActiveSessionId = null
     }
 }

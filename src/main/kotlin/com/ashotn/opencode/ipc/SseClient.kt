@@ -4,7 +4,9 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.logger
 import java.io.BufferedReader
+import java.io.IOException
 import java.io.InputStreamReader
+import java.net.ConnectException
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.Collections
@@ -69,7 +71,13 @@ class SseClient(
             } catch (_: InterruptedException) {
                 break
             } catch (e: Exception) {
-                log.warn("SseClient: connection error, will retry", e)
+                if (!running.get() || Thread.currentThread().isInterrupted || isExpectedDisconnect(e)) {
+                    log.debug("SseClient: connection closed")
+                } else if (e is ConnectException) {
+                    log.debug("SseClient: connection refused, will retry")
+                } else {
+                    log.warn("SseClient: connection error, will retry", e)
+                }
             }
 
             if (running.get()) {
@@ -147,6 +155,12 @@ class SseClient(
         } catch (e: Exception) {
             log.warn("SseClient: failed to parse event jsonLength=${json.length}", e)
         }
+    }
+
+    private fun isExpectedDisconnect(e: Exception): Boolean {
+        if (e !is IOException) return false
+        val message = e.message?.lowercase() ?: return false
+        return message.contains("stream is closed") || message.contains("socket closed")
     }
 
     private fun parseSessionDiff(props: JsonObject): OpenCodeEvent.SessionDiff? {

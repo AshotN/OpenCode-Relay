@@ -23,6 +23,8 @@ enum class ServerState {
     STARTING,
     /** /global/health returned 200 - server is fully ready. */
     READY,
+    /** Stop was requested and shutdown is in progress. */
+    STOPPING,
     /** Port is closed - server is not running. */
     STOPPED,
     /** Port is open but occupied by a non-OpenCode process - user action required. */
@@ -100,6 +102,18 @@ class ServerManager(
     }
 
     private fun applyPortResult(portOpen: Boolean, port: Int) {
+        if (serverState == ServerState.STOPPING) {
+            if (!portOpen) {
+                wasPortOpen = false
+                stopHealthPolling()
+                applyState(ServerState.STOPPED)
+            } else {
+                wasPortOpen = true
+                externalHealthRevision.incrementAndGet()
+            }
+            return
+        }
+
         if (portOpen) {
             when {
                 serverState == ServerState.READY -> {
@@ -275,6 +289,7 @@ class ServerManager(
                 process.onExit().thenRun {
                     if (ownedProcess === process) {
                         SwingUtilities.invokeLater {
+                            removeShutdownHook()
                             ownedProcess = null
                             wasPortOpen = false
                             checkPort(port)
@@ -302,12 +317,23 @@ class ServerManager(
             log.warn("stopServer() called but no process is owned")
             return
         }
+
+        applyState(ServerState.STOPPING)
         ownedProcess = null
         removeShutdownHook()
         wasPortOpen = false
         externalHealthRevision.incrementAndGet()
         stopHealthPolling()
-        applyState(ServerState.STOPPED)
+
+        scheduler.submit {
+            forceKillProcess(process)
+            SwingUtilities.invokeLater {
+                applyState(ServerState.STOPPED)
+            }
+        }
+    }
+
+    private fun forceKillProcess(process: Process) {
         process.toHandle().descendants().forEach { it.destroyForcibly() }
         process.destroyForcibly()
     }
@@ -316,6 +342,7 @@ class ServerManager(
         stopPortPolling()
         stopHealthPolling()
         externalHealthRevision.incrementAndGet()
+        removeShutdownHook()
 
         val process = ownedProcess
         if (process != null) {

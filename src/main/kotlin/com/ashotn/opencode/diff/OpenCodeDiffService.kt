@@ -80,16 +80,6 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         stopListening()
         val generation = advanceLifecycleGeneration()
 
-        val previousInlineFiles = synchronized(stateLock) {
-            stateStore.liveHunksBySessionAndFile.values.flatMap { it.keys }.toSet()
-        }
-        synchronized(stateLock) {
-            resetStateLocked()
-        }
-        hierarchyRefreshInFlight.set(false)
-        previousInlineFiles.forEach { publishService.publishChanged(it) }
-        publishService.publishSessionStateChanged()
-
         this.port = port
         permissionService.setPort(port)
         log.info("OpenCodeDiffService: starting SSE listener on port $port")
@@ -104,6 +94,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         sseClient = null
         port = 0
         reconcileScheduleTokenBySession.clear()
+        clearRuntimeStateAndPublish()
     }
 
     private fun handleEvent(event: OpenCodeEvent, generation: Long) {
@@ -150,7 +141,6 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             stateLock = stateLock,
             sessionId = sessionId,
             isBusy = isBusy,
-            sessionExists = { sessionExistsLocked(sessionId) },
             nowMillis = System.currentTimeMillis(),
             generation = generation,
             currentGeneration = { lifecycleGeneration.get() },
@@ -342,12 +332,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     private fun resolveSelectedSessionIdLocked(): String? = stateStore.resolveSelectedSessionId(
         stateLock = stateLock,
-    ) { selectedSessionId, latestActiveSessionId ->
+    ) { selectedSessionId ->
         scopeResolver.resolveSelectedSessionId(
             selectedSessionId = selectedSessionId,
-            latestActiveSessionId = latestActiveSessionId,
             knownSessionIds = knownSessionIdsLocked(),
-            updatedAtBySession = stateStore.updatedAtBySession,
         )
     }
 
@@ -588,6 +576,20 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 hierarchyRefreshInFlight.set(false)
             }
         }
+    }
+
+    //cleanup
+    private fun clearRuntimeStateAndPublish() {
+        val previousInlineFiles = synchronized(stateLock) {
+            stateStore.liveHunksBySessionAndFile.values.flatMap { it.keys }.toSet()
+        }
+        synchronized(stateLock) {
+            resetStateLocked()
+        }
+        permissionService.clearPermissions()
+        hierarchyRefreshInFlight.set(false)
+        previousInlineFiles.forEach { publishService.publishChanged(it) }
+        publishService.publishSessionStateChanged()
     }
 
     private fun resetStateLocked() {

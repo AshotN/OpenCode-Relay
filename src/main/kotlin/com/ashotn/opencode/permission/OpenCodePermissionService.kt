@@ -37,6 +37,12 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
 
     fun currentPermission(): OpenCodeEvent.PermissionAsked? = permissionQueue.peek()
 
+    fun clearPermissions() {
+        val hadPermissions = permissionQueue.isNotEmpty()
+        permissionQueue.clear()
+        if (hadPermissions) publishPermissionChanged()
+    }
+
     fun handlePermissionAsked(event: OpenCodeEvent.PermissionAsked) {
         log.info("OpenCodePermissionService: permission.asked id=${event.requestId} permission=${event.permission}")
         val wasEmpty = permissionQueue.isEmpty()
