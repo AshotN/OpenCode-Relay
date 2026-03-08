@@ -28,6 +28,7 @@ internal class SessionApiClient {
         val parentBySessionId: Map<String, String>,
         val titleBySessionId: Map<String, String>,
         val descriptionBySessionId: Map<String, String>,
+        val updatedAtBySessionId: Map<String, Long>,
     )
 
     fun fetchSessionDiffSnapshot(currentPort: Int, sessionId: String): DiffSnapshotResult {
@@ -102,16 +103,17 @@ internal class SessionApiClient {
             conn.setRequestProperty("Accept", "application/json")
 
             val code = conn.responseCode
-            if (code !in 200..299) return HierarchySnapshot(emptySet(), emptyMap(), emptyMap(), emptyMap())
+            if (code !in 200..299) return HierarchySnapshot(emptySet(), emptyMap(), emptyMap(), emptyMap(), emptyMap())
 
             val body = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
             val root = JsonParser.parseString(body)
-            if (!root.isJsonArray) return HierarchySnapshot(emptySet(), emptyMap(), emptyMap(), emptyMap())
+            if (!root.isJsonArray) return HierarchySnapshot(emptySet(), emptyMap(), emptyMap(), emptyMap(), emptyMap())
 
             val sessionIds = linkedSetOf<String>()
             val parentByChild = HashMap<String, String>()
             val titleBySession = HashMap<String, String>()
             val descriptionBySession = HashMap<String, String>()
+            val updatedAtBySession = HashMap<String, Long>()
             root.asJsonArray.forEach { element ->
                 if (!element.isJsonObject) return@forEach
                 val sessionObj = element.asJsonObject
@@ -138,12 +140,19 @@ internal class SessionApiClient {
                 if (!parent.isNullOrBlank()) {
                     parentByChild[id] = parent
                 }
+
+                val timeObj = sessionObj.getObjectOrNull("time")
+                val updatedAt = timeObj?.get("updated")?.takeIf { it.isJsonPrimitive }?.asLong
+                if (updatedAt != null && updatedAt > 0L) {
+                    updatedAtBySession[id] = updatedAt
+                }
             }
             HierarchySnapshot(
                 sessionIds = sessionIds,
                 parentBySessionId = parentByChild,
                 titleBySessionId = titleBySession,
                 descriptionBySessionId = descriptionBySession,
+                updatedAtBySessionId = updatedAtBySession,
             )
         } finally {
             conn.disconnect()

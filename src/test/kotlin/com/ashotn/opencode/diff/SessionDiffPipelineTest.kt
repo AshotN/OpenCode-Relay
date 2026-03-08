@@ -395,7 +395,7 @@ class SessionDiffPipelineTest {
     //   2. Ask the AI to write a joke into note.md.
     //      note.md appears in the session's file list.
     //   3. Manually delete the AI's content so note.md is empty again.
-    //   4. Reset the plugin (Settings > OpenCode > Reset connection) or restart the IDE.
+    //   4. Restart the IDE.
     //      note.md must still appear in the session's file list after the reset.
     //      If it disappears, this invariant is violated.
     // -------------------------------------------------------------------------
@@ -439,7 +439,6 @@ class SessionDiffPipelineTest {
             updatedDeleted = decision.updatedDeleted,
             updatedAdded = decision.updatedAdded,
             currentBaselines = snapshot.currentBaselines,
-            nowMillis = 0L,
             expectedGeneration = h.generation,
             currentGeneration = { h.generation },
         )

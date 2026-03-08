@@ -281,7 +281,6 @@ internal class DiffStateStore {
         updatedDeleted: Set<String>,
         updatedAdded: Set<String>,
         currentBaselines: Map<String, String>,
-        nowMillis: Long,
         expectedGeneration: Long,
         currentGeneration: () -> Long,
     ): Boolean = synchronized(stateLock) {
@@ -299,7 +298,6 @@ internal class DiffStateStore {
         deletedBySession[sessionId] = updatedDeleted
         addedBySession[sessionId] = updatedAdded
         baselineBeforeBySessionAndFile[sessionId] = currentBaselines.filterKeys { it in updatedHunks.keys }
-        updatedAtBySession[sessionId] = nowMillis
         true
     }
 

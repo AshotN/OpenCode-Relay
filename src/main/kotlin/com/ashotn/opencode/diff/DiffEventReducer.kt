@@ -153,9 +153,10 @@ internal class DiffEventReducer {
             val matchesBaseline =
                 DiffTextUtil.normalizeContent(diskContent) == DiffTextUtil.normalizeContent(baseline)
             if (matchesBaseline) {
-                updatedHunks.remove(absPath)
-                updatedDeleted.remove(absPath)
-                updatedAdded.remove(absPath)
+                // Clear hunks so inline editor highlights are removed, but keep the
+                // file key in updatedHunks with an empty list so it remains visible
+                // in the session file list and the 3-panel diff viewer stays accessible.
+                updatedHunks[absPath] = emptyList()
                 removedPaths.add(absPath)
             }
         }

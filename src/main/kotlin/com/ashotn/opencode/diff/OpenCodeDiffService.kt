@@ -408,7 +408,6 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             updatedDeleted = reconcileDecision.updatedDeleted,
             updatedAdded = reconcileDecision.updatedAdded,
             currentBaselines = snapshot.currentBaselines,
-            nowMillis = System.currentTimeMillis(),
             expectedGeneration = generation,
             currentGeneration = { lifecycleGeneration.get() },
         )
@@ -719,7 +718,21 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     val parentsChanged = parentBySessionId != snapshot.parentBySessionId
                     val titlesChanged = sessionTitleById != snapshot.titleBySessionId
                     val descriptionsChanged = sessionDescriptionById != snapshot.descriptionBySessionId
-                    if (!idsChanged && !parentsChanged && !titlesChanged && !descriptionsChanged) {
+
+                    // Seed updatedAtBySession from the server-reported timestamps for sessions
+                    // that have no locally-observed timestamp yet (or whose local timestamp is older).
+                    // This ensures the session list is ordered correctly (newest first) even before
+                    // any SSE events have been received for a session.
+                    var timestampsChanged = false
+                    for ((sessionId, serverUpdatedAt) in snapshot.updatedAtBySessionId) {
+                        val localUpdatedAt = stateStore.updatedAtBySession[sessionId] ?: 0L
+                        if (serverUpdatedAt > localUpdatedAt) {
+                            stateStore.updatedAtBySession[sessionId] = serverUpdatedAt
+                            timestampsChanged = true
+                        }
+                    }
+
+                    if (!idsChanged && !parentsChanged && !titlesChanged && !descriptionsChanged && !timestampsChanged) {
                         false
                     } else {
                         hierarchySessionIds.clear()
