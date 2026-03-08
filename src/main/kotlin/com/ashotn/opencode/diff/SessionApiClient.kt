@@ -150,27 +150,4 @@ internal class SessionApiClient {
         }
     }
 
-    data class AppendPromptResult(val success: Boolean, val statusCode: Int)
-
-    fun appendPrompt(currentPort: Int, text: String): AppendPromptResult {
-        val url = URI(serverUrl(currentPort, "/tui/append-prompt")).toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        return try {
-            conn.connectTimeout = 3_000
-            conn.readTimeout = 5_000
-            conn.requestMethod = "POST"
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Accept", "application/json")
-            conn.doOutput = true
-
-            val jsonBody = JsonObject().also { it.addProperty("text", text) }.toString()
-            conn.outputStream.use { it.write(jsonBody.toByteArray(Charsets.UTF_8)) }
-
-            val code = conn.responseCode
-            AppendPromptResult(success = code in 200..299, statusCode = code)
-        } finally {
-            conn.disconnect()
-        }
-    }
-
 }

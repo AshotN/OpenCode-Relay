@@ -49,6 +49,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         )
                 }
             }
+            group("Terminal") {
+                row {
+                    checkBox("Show inline terminal")
+                        .bindSelected(settings::inlineTerminalEnabled)
+                        .comment(
+                            "Embeds the OpenCode TUI directly inside the tool window panel when the " +
+                            "server is running. The toolbar button always opens an external terminal."
+                        )
+                }
+            }
             group("Diagnostics") {
                 row {
                     checkBox("Enable diff trace logging")

@@ -16,6 +16,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var inlineDiffEnabled: Boolean = true,
         var diffTraceEnabled: Boolean = false,
         var diffTraceHistoryEnabled: Boolean = false,
+        var inlineTerminalEnabled: Boolean = true,
     )
 
     private var state = State()
@@ -45,6 +46,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     var diffTraceHistoryEnabled: Boolean
         get() = state.diffTraceHistoryEnabled
         set(value) { state.diffTraceHistoryEnabled = value }
+
+    var inlineTerminalEnabled: Boolean
+        get() = state.inlineTerminalEnabled
+        set(value) { state.inlineTerminalEnabled = value }
 
     companion object {
         fun getInstance(project: Project): OpenCodeSettings =

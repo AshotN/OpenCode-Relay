@@ -1,6 +1,7 @@
 package com.ashotn.opencode
 
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.tui.OpenCodeTuiClient
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -26,11 +27,13 @@ class OpenCodePlugin(private val project: Project) : Disposable {
             ApplicationManager.getApplication().executeOnPooledThread {
                 if (project.isDisposed) return@executeOnPooledThread
                 OpenCodeDiffService.getInstance(project).startListening(port)
+                OpenCodeTuiClient.getInstance(project).setPort(port)
             }
         } else if (state == ServerState.STOPPED) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 if (project.isDisposed) return@executeOnPooledThread
                 OpenCodeDiffService.getInstance(project).stopListening()
+                OpenCodeTuiClient.getInstance(project).setPort(0)
             }
         }
     }
@@ -59,6 +62,12 @@ class OpenCodePlugin(private val project: Project) : Disposable {
             diffService.stopListening()
             overrideState = null
             diffService.startListening(port)
+            // Broadcast the real underlying state now that the override is cleared,
+            // so listeners (e.g. the TUI panel) can react and restore themselves.
+            val realState = serverManager.serverState
+            ApplicationManager.getApplication().invokeLater {
+                broadcastState(realState)
+            }
         }
     }
 

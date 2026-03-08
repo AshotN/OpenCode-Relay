@@ -19,9 +19,10 @@ internal class DiffStateStore {
     @Volatile
     var selectedSessionId: String? = null
 
-    /** True when the user has explicitly cleared the selection via selectSession(null). */
+    /** True when the user has explicitly cleared the selection via selectSession(null).
+     *  Initialised to true so no session is auto-selected on launch. */
     @Volatile
-    var sessionExplicitlyCleared: Boolean = false
+    var sessionExplicitlyCleared: Boolean = true
 
 
     val busyBySession = ConcurrentHashMap<String, Boolean>()
@@ -330,6 +331,6 @@ internal class DiffStateStore {
         pendingTurnFilesBySession.clear()
         diffApplyRevisionBySession.clear()
         selectedSessionId = null
-        sessionExplicitlyCleared = false
+        sessionExplicitlyCleared = true
     }
 }

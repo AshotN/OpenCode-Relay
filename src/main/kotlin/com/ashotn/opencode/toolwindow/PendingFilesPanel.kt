@@ -4,6 +4,7 @@ import com.ashotn.opencode.diff.DiffHighlightKind
 import com.ashotn.opencode.diff.DiffHighlightStyles
 import com.ashotn.opencode.diff.DiffHunksChangedListener
 import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.tui.OpenCodeTuiClient
 import com.ashotn.opencode.diff.SessionStateChangedListener
 import com.ashotn.opencode.util.toProjectRelativePath
 import com.ashotn.opencode.ipc.OpenCodeEvent
@@ -165,7 +166,9 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 if (e.valueIsAdjusting) return
                 if (isUpdatingSessionSelection) return
                 val row = sessionList.selectedValue ?: return
-                OpenCodeDiffService.getInstance(project).selectSession(row.sessionId)
+                val diffService = OpenCodeDiffService.getInstance(project)
+                diffService.selectSession(row.sessionId)
+                OpenCodeTuiClient.getInstance(project).selectTuiSession(row.sessionId)
                 refresh()
             }
         })

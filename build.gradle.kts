@@ -19,6 +19,7 @@ dependencies {
         intellijIdeaCommunity("2025.1")
         instrumentationTools()
         pluginVerifier()
+        bundledPlugin("org.jetbrains.plugins.terminal")
     }
 
     testImplementation(kotlin("test"))

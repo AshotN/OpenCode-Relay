@@ -1,7 +1,7 @@
 package com.ashotn.opencode.actions
 
 import com.ashotn.opencode.OpenCodePlugin
-import com.ashotn.opencode.diff.OpenCodeDiffService
+import com.ashotn.opencode.tui.OpenCodeTuiClient
 import com.ashotn.opencode.util.applyStrings
 import com.ashotn.opencode.util.showNotification
 import com.ashotn.opencode.util.toProjectRelativePath
@@ -64,7 +64,7 @@ class SendSelectionAction : AnAction() {
 
         val ref = "@$relativePath#L$startLine-$endLine "
 
-        OpenCodeDiffService.getInstance(project).appendToTuiPrompt(ref) { success, error ->
+        OpenCodeTuiClient.getInstance(project).appendToTuiPrompt(ref) { success, error ->
             ApplicationManager.getApplication().invokeLater {
                 if (success) {
                     project.showNotification(

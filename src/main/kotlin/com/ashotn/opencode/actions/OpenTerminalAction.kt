@@ -24,9 +24,14 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val port = OpenCodeSettings.getInstance(project).serverPort
-        val command = "opencode attach ${serverUrl(port)}"
+        val settings = OpenCodeSettings.getInstance(project)
+        launchExternalTerminal("opencode attach ${serverUrl(settings.serverPort)}")
+    }
 
+    /**
+     * Launches an external OS terminal window running [command].
+     */
+    private fun launchExternalTerminal(command: String) {
         val processCommand: List<String> = when {
             SystemInfo.isWindows -> listOf("cmd", "/c", "start", "cmd", "/k", command)
             SystemInfo.isMac -> listOf(
