@@ -221,12 +221,11 @@ internal class DiffStateStore {
             liveHunks = if (fromHistory) {
                 emptyMap()
             } else {
-                mergeMapByProcessedPaths(
-                    previous = previousState.liveHunks,
-                    processedPaths = computedState.processedPaths,
-                    next = computedState.newHunksByFile,
-                    replaceAll = false,
-                )
+                // Live hunks always replace entirely — they represent only the current turn's
+                // changes. Files from previous turns must not carry over here, otherwise the
+                // editor continues to show green/red highlights for files the current turn
+                // never touched.
+                computedState.newHunksByFile
             },
             deleted = mergeSetByProcessedPaths(
                 previous = previousState.deleted,

@@ -293,6 +293,58 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
+    // After a turn that only modifies one file, only that file should show green
+    // or red inline highlights in the editor. Files touched by previous turns
+    // must not continue to show highlights just because they were changed
+    // earlier in the session.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to write content to note1.md in one turn.
+    //   2. In a second turn, ask the AI to write content to note2.md.
+    //   3. Open note1.md — it must NOT have any green highlights.
+    //      Only note2.md should show green highlights after turn 2.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `inline highlights only show for the most recent turn's files`() {
+        val file1 = "note1.md"
+        val file2 = "note2.md"
+        val file3 = "note3.md"
+
+        // Turn 1: touch note1.md
+        h.disk[h.abs(file1)] = "line1\n"
+        h.commitTurnPatch(listOf(file1))
+        h.applySessionDiff(listOf(file1 to SessionDiffStatus.MODIFIED))
+        assertEquals(setOf(h.abs(file1)), h.liveHunkFiles(), "after turn 1: only note1.md should be live")
+
+        // Turn 2: touch note2.md only — server diff now reports both files cumulatively
+        h.disk[h.abs(file2)] = "line2\n"
+        h.commitTurnPatch(listOf(file2))
+        h.applySessionDiff(listOf(
+            file1 to SessionDiffStatus.MODIFIED,
+            file2 to SessionDiffStatus.MODIFIED,
+        ))
+        assertEquals(
+            setOf(h.abs(file2)),
+            h.liveHunkFiles(),
+            "after turn 2: only note2.md should be live — note1.md was not touched this turn",
+        )
+
+        // Turn 3: touch note3.md only — server diff now reports all three files cumulatively
+        h.disk[h.abs(file3)] = "line3\n"
+        h.commitTurnPatch(listOf(file3))
+        h.applySessionDiff(listOf(
+            file1 to SessionDiffStatus.MODIFIED,
+            file2 to SessionDiffStatus.MODIFIED,
+            file3 to SessionDiffStatus.ADDED,
+        ))
+        assertEquals(
+            setOf(h.abs(file3)),
+            h.liveHunkFiles(),
+            "after turn 3: only note3.md should be live — note1.md and note2.md were not touched this turn",
+        )
+    }
+
+    // -------------------------------------------------------------------------
     // Each turn's diff must be computed relative to the file content at the
     // start of that turn, not the original file. The pipeline advances the
     // baseline (effectiveBefore) to lastAfter after each turn. If it does not,
