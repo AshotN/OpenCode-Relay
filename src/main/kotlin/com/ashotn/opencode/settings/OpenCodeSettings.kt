@@ -6,7 +6,7 @@ import com.intellij.openapi.project.Project
 @Service(Service.Level.PROJECT)
 @State(
     name = "OpenCodeSettings",
-    storages = [Storage("opencode.xml")]
+    storages = [Storage(StoragePathMacros.WORKSPACE_FILE)]
 )
 class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
