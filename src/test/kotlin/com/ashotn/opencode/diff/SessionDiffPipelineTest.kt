@@ -159,7 +159,6 @@ class SessionDiffPipelineTest {
 
         val stateStore = DiffStateStore()
         val stateLock = Any()
-        val eventReducer = DiffEventReducer()
         val disk = mutableMapOf<String, String>()
 
         val computer = SessionDiffApplyComputer(
@@ -340,8 +339,8 @@ class SessionDiffPipelineTest {
         val file = "notes/note1.md"
         val absFile = "$projectBase/$file"
         val originalContent = "# Note\n\nOriginal content.\n"
-        val afterPoem = originalContent + "\n## Poem\n\nRoses are red.\n"
-        val afterSignature = afterPoem + "\n— Cipher Moonwhisper\n"
+        val afterPoem = "$originalContent\n## Poem\n\nRoses are red.\n"
+        val afterSignature = "$afterPoem\n— Cipher Moonwhisper\n"
 
         val stateStore = DiffStateStore()
         val stateLock = Any()

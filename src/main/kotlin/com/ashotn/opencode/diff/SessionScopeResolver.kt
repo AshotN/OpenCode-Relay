@@ -103,6 +103,11 @@ internal class SessionScopeResolver {
                 if (sessionId in result) return@forEach
                 if (parentBySessionId[sessionId].let { it != null && it !in result }) return@forEach
 
+                // Skip independent sessions that belong to a different conversation.
+                val isKnownRoot = !parentBySessionId.containsKey(sessionId) &&
+                    (updatedAtBySession[sessionId] ?: 0L) > 0L
+                if (isKnownRoot && sessionId !in result) return@forEach
+
                 val updatedAt = updatedAtBySession[sessionId] ?: 0L
                 val isBusy = busyBySession[sessionId] == true
                 val isRecent = updatedAt > 0L && nowMillis - updatedAt <= RECENT_WINDOW_MILLIS
