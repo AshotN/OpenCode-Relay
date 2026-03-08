@@ -29,7 +29,9 @@ enum class ServerState {
     /** Port is closed - server is not running. */
     STOPPED,
     /** Port is open but occupied by a non-OpenCode process - user action required. */
-    PORT_CONFLICT
+    PORT_CONFLICT,
+    /** A reset was requested - clearing state and reconnecting. */
+    RESETTING,
 }
 
 fun interface ServerStateListener {
@@ -54,6 +56,8 @@ class ServerManager(
         private const val HEALTH_CONNECT_TIMEOUT_MS = 1_000
         private const val HEALTH_READ_TIMEOUT_MS = 1_000
     }
+
+    @Volatile private var disposed = false
 
     @Volatile var serverState: ServerState = ServerState.UNKNOWN
         private set
@@ -288,12 +292,14 @@ class ServerManager(
                 startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
 
                 process.onExit().thenRun {
-                    if (ownedProcess === process) {
+                    if (!disposed && ownedProcess === process) {
                         SwingUtilities.invokeLater {
-                            removeShutdownHook()
-                            ownedProcess = null
-                            wasPortOpen = false
-                            checkPort(port)
+                            if (!disposed) {
+                                removeShutdownHook()
+                                ownedProcess = null
+                                wasPortOpen = false
+                                checkPort(port)
+                            }
                         }
                     }
                 }
@@ -340,6 +346,7 @@ class ServerManager(
     }
 
     fun dispose() {
+        disposed = true
         stopPortPolling()
         stopHealthPolling()
         externalHealthRevision.incrementAndGet()

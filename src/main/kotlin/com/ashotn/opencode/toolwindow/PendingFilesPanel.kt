@@ -14,6 +14,7 @@ import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.editor.DiffEditorTabFilesManager
 import com.intellij.diff.editor.SimpleDiffVirtualFile
 import com.intellij.diff.requests.SimpleDiffRequest
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonShortcuts
@@ -21,6 +22,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBLabel
@@ -63,7 +65,7 @@ import javax.swing.event.ListSelectionListener
  * Shows the session list and files with AI session diff highlights.
  * Double-clicking a file opens a before/after diff preview.
  */
-class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
+class PendingFilesPanel(private val project: Project, parentDisposable: Disposable) : JPanel(BorderLayout()), Disposable {
 
     private data class PendingFileRow(
         val path: String,
@@ -158,12 +160,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             border = JBUI.Borders.empty(6, 8, 4, 8)
         }
 
-        val sessionsHeader = JBLabel("Sessions (family root)").apply {
-            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
-            foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            border = JBUI.Borders.empty(0, 8, 2, 8)
-        }
-
         sessionList.addListSelectionListener(object : ListSelectionListener {
             override fun valueChanged(e: ListSelectionEvent) {
                 if (e.valueIsAdjusting) return
@@ -176,7 +172,6 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
 
         val sessionSection = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.emptyBottom(4)
-            add(sessionsHeader, BorderLayout.NORTH)
             add(sessionScrollPane, BorderLayout.CENTER)
             minimumSize = JBUI.size(120, 90)
         }
@@ -275,17 +270,19 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             }
         }.registerCustomShortcutSet(CommonShortcuts.getEditSource(), fileList)
 
-        project.messageBus.connect().subscribe(
+        Disposer.register(parentDisposable, this)
+
+        project.messageBus.connect(this).subscribe(
             DiffHunksChangedListener.TOPIC,
             DiffHunksChangedListener { _ -> requestRefresh() },
         )
 
-        project.messageBus.connect().subscribe(
+        project.messageBus.connect(this).subscribe(
             SessionStateChangedListener.TOPIC,
             SessionStateChangedListener { requestRefresh() },
         )
 
-        project.messageBus.connect().subscribe(
+        project.messageBus.connect(this).subscribe(
             PermissionChangedListener.TOPIC,
             PermissionChangedListener { event ->
                 ApplicationManager.getApplication().invokeLater { onPermissionChanged(event) }
@@ -503,6 +500,10 @@ class PendingFilesPanel(private val project: Project) : JPanel(BorderLayout()) {
             border = JBUI.Borders.empty(4, 8)
             return this
         }
+    }
+
+    override fun dispose() {
+        // Message bus connections are closed automatically by Disposer when this is disposed.
     }
 
     private inner class FilePathCellRenderer : DefaultListCellRenderer() {

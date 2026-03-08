@@ -2,6 +2,7 @@
     <id>com.ashotn.opencode-intellij</id>
     <name>OpenCode</name>
     <vendor>Ashot Nazaryan</vendor>
+    <resource-bundle>messages.OpenCodeBundle</resource-bundle>
 
     <description><![CDATA[
         OpenCode AI coding assistant integration for IntelliJ IDEA.
@@ -17,18 +18,13 @@
             factoryClass="com.ashotn.opencode.toolwindow.OpenCodeToolWindowFactory"
             icon="/icons/opencode.svg"
         />
-        <projectService serviceImplementation="com.ashotn.opencode.OpenCodePlugin"/>
-        <projectService serviceImplementation="com.ashotn.opencode.settings.OpenCodeSettings"/>
         <projectConfigurable
             parentId="tools"
             instance="com.ashotn.opencode.settings.OpenCodeSettingsConfigurable"
             id="com.ashotn.opencode.settings"
-            displayName="OpenCode"
+            key="configurable.opencode.displayName"
         />
-        <notificationGroup id="OpenCode" displayType="BALLOON"/>
-
-        <projectService serviceImplementation="com.ashotn.opencode.diff.OpenCodeDiffService"/>
-        <projectService serviceImplementation="com.ashotn.opencode.diff.EditorDiffRenderer"/>
+        <notificationGroup id="OpenCode" displayType="BALLOON" key="notification.group.opencode"/>
     </extensions>
 
     <actions>
@@ -36,18 +32,14 @@
 
         <action
             id="com.ashotn.opencode.actions.ClearInstanceAction"
-            class="com.ashotn.opencode.actions.ClearInstanceAction"
-            text="Clear Session"
-            description="Clear the selected session and remove all diff highlights">
+            class="com.ashotn.opencode.actions.ClearInstanceAction">
             <!-- Global shortcut when panel is not focused -->
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
         </action>
 
         <action
             id="com.ashotn.opencode.actions.SendSelectionAction"
-            class="com.ashotn.opencode.actions.SendSelectionAction"
-            text="Send Selection to OpenCode"
-            description="Append the selected code to the active OpenCode session's prompt input">
+            class="com.ashotn.opencode.actions.SendSelectionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift 4"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>

@@ -30,7 +30,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
     private val outerCardLayout = CardLayout()
     private val outerCardPanel = JPanel(outerCardLayout)
-    private val pendingFilesPanel = PendingFilesPanel(project)
+    private val pendingFilesPanel = PendingFilesPanel(project, this)
     private val syncScheduled = AtomicBoolean(false)
     private val plugin = OpenCodePlugin.getInstance(project)
     private val serverStateListener = ServerStateListener { requestSyncCard() }
@@ -115,7 +115,11 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         }
     }
 
+    private var disposed = false
+
     override fun dispose() {
+        if (disposed) return
+        disposed = true
         plugin.removeListener(serverStateListener)
     }
 }

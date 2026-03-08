@@ -16,7 +16,7 @@ class ResetPluginAction(private val project: Project) :
         val state = plugin.serverState
         val strings = ActionStrings.RESET_PLUGIN
 
-        if (state == ServerState.STOPPING) {
+        if (state == ServerState.RESETTING) {
             e.presentation.isEnabled = false
             e.presentation.text = "Resetting OpenCode..."
             e.presentation.description = "OpenCode reset is in progress"
