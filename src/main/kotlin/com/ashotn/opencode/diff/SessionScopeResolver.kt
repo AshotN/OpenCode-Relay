@@ -21,25 +21,7 @@ internal class SessionScopeResolver {
     fun resolveSelectedSessionId(
         selectedSessionId: String?,
         knownSessionIds: Set<String>,
-        updatedAtBySession: Map<String, Long> = emptyMap(),
-        busyBySession: Map<String, Boolean> = emptyMap(),
-        parentBySessionId: Map<String, String> = emptyMap(),
-        explicitlyCleared: Boolean = false,
-    ): String? {
-        if (selectedSessionId != null && selectedSessionId in knownSessionIds) {
-            return selectedSessionId
-        }
-        // User explicitly cleared the selection — do not auto-select.
-        if (explicitlyCleared) return null
-        // No explicit selection — auto-select the most recently active root session.
-        val rootSessions = knownSessionIds.filter { it !in parentBySessionId }
-        if (rootSessions.isEmpty()) return null
-        return rootSessions.maxByOrNull { sessionId ->
-            val updatedAt = updatedAtBySession[sessionId] ?: 0L
-            val busyBonus = if (busyBySession[sessionId] == true) Long.MAX_VALUE / 2 else 0L
-            updatedAt + busyBonus
-        }
-    }
+    ): String? = selectedSessionId?.takeIf { it in knownSessionIds }
 
     fun rootSessionId(sessionId: String, parentBySessionId: Map<String, String>): String {
         val visited = HashSet<String>()
