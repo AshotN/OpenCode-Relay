@@ -139,10 +139,13 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
-    // When the AI delegates work to parallel sub-agents, every file touched by
-    // any sub-agent must show a green highlight in the editor. All files must
-    // be visible simultaneously, not just the file from the last sub-agent to
-    // finish.
+    // When a root session delegates work to parallel sub-agents, all files
+    // touched by those sub-agents count as part of the same logical turn of the
+    // root session. All files must appear as live (inline-highlightable) at the
+    // same time — not just the file from the last sub-agent to finish.
+    //
+    // This aligns with Rule 2 of the inline diff policy: sub-agents running
+    // under a single root session represent one turn from the user's perspective.
     //
     // MANUAL VERIFICATION:
     //   1. Ask the AI to spin up 5 sub-agents, each creating a different file with some content.
@@ -290,6 +293,95 @@ class SessionDiffPipelineTest {
             liveVisibleWithoutHierarchy,
             "All child-session files must be visible under the root session even before hierarchy refresh, got: $liveVisibleWithoutHierarchy",
         )
+    }
+
+    // -------------------------------------------------------------------------
+    // After an IDE restart, the plugin reloads session history from the server
+    // but must not restore inline green/red highlights. Inline highlights are a
+    // runtime signal — they only appear after a new turn runs in the current
+    // IDE session. Reloading history is for file counts and diff preview only.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to modify a file. Green highlights appear in the editor.
+    //   2. Restart the IDE.
+    //   3. Open the same file — no green highlights should be visible.
+    //      The session should still appear in the session panel with a file count,
+    //      but the editor must be clean until a new turn runs.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `historical reload after restart does not restore inline highlights`() {
+        val file = "note.md"
+
+        // Simulate a live turn that produced inline highlights before restart.
+        h.disk[h.abs(file)] = "line1\n"
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        assertEquals(setOf(h.abs(file)), h.liveHunkFiles(), "pre-restart: live highlights present")
+
+        // Simulate IDE restart: create fresh state store and replay the session
+        // diff as a historical load (fromHistory=true), exactly as the plugin does
+        // when it calls /session/{id}/diff on startup.
+        val freshStore = DiffStateStore()
+        val freshLock = Any()
+        val revision = freshStore.reserveRevisionForSessionDiffApply(
+            stateLock = freshLock,
+            sessionId = h.sessionId,
+            fromHistory = true,
+            expectedGeneration = h.generation,
+            currentGeneration = { h.generation },
+        )!!
+        val prepareSnapshot = freshStore.snapshotSessionDiffPrepareState(
+            stateLock = freshLock,
+            sessionId = h.sessionId,
+            expectedGeneration = h.generation,
+            currentGeneration = { h.generation },
+        )!!
+        val computer = SessionDiffApplyComputer(
+            contentReader = { absPath -> h.disk[absPath] ?: "" },
+            hunkComputer = { fileDiff, sid ->
+                if (fileDiff.before == fileDiff.after) emptyList()
+                else listOf(DiffHunk(fileDiff.file, 0, emptyList(), listOf(fileDiff.after), sid))
+            },
+            log = NoOpLogger,
+            tracer = NoOpDiffTracer,
+        )
+        val event = OpenCodeEvent.SessionDiff(
+            sessionId = h.sessionId,
+            files = listOf(OpenCodeEvent.SessionDiffFile(
+                file = h.abs(file),
+                before = "",
+                after = "line1\n",
+                additions = 1,
+                deletions = 0,
+                status = SessionDiffStatus.MODIFIED,
+            )),
+        )
+        val computedState = computer.compute(
+            projectBase = h.projectBase,
+            event = event,
+            fromHistory = true,
+            turnScope = null,
+            previousAfterByFile = prepareSnapshot.previousAfterByFile,
+        )
+        freshStore.commitSessionDiffApply(
+            stateLock = freshLock,
+            sessionId = h.sessionId,
+            revision = revision,
+            fromHistory = true,
+            computedState = computedState,
+            nowMillis = 0L,
+            expectedGeneration = h.generation,
+            currentGeneration = { h.generation },
+        )
+
+        // After historical reload: file count is tracked but inline highlights are gone.
+        val liveAfterReload = freshStore.liveHunksBySessionAndFile[h.sessionId]?.keys ?: emptySet<String>()
+        val cumAfterReload = freshStore.hunksBySessionAndFile[h.sessionId]?.keys ?: emptySet<String>()
+
+        assertTrue(liveAfterReload.isEmpty(),
+            "post-restart historical reload must not restore inline highlights, got liveHunkFiles: $liveAfterReload")
+        assertEquals(setOf(h.abs(file)), cumAfterReload,
+            "cumulative hunk state must be populated for file count / diff preview")
     }
 
     // -------------------------------------------------------------------------

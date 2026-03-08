@@ -27,16 +27,25 @@ internal class DiffQueryService {
         }
         .toSet()
 
-    fun hunks(
+    /**
+     * Returns inline hunks for [filePath] from the live (latest-turn-only) state.
+     *
+     * Per the inline diff policy (docs/INLINE_DIFF_POLICY.md):
+     *   - Only the selected session may render inline highlights (Rule 1).
+     *   - Inline highlights show only the most recent turn (Rule 2).
+     *
+     * Live hunks are stored per-session and always represent only the latest
+     * committed turn — they are replaced entirely on each new turn and cleared
+     * to empty on fromHistory applies. There is no cross-session merge here:
+     * only the selected session's own live hunks are returned.
+     */
+    fun liveHunks(
         filePath: String,
-        familySessionIds: () -> Set<String>,
-        updatedAtBySession: Map<String, Long>,
-        hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
+        selectedSessionId: () -> String?,
+        liveHunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
     ): List<DiffHunk> {
-        val orderedSessionIds = familySessionIds().sortedBy { sessionId ->
-            -(updatedAtBySession[sessionId] ?: 0L)
-        }
-        return SessionScopeMergeUtil.mergeByOrderedSessions(filePath, orderedSessionIds, hunksBySessionAndFile)
+        val sessionId = selectedSessionId() ?: return emptyList()
+        return liveHunksBySessionAndFile[sessionId]?.get(filePath) ?: emptyList()
     }
 
     fun containsFile(

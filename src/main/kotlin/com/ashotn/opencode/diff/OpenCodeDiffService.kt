@@ -517,11 +517,17 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         deletedBySession = stateStore.deletedBySession,
     )
 
-    private fun inlineHunks(filePath: String): List<DiffHunk> = queryService.hunks(
+    /**
+     * Inline hunks for editor rendering, sourced from live (latest-turn-only) state.
+     *
+     * Per docs/INLINE_DIFF_POLICY.md:
+     *   - Only the selected session contributes (Rule 1).
+     *   - Only the most recent turn is represented (Rule 2).
+     */
+    private fun inlineLiveHunks(filePath: String): List<DiffHunk> = queryService.liveHunks(
         filePath = filePath,
-        familySessionIds = { familySessionIdsLocked() },
-        updatedAtBySession = stateStore.updatedAtBySession,
-        hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
+        selectedSessionId = { resolveSelectedSessionIdLocked() },
+        liveHunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
     )
 
     fun listSessions(): List<SessionInfo> = synchronized(stateLock) {
@@ -560,12 +566,12 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     }
 
     fun getHunks(filePath: String): List<DiffHunk> {
-        return synchronized(stateLock) { inlineHunks(filePath) }
+        return synchronized(stateLock) { inlineLiveHunks(filePath) }
     }
 
     fun hasPendingHunks(filePath: String): Boolean {
         return synchronized(stateLock) {
-            inlineHunks(filePath).isNotEmpty()
+            inlineLiveHunks(filePath).isNotEmpty()
         }
     }
 
