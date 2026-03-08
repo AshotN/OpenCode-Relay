@@ -12,23 +12,20 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.editor.Editor
-import com.intellij.openapi.project.Project
 
 /**
- * Editor action that appends the current text selection as a fenced code block
- * to the TUI's prompt input buffer via POST /tui/append-prompt.
+ * Editor action that appends an @path#Lstart-end file reference to the TUI's prompt
+ * input buffer via POST /tui/append-prompt.
  *
- * The OpenCode server provides no session-scoping for this endpoint — the text lands
+ * Sends a reference only — no file content is embedded in the prompt. OpenCode resolves
+ * the file and line range itself when the user submits.
+ *
+ * The OpenCode server provides no session-scoping for this endpoint — the reference lands
  * in whichever session the TUI currently has open. The plugin has no control over that.
  *
  * Does NOT create a message or trigger a model response; the user still submits manually.
  */
-class SendSelectionAction : AnAction(
-    ActionStrings.SEND_SELECTION.text,
-    ActionStrings.SEND_SELECTION.description,
-    AllIcons.Actions.Upload,
-) {
+class SendSelectionAction : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
@@ -37,11 +34,11 @@ class SendSelectionAction : AnAction(
         val editor = e.getData(CommonDataKeys.EDITOR)
         val running = project != null && OpenCodePlugin.getInstance(project).isRunning
         val hasSelection = editor?.selectionModel?.hasSelection() == true
-        val strings = ActionStrings.SEND_SELECTION
 
         // Hide entirely when invoked outside an editor context (e.g. tool window, global shortcut)
         e.presentation.isVisible = editor != null
-        e.applyStrings(strings, running && hasSelection)
+        e.presentation.icon = AllIcons.Actions.Upload
+        e.applyStrings(ActionStrings.SEND_SELECTION, running && hasSelection)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -50,31 +47,33 @@ class SendSelectionAction : AnAction(
 
         val selectionModel = editor.selectionModel
         if (!selectionModel.hasSelection()) {
-            showNotification(project, "No text selected", "Select some code in the editor first.", NotificationType.INFORMATION)
+            project.showNotification("No text selected", "Select some code in the editor first.", NotificationType.INFORMATION)
             return
         }
 
-        val selectedText = selectionModel.selectedText ?: return
-        if (selectedText.isBlank()) {
-            showNotification(project, "Empty selection", "The selected text is blank.", NotificationType.INFORMATION)
-            return
-        }
+        val document = editor.document
+        val startLine = document.getLineNumber(selectionModel.selectionStart) + 1
+        // Use selectionEnd - 1 so a cursor parked at column 0 of the next line doesn't
+        // inflate the range by one (e.g. selecting lines 1–3 ending at line 4 offset 0).
+        val endLine = document.getLineNumber((selectionModel.selectionEnd - 1).coerceAtLeast(selectionModel.selectionStart)) + 1
 
-        val contextText = buildContextPayload(project, editor, selectedText)
+        val virtualFile = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getFile(document)
+        val relativePath = virtualFile?.path?.let { path ->
+            project.basePath?.let { base -> path.toProjectRelativePath(base) } ?: path
+        } ?: return
 
-        val diffService = OpenCodeDiffService.getInstance(project)
-        diffService.appendToTuiPrompt(contextText) { success, error ->
+        val ref = "@$relativePath#L$startLine-$endLine "
+
+        OpenCodeDiffService.getInstance(project).appendToTuiPrompt(ref) { success, error ->
             ApplicationManager.getApplication().invokeLater {
                 if (success) {
-                    showNotification(
-                        project,
+                    project.showNotification(
                         "Selection sent to OpenCode",
-                        "The selected code has been appended to the active session's prompt.",
+                        "File reference appended to the active session's prompt.",
                         NotificationType.INFORMATION,
                     )
                 } else {
-                    showNotification(
-                        project,
+                    project.showNotification(
                         "Failed to send selection",
                         error ?: "Could not reach the OpenCode server.",
                         NotificationType.ERROR,
@@ -82,40 +81,5 @@ class SendSelectionAction : AnAction(
                 }
             }
         }
-    }
-
-    private fun buildContextPayload(project: Project, editor: Editor, selectedText: String): String {
-        val document = editor.document
-        val selectionModel = editor.selectionModel
-
-        val startOffset = selectionModel.selectionStart
-        val endOffset = selectionModel.selectionEnd
-        val startLine = document.getLineNumber(startOffset) + 1  // 1-based
-        val endLine = document.getLineNumber(endOffset - 1).coerceAtLeast(startLine) + 1
-
-        val virtualFile = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance()
-            .getFile(document)
-        val filePath = when {
-            virtualFile != null -> {
-                val projectBase = project.basePath
-                if (projectBase != null) virtualFile.path.toProjectRelativePath(projectBase)
-                else virtualFile.path
-            }
-            else -> "untitled"
-        }
-
-        val language = virtualFile?.extension ?: ""
-
-        return buildString {
-            append("```$language\n")
-            append("// $filePath lines $startLine-$endLine\n")
-            append(selectedText)
-            if (!selectedText.endsWith('\n')) append('\n')
-            append("```")
-        }
-    }
-
-    private fun showNotification(project: Project, title: String, content: String, type: NotificationType) {
-        project.showNotification(title, content, type)
     }
 }

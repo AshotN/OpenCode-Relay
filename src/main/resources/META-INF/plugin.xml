@@ -43,5 +43,18 @@
             <keyboard-shortcut keymap="$default" first-keystroke="shift 4"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
+
+        <action
+            id="com.ashotn.opencode.actions.SendFileAction"
+            class="com.ashotn.opencode.actions.SendFileAction">
+            <add-to-group group-id="EditorPopupMenu" anchor="last"/>
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
+
+        <action
+            id="com.ashotn.opencode.actions.SendFolderAction"
+            class="com.ashotn.opencode.actions.SendFolderAction">
+            <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
+        </action>
     </actions>
 </idea-plugin>

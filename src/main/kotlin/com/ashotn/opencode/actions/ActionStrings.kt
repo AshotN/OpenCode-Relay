@@ -39,8 +39,20 @@ enum class ActionStrings(
     SEND_SELECTION(
         text = "Send Selection to OpenCode",
         disabledText = "Send Selection to OpenCode (OpenCode must be running)",
-        description = "Append the selected code to the active OpenCode session's prompt input",
+        description = "Append a file reference for the selected lines to OpenCode TUI",
         disabledDescription = "OpenCode must be running to send a selection",
+    ),
+    SEND_FILE(
+        text = "Send File to OpenCode",
+        disabledText = "Send File to OpenCode (OpenCode must be running)",
+        description = "Append a file reference to OpenCode TUI",
+        disabledDescription = "OpenCode must be running to send a file",
+    ),
+    SEND_FOLDER(
+        text = "Send Folder to OpenCode",
+        disabledText = "Send Folder to OpenCode (OpenCode must be running)",
+        description = "Append a folder reference to OpenCode TUI",
+        disabledDescription = "OpenCode must be running to send a folder",
     ),
     RESET_PLUGIN(
         text = "Reset OpenCode",
