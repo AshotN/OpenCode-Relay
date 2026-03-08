@@ -296,6 +296,56 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
+    // When the AI intentionally empties a file (replaces all content with an
+    // empty string), the "After AI" panel in the diff viewer must show an empty
+    // file. If a previous turn wrote content to the same file, the diff viewer
+    // must not show that earlier content in the "After AI" panel — the user
+    // would be looking at the wrong thing and could make incorrect decisions
+    // about accepting or reverting the change.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to add a joke to a note file (e.g. "add a joke to note2.md").
+    //   2. In a second turn, ask the AI to replace the file with an empty string
+    //      (e.g. "replace note2.md with an empty string").
+    //   3. Double-click note2.md in the diff viewer.
+    //   4. The "After AI" panel must be empty.
+    //      If it still shows the joke from turn 1, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `After AI panel must be empty when AI empties a file`() {
+        val file = "note2.md"
+        val originalContent = "# Notes\n\nSome original text.\n"
+        val withJoke = originalContent + "\nWhy do Java developers wear glasses? Because they can't C#.\n"
+
+        // Turn 1: AI adds a joke — server sends non-empty after
+        h.disk[h.abs(file)] = withJoke
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(
+            files = listOf(file to SessionDiffStatus.MODIFIED),
+            serverAfterByFile = mapOf(h.abs(file) to withJoke),
+        )
+        assertEquals(withJoke, h.serverAfter(file),
+            "after turn 1: serverAfter should hold the joke content")
+
+        // Turn 2: AI empties the file — server sends empty string as after
+        h.disk[h.abs(file)] = ""
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(
+            files = listOf(file to SessionDiffStatus.MODIFIED),
+            serverAfterByFile = mapOf(h.abs(file) to ""),
+        )
+
+        // The "After AI" content shown in the diff viewer must be empty string,
+        // not the stale joke content from turn 1.
+        assertEquals(
+            "",
+            h.serverAfter(file),
+            "After AI panel must show empty string when AI emptied the file, " +
+                "but serverAfter still holds stale content: '${h.serverAfter(file)}'",
+        )
+    }
+
+    // -------------------------------------------------------------------------
     // After an IDE restart, the plugin reloads session history from the server
     // but must not restore inline green/red highlights. Inline highlights are a
     // runtime signal — they only appear after a new turn runs in the current

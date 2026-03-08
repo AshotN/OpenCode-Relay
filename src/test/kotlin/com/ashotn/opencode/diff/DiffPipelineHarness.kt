@@ -57,7 +57,10 @@ internal class DiffPipelineHarness(
         )
     }
 
-    fun applySessionDiff(files: List<Pair<String, SessionDiffStatus>>): DiffStateStore.SessionDiffCommitResult? {
+    fun applySessionDiff(
+        files: List<Pair<String, SessionDiffStatus>>,
+        serverAfterByFile: Map<String, String> = emptyMap(),
+    ): DiffStateStore.SessionDiffCommitResult? {
         val decision = eventReducer.beginSessionDiffApply(
             stateStore = stateStore,
             stateLock = stateLock,
@@ -83,7 +86,7 @@ internal class DiffPipelineHarness(
                 OpenCodeEvent.SessionDiffFile(
                     file = abs(relPath),
                     before = "",
-                    after = "",
+                    after = serverAfterByFile[abs(relPath)] ?: "",
                     additions = 0,
                     deletions = 0,
                     status = status,
@@ -136,4 +139,7 @@ internal class DiffPipelineHarness(
 
     fun baseline(relPath: String): String? =
         stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(abs(relPath))
+
+    fun serverAfter(relPath: String): String? =
+        stateStore.serverAfterBySessionAndFile[sessionId]?.get(abs(relPath))
 }

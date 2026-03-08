@@ -411,16 +411,23 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
                 val contentFactory = DiffContentFactory.getInstance()
                 val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return@invokeLater
-                val beforeContent = contentFactory.create(project, preview.before, vFile)
-                val afterContent = contentFactory.create(project, vFile)
-
                 val title = "OpenCode Diff: ${row.name}"
+
+                // 3-panel diff: Before AI | Current file (live) | After AI.
+                // "Current file" is the live VirtualFile so it reflects unsaved edits too.
+                // "After AI" is the server's intended result — useful to see what the AI
+                // originally wrote, even if the user has since modified the file on top.
+                val beforeContent = contentFactory.create(project, preview.before, vFile)
+                val currentContent = contentFactory.create(project, vFile)
+                val aiAfterContent = contentFactory.create(project, preview.aiAfter, vFile)
                 val request = SimpleDiffRequest(
                     title,
                     beforeContent,
-                    afterContent,
-                    "Session baseline",
+                    currentContent,
+                    aiAfterContent,
+                    "Before AI",
                     "Current file",
+                    "After AI",
                 )
 
                 val diffVirtualFile = SimpleDiffVirtualFile(request)

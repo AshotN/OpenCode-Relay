@@ -35,8 +35,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     data class FileDiffPreview(
         val filePath: String,
         val sessionId: String,
+        /** Content of the file before the AI session touched it (session baseline). */
         val before: String,
-        val after: String,
+        /** The AI's intended result as reported by the server. */
+        val aiAfter: String,
     )
 
     private val log = logger<OpenCodeDiffService>()
@@ -594,7 +596,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     fun allTrackedFiles(): Set<String> = synchronized(stateLock) { visibleFilesLocked() }
 
     fun getFileDiffPreview(filePath: String, onResult: (FileDiffPreview?) -> Unit) {
-        val (sessionId, currentPort) = synchronized(stateLock) {
+        val (sessionId, currentPort, storedServerAfter) = synchronized(stateLock) {
             val candidateSessionIds = queryService.previewCandidateSessionIds(
                 familySessionIds = { familySessionIdsLocked() },
                 updatedAtBySession = stateStore.updatedAtBySession,
@@ -602,7 +604,8 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             val sid = candidateSessionIds.firstOrNull { sessionId ->
                 stateStore.baselineBeforeBySessionAndFile[sessionId]?.containsKey(filePath) == true
             } ?: return onResult(null)
-            sid to port
+            val serverAfter = stateStore.serverAfterBySessionAndFile[sid]?.get(filePath)
+            Triple(sid, port, serverAfter)
         }
 
         if (currentPort <= 0) return onResult(null)
@@ -615,12 +618,15 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 onResult(null)
                 return@executeOnPooledThread
             }
+            // Prefer the in-memory server-reported AI after (captured at SSE event time);
+            // fall back to the REST snapshot's after field.
+            val aiAfter = storedServerAfter ?: result.after ?: documentSyncService.readCurrentContent(filePath)
             onResult(
                 FileDiffPreview(
                     filePath = filePath,
                     sessionId = sessionId,
                     before = result.before,
-                    after = result.after ?: documentSyncService.readCurrentContent(filePath),
+                    aiAfter = aiAfter,
                 )
             )
         }

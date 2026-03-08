@@ -24,6 +24,7 @@ internal class SessionDiffApplyComputer(
         val newDeleted = HashSet<String>()
         val newAdded = HashSet<String>()
         val newBaselineByFile = HashMap<String, String>()
+        val newServerAfterByFile = HashMap<String, String>()
         val processedPaths = HashSet<String>()
         val nextAfterByFile = previousAfterByFile.toMutableMap()
         var outOfScopeCount = 0
@@ -47,6 +48,11 @@ internal class SessionDiffApplyComputer(
             }
 
             processedPaths.add(absPath)
+
+            // Capture the server's intended "after AI" content for the diff viewer.
+            // Always record it — including empty string — so that a turn which
+            // intentionally empties a file clears any stale value from a prior turn.
+            newServerAfterByFile[absPath] = diffFile.after
 
             if (!fromHistory) {
                 onFileProcessing?.invoke(absPath, diffFile.status)
@@ -171,6 +177,7 @@ internal class SessionDiffApplyComputer(
             newDeleted = newDeleted,
             newAdded = newAdded,
             newBaselineByFile = newBaselineByFile,
+            newServerAfterByFile = newServerAfterByFile,
         )
     }
 }
