@@ -41,6 +41,14 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     fun checkPort(port: Int) = serverManager.checkPort(port)
     fun startServer(port: Int, executablePath: String) = serverManager.startServer(port, executablePath)
     fun stopServer() = serverManager.stopServer()
+    fun resetConnection() {
+        val port = com.ashotn.opencode.settings.OpenCodeSettings.getInstance(project).serverPort
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val diffService = OpenCodeDiffService.getInstance(project)
+            diffService.stopListening()
+            diffService.startListening(port)
+        }
+    }
 
     // --- Disposable ---
 

@@ -42,4 +42,10 @@ enum class ActionStrings(
         description = "Append the selected code to the active OpenCode session's prompt input",
         disabledDescription = "OpenCode must be running to send a selection",
     ),
+    RESET_PLUGIN(
+        text = "Reset OpenCode",
+        disabledText = "Reset OpenCode (server must be running or starting)",
+        description = "Disconnect from the server, reset all plugin state, and reconnect",
+        disabledDescription = "Reset is only available when OpenCode is running or starting",
+    ),
 }

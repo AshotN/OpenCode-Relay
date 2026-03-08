@@ -8,6 +8,7 @@ import com.ashotn.opencode.actions.ClearInstanceAction
 import com.ashotn.opencode.actions.OpenBrowserAction
 import com.ashotn.opencode.actions.OpenSettingsAction
 import com.ashotn.opencode.actions.OpenTerminalAction
+import com.ashotn.opencode.actions.ResetPluginAction
 import com.ashotn.opencode.actions.StopServerAction
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.application.ApplicationManager
@@ -22,7 +23,7 @@ class OpenCodeToolWindowFactory : ToolWindowFactory {
         val panel = OpenCodeToolWindowPanel(project)
         val content = ContentFactory.getInstance().createContent(panel, "", false)
         toolWindow.contentManager.addContent(content)
-        toolWindow.setTitleActions(listOf(OpenTerminalAction(project), OpenBrowserAction(project), StopServerAction(project), ClearInstanceAction(project), OpenSettingsAction(project)))
+        toolWindow.setTitleActions(listOf(OpenTerminalAction(project), OpenBrowserAction(project), StopServerAction(project), ResetPluginAction(project), ClearInstanceAction(project), OpenSettingsAction(project)))
 
         // Update tool window icon based on server connection state
         val plugin = OpenCodePlugin.getInstance(project)
