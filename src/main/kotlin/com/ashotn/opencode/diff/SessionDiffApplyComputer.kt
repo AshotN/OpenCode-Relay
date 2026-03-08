@@ -86,6 +86,16 @@ internal class SessionDiffApplyComputer(
                         "contentChanged" to false,
                     ),
                 )
+                // On a historical load the server is the authority on whether a file
+                // was touched in this session. Even if disk currently matches the
+                // baseline (e.g. the user reverted the file), we must still record it
+                // so it appears in the file list and the 3-panel diff viewer remains
+                // accessible. For live turns we keep the existing behaviour: a file
+                // that matches baseline is considered resolved and not shown.
+                if (fromHistory && diffFile.status == SessionDiffStatus.MODIFIED) {
+                    newHunksByFile[absPath] = emptyList()
+                    newBaselineByFile[absPath] = effectiveBefore
+                }
                 continue
             }
 
@@ -111,6 +121,15 @@ internal class SessionDiffApplyComputer(
                         "hunkCount" to 0,
                     ),
                 )
+                // Still record the file with an empty hunk list so it remains visible
+                // in the session file count and file list. This covers two cases:
+                //   1. Hunk computation failed internally (e.g. ComparisonManager threw).
+                //   2. The diff algorithm produced no hunks despite a content difference
+                //      (shouldn't happen, but defensive).
+                // Without this, the file silently disappears from tracking even though
+                // the server reported it as modified.
+                newHunksByFile[absPath] = emptyList()
+                newBaselineByFile[absPath] = effectiveBefore
                 continue
             }
 

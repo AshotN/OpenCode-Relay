@@ -19,6 +19,7 @@ internal class DiffPipelineHarness(
     val projectBase: String = "/project",
     val sessionId: String = "ses_test",
     val generation: Long = 1L,
+    hunkComputer: ((com.ashotn.opencode.ipc.FileDiff, String) -> List<DiffHunk>)? = null,
 ) {
     /** Simulated disk: keyed by absolute path. */
     val disk = mutableMapOf<String, String>()
@@ -29,8 +30,8 @@ internal class DiffPipelineHarness(
 
     private val computer = SessionDiffApplyComputer(
         contentReader = { absPath -> disk[absPath] ?: "" },
-        hunkComputer = { fileDiff, sid ->
-            // Fake: emit one hunk whenever before != after
+        hunkComputer = hunkComputer ?: { fileDiff, sid ->
+            // Default fake: emit one hunk whenever before != after
             if (fileDiff.before == fileDiff.after) emptyList()
             else listOf(DiffHunk(
                 fileDiff.file, 0,

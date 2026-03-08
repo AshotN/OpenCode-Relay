@@ -286,8 +286,6 @@ class SessionDiffPipelineTest {
         )
 
         // All 5 child files must be visible even before hierarchy refresh completes.
-        // Currently fails: without parentBySessionId the family resolves to {root} only,
-        // root has no liveHunks, so nothing is visible.
         assertEquals(
             allExpectedFiles,
             liveVisibleWithoutHierarchy,
@@ -304,16 +302,15 @@ class SessionDiffPipelineTest {
     // about accepting or reverting the change.
     //
     // MANUAL VERIFICATION:
-    //   1. Ask the AI to add a joke to a note file (e.g. "add a joke to note2.md").
-    //   2. In a second turn, ask the AI to replace the file with an empty string
-    //      (e.g. "replace note2.md with an empty string").
-    //   3. Double-click note2.md in the diff viewer.
+    //   1. Ask the AI to add a joke to note.md.
+    //   2. In a second turn, ask the AI to replace note.md with an empty string.
+    //   3. Double-click note.md in the diff viewer.
     //   4. The "After AI" panel must be empty.
     //      If it still shows the joke from turn 1, this invariant is violated.
     // -------------------------------------------------------------------------
     @Test
     fun `After AI panel must be empty when AI empties a file`() {
-        val file = "note2.md"
+        val file = "note.md"
         val originalContent = "# Notes\n\nSome original text.\n"
         val withJoke = originalContent + "\nWhy do Java developers wear glasses? Because they can't C#.\n"
 
@@ -342,6 +339,119 @@ class SessionDiffPipelineTest {
             h.serverAfter(file),
             "After AI panel must show empty string when AI emptied the file, " +
                 "but serverAfter still holds stale content: '${h.serverAfter(file)}'",
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // A file the AI modified must still appear in the session's file count even
+    // when the diff computation throws an unexpected error. If hunk computation
+    // fails internally, the file silently disappears from tracking — the session
+    // panel shows (0) and the file is absent from the list, even though the AI
+    // clearly changed it. The user has no indication the AI touched the file at all.
+    //
+    // MANUAL VERIFICATION:
+    //   There is no reliable way to force this from the UI — it depends on an
+    //   internal exception in hunk computation (e.g. from ComparisonManager).
+    //   Check the IDE log for "failed to compute hunks" warnings. If that warning
+    //   appears for a file but the session panel shows (0) and the file is absent
+    //   from the file list, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `file must still appear in session file count when hunk computation produces no hunks`() {
+        val file = "note.md"
+
+        // Use a harness with a hunk computer that always returns empty — regardless
+        // of why (failed diff, ComparisonManager exception, algorithmic edge case).
+        // The invariant is about the outcome (zero hunks) not the mechanism.
+        val zeroHunkHarness = DiffPipelineHarness(
+            hunkComputer = { _, _ -> emptyList() }
+        )
+
+        zeroHunkHarness.disk[zeroHunkHarness.abs(file)] = "line1\n"
+        zeroHunkHarness.commitTurnPatch(listOf(file))
+        zeroHunkHarness.applySessionDiff(
+            files = listOf(file to SessionDiffStatus.MODIFIED),
+            serverAfterByFile = mapOf(zeroHunkHarness.abs(file) to "line1\n"),
+        )
+
+        // The file was reported as MODIFIED — it must still be counted.
+        assertEquals(
+            1,
+            zeroHunkHarness.trackedFileCount(),
+            "a MODIFIED file must still be counted when hunk computation produces no hunks, got: ${zeroHunkHarness.trackedFileCount()}",
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // Once the AI has modified a file in a session, that file must remain
+    // visible in the session's file list permanently — even if the user
+    // manually reverts the file back to its original content. The user should
+    // always be able to open the 3-panel diff viewer to see what the AI did
+    // and restore it if they want. Removing the file from the list takes away
+    // that option with no way to get it back.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Create an empty note.md.
+    //   2. Ask the AI to write a joke into note.md.
+    //      note.md appears in the session's file list.
+    //   3. Manually delete the AI's content so note.md is empty again.
+    //   4. Reset the plugin (Settings > OpenCode > Reset connection) or restart the IDE.
+    //      note.md must still appear in the session's file list after the reset.
+    //      If it disappears, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `file must remain in session list after user reverts it to original content`() {
+        val file = "note.md"
+        val original = ""   // file was empty before the AI touched it
+        val aiContent = "Why do Java developers wear glasses? Because they can't C#.\n"
+
+        // AI writes content to the previously empty file
+        h.disk[h.abs(file)] = aiContent
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(
+            files = listOf(file to SessionDiffStatus.MODIFIED),
+            serverAfterByFile = mapOf(h.abs(file) to aiContent),
+        )
+        assertEquals(1, h.trackedFileCount(), "file should be tracked after AI wrote to it")
+
+        // User reverts the file back to original — disk now matches baseline
+        h.disk[h.abs(file)] = original
+
+        // Reconciler runs (simulated by running it directly)
+        val snapshot = h.stateStore.snapshotSessionReconcileState(
+            stateLock = h.stateLock,
+            sessionId = h.sessionId,
+            expectedGeneration = h.generation,
+            currentGeneration = { h.generation },
+        )!!
+        val decision = h.eventReducer.reduceReconcile(
+            currentHunks = snapshot.currentHunks,
+            currentDeleted = snapshot.currentDeleted,
+            currentAdded = snapshot.currentAdded,
+            currentBaselines = snapshot.currentBaselines,
+            readCurrentContent = { absPath -> h.disk[absPath] ?: "" },
+        )!!
+        h.stateStore.commitReconcile(
+            stateLock = h.stateLock,
+            sessionId = h.sessionId,
+            revision = h.stateStore.currentSessionRevision(h.stateLock, h.sessionId),
+            updatedHunks = decision.updatedHunks,
+            updatedDeleted = decision.updatedDeleted,
+            updatedAdded = decision.updatedAdded,
+            currentBaselines = snapshot.currentBaselines,
+            nowMillis = 0L,
+            expectedGeneration = h.generation,
+            currentGeneration = { h.generation },
+        )
+
+        // The file must still be in the list — the user needs to be able to
+        // open the diff viewer to see and restore what the AI did.
+        // Currently fails: reconciler removes the file from hunksBySessionAndFile
+        // entirely when disk matches baseline.
+        assertEquals(
+            1,
+            h.trackedFileCount(),
+            "file must remain in session list after user reverts it, got: ${h.trackedFileCount()}",
         )
     }
 

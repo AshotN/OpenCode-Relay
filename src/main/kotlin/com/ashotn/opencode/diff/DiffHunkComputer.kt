@@ -16,11 +16,15 @@ internal class DiffHunkComputer(private val logger: Logger) {
             val changes = ComparisonManager.getInstance()
                 .compareLines(fileDiff.before, fileDiff.after, ComparisonPolicy.DEFAULT, EmptyProgressIndicator())
             changes.map { change ->
+                val beforeStart = change.startLine1.coerceAtMost(beforeLines.size)
+                val beforeEnd = change.endLine1.coerceAtMost(beforeLines.size)
+                val afterStart = change.startLine2.coerceAtMost(afterLines.size)
+                val afterEnd = change.endLine2.coerceAtMost(afterLines.size)
                 DiffHunk(
                     filePath = fileDiff.file,
                     startLine = change.startLine2,
-                    removedLines = beforeLines.subList(change.startLine1, change.endLine1.coerceAtMost(beforeLines.size)),
-                    addedLines = afterLines.subList(change.startLine2, change.endLine2.coerceAtMost(afterLines.size)),
+                    removedLines = beforeLines.subList(beforeStart, beforeEnd),
+                    addedLines = afterLines.subList(afterStart, afterEnd),
                     sessionId = sessionId,
                 )
             }
