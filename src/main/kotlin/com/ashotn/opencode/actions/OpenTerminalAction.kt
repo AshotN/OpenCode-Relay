@@ -7,16 +7,19 @@ import com.ashotn.opencode.util.showNotification
 import com.ashotn.opencode.util.serverUrl
 import com.intellij.icons.AllIcons
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
 
-class OpenTerminalAction(private val project: Project) :
-    AnAction(ActionStrings.OPEN_TERMINAL.text, ActionStrings.OPEN_TERMINAL.description, AllIcons.Debugger.Console) {
+class OpenTerminalAction(private val project: Project) : AnAction() {
+
+    override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val running = OpenCodePlugin.getInstance(project).isRunning
+        e.presentation.icon = AllIcons.Debugger.Console
         e.applyStrings(ActionStrings.OPEN_TERMINAL, running)
     }
 
