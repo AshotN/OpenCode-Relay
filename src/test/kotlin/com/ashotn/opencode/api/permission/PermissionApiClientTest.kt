@@ -1,5 +1,6 @@
 package com.ashotn.opencode.api.permission
 
+import com.ashotn.opencode.api.transport.ApiError
 import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.api.withTestServer
 import org.junit.Test
@@ -41,7 +42,12 @@ class PermissionApiClientTest {
             val client = PermissionApiClient()
             val result = client.reply(port, "ses_1", "per_1", "allow")
 
-            assertIs<ApiResult.Failure>(result)
+            val failure = assertIs<ApiResult.Failure>(result)
+            val error = assertIs<ApiError.ParseError>(failure.error)
+            assertEquals(
+                "POST /session/ses_1/permissions/per_1: Expected boolean permission response payload",
+                error.message,
+            )
         }
     }
 

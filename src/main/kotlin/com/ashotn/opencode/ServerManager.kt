@@ -1,6 +1,7 @@
 package com.ashotn.opencode
 
 import com.ashotn.opencode.api.health.HealthApiClient
+import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.util.showNotification
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
@@ -191,7 +192,13 @@ class ServerManager(
 
     private fun checkHealthOnce(port: Int): Boolean =
         try {
-            healthApiClient.isHealthy(port)
+            when (val result = healthApiClient.isHealthy(port)) {
+                is ApiResult.Success -> result.value
+                is ApiResult.Failure -> {
+                    log.debug("ServerManager: health check failed for port $port reason=${result.error}")
+                    false
+                }
+            }
         } catch (e: Exception) {
             log.debug("ServerManager: health check failed for port $port", e)
             false

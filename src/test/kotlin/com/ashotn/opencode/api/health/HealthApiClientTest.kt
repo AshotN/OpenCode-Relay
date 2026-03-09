@@ -1,14 +1,15 @@
 package com.ashotn.opencode.api.health
 
+import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.api.withTestServer
 import org.junit.Test
-import kotlin.test.assertFalse
-import kotlin.test.assertTrue
+import kotlin.test.assertEquals
+import kotlin.test.assertIs
 
 class HealthApiClientTest {
 
     @Test
-    fun `isHealthy returns true on 2xx`() {
+    fun `isHealthy returns success true on 2xx`() {
         withTestServer { server, port ->
             server.createContext("/global/health") { exchange ->
                 val body = "ok"
@@ -17,12 +18,15 @@ class HealthApiClientTest {
             }
 
             val client = HealthApiClient()
-            assertTrue(client.isHealthy(port))
+            val result = client.isHealthy(port)
+
+            val success = assertIs<ApiResult.Success<Boolean>>(result)
+            assertEquals(true, success.value)
         }
     }
 
     @Test
-    fun `isHealthy returns false on non-2xx`() {
+    fun `isHealthy returns failure on non-2xx`() {
         withTestServer { server, port ->
             server.createContext("/global/health") { exchange ->
                 val body = "down"
@@ -31,7 +35,9 @@ class HealthApiClientTest {
             }
 
             val client = HealthApiClient()
-            assertFalse(client.isHealthy(port))
+            val result = client.isHealthy(port)
+
+            assertIs<ApiResult.Failure>(result)
         }
     }
 

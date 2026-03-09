@@ -1,5 +1,6 @@
 package com.ashotn.opencode.api.tui
 
+import com.ashotn.opencode.api.transport.ApiError
 import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.api.withTestServer
 import org.junit.Test
@@ -83,7 +84,9 @@ class TuiApiClientTest {
             val client = TuiApiClient()
             val result = client.selectSession(port, "ses_1")
 
-            assertIs<ApiResult.Failure>(result)
+            val failure = assertIs<ApiResult.Failure>(result)
+            val error = assertIs<ApiError.ParseError>(failure.error)
+            assertEquals("POST /tui/select-session: Expected boolean response payload", error.message)
         }
     }
 
@@ -98,7 +101,9 @@ class TuiApiClientTest {
             val client = TuiApiClient()
             val result = client.selectSession(port, "ses_1")
 
-            assertIs<ApiResult.Failure>(result)
+            val failure = assertIs<ApiResult.Failure>(result)
+            val error = assertIs<ApiError.ParseError>(failure.error)
+            assertEquals("POST /tui/select-session: Expected boolean response payload", error.message)
         }
     }
 

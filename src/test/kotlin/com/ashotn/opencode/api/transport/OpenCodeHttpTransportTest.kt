@@ -128,4 +128,69 @@ class OpenCodeHttpTransportTest {
         assertTrue(error.message.isNotBlank())
     }
 
+    @Test
+    fun `parseJsonObjectResponse unwraps successful object body`() {
+        val transport = OpenCodeHttpTransport()
+
+        val result = transport.parseJsonObjectResponse(ApiResult.Success("{\"id\":\"ses_1\"}"))
+
+        val success = assertIs<ApiResult.Success<com.google.gson.JsonObject>>(result)
+        assertEquals("ses_1", success.value.get("id").asString)
+    }
+
+    @Test
+    fun `parseJsonArrayResponse fails on non-array body`() {
+        val transport = OpenCodeHttpTransport()
+
+        val result = transport.parseJsonArrayResponse(ApiResult.Success("{\"id\":\"ses_1\"}"))
+
+        val failure = assertIs<ApiResult.Failure>(result)
+        assertIs<ApiError.ParseError>(failure.error)
+    }
+
+    @Test
+    fun `mapJsonObjectResponse maps object payload`() {
+        val transport = OpenCodeHttpTransport()
+
+        val result = transport.mapJsonObjectResponse(ApiResult.Success("{\"id\":\"ses_1\"}")) { obj ->
+            ApiResult.Success(obj.get("id").asString)
+        }
+
+        val success = assertIs<ApiResult.Success<String>>(result)
+        assertEquals("ses_1", success.value)
+    }
+
+    @Test
+    fun `mapJsonArrayResponse propagates parse failure without invoking transform`() {
+        val transport = OpenCodeHttpTransport()
+        var transformInvoked = false
+
+        val result = transport.mapJsonArrayResponse(ApiResult.Success("{\"id\":\"ses_1\"}")) {
+            transformInvoked = true
+            ApiResult.Success(it.size())
+        }
+
+        assertIs<ApiResult.Failure>(result)
+        assertEquals(false, transformInvoked)
+    }
+
+    @Test
+    fun `withParseContext prefixes parse error message`() {
+        val endpoint = ApiEndpoint(HttpMethod.GET, "/session")
+        val result = ApiResult.Failure(ApiError.ParseError("Expected JSON array"))
+            .withParseContext(endpoint)
+
+        val failure = assertIs<ApiResult.Failure>(result)
+        val error = assertIs<ApiError.ParseError>(failure.error)
+        assertEquals("GET /session: Expected JSON array", error.message)
+    }
+
+    @Test
+    fun `withParseContext leaves non-parse failures unchanged`() {
+        val original = ApiResult.Failure(ApiError.HttpError(500, "boom"))
+
+        val result = original.withParseContext(ApiEndpoint(HttpMethod.GET, "/session"))
+
+        assertEquals(original, result)
+    }
 }

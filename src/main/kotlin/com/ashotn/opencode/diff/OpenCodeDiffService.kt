@@ -631,22 +631,34 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         val projectBase = project.basePath ?: return onResult(null)
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val result = sessionApiClient.fetchFileDiffPreview(currentPort, sessionId, projectBase, filePath)
-            if (!result.success || result.before == null) {
-                onResult(null)
-                return@executeOnPooledThread
+            when (val result = sessionApiClient.fetchFileDiffPreview(currentPort, sessionId, projectBase, filePath)) {
+                is ApiResult.Failure -> {
+                    log.debug(
+                        "OpenCodeDiffService: failed diff preview fetch session=$sessionId file=$filePath port=$currentPort reason=${result.error}",
+                    )
+                    onResult(null)
+                }
+
+                is ApiResult.Success -> {
+                    val preview = result.value
+                    if (preview == null) {
+                        onResult(null)
+                        return@executeOnPooledThread
+                    }
+
+                    // Prefer the in-memory server-reported AI after (captured at SSE event time);
+                    // fall back to the REST snapshot's after field.
+                    val aiAfter = storedServerAfter ?: preview.after ?: documentSyncService.readCurrentContent(filePath)
+                    onResult(
+                        FileDiffPreview(
+                            filePath = filePath,
+                            sessionId = sessionId,
+                            before = preview.before,
+                            aiAfter = aiAfter,
+                        )
+                    )
+                }
             }
-            // Prefer the in-memory server-reported AI after (captured at SSE event time);
-            // fall back to the REST snapshot's after field.
-            val aiAfter = storedServerAfter ?: result.after ?: documentSyncService.readCurrentContent(filePath)
-            onResult(
-                FileDiffPreview(
-                    filePath = filePath,
-                    sessionId = sessionId,
-                    before = result.before,
-                    aiAfter = aiAfter,
-                )
-            )
         }
     }
 
@@ -692,16 +704,18 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             try {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
-                val result = sessionApiClient.fetchSessionDiffSnapshot(currentPort, sessionId)
-                if (!result.success) {
-                    log.debug(
-                        "OpenCodeDiffService: skip historical snapshot reason=requestFailed session=$sessionId port=$currentPort generation=$generation",
-                    )
-                    return@executeOnPooledThread
+                val event = when (val result = sessionApiClient.fetchSessionDiffSnapshot(currentPort, sessionId)) {
+                    is ApiResult.Failure -> {
+                        log.debug(
+                            "OpenCodeDiffService: skip historical snapshot reason=requestFailed session=$sessionId port=$currentPort generation=$generation error=${result.error}",
+                        )
+                        return@executeOnPooledThread
+                    }
+
+                    is ApiResult.Success -> result.value
                 }
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
-                val event = result.event ?: return@executeOnPooledThread
                 handleSessionDiff(event, fromHistory = true, generation = generation)
             } catch (e: Exception) {
                 log.debug(

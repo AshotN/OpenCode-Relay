@@ -9,8 +9,11 @@ class HealthApiClient(
         defaultReadTimeoutMs = 1_000,
     ),
 ) {
-    fun isHealthy(port: Int): Boolean {
-        val result = transport.get(port = port, path = "/global/health")
-        return result is ApiResult.Success
+    fun isHealthy(port: Int): ApiResult<Boolean> {
+        val endpoint = HealthEndpoints.check()
+        return when (val result = transport.get(port = port, path = endpoint.path)) {
+            is ApiResult.Failure -> result
+            is ApiResult.Success -> ApiResult.Success(true)
+        }
     }
 }
