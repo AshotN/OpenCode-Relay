@@ -7,6 +7,7 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTab
 import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabsManager
 import com.intellij.terminal.frontend.view.TerminalView
 import com.intellij.terminal.frontend.view.TerminalViewSessionState
@@ -33,6 +34,7 @@ class OpenCodeTuiPanel(
     private val onTerminated: (() -> Unit)? = null,
 ) : JPanel(BorderLayout()), Disposable {
 
+    private var terminalTab: TerminalToolWindowTab? = null
     private var terminalView: TerminalView? = null
 
     init {
@@ -67,6 +69,7 @@ class OpenCodeTuiPanel(
                 .createTab()
 
             val view = tab.view
+            terminalTab = tab
             terminalView = view
 
             // Watch sessionState flow: when Terminated the shell has exited.
@@ -76,6 +79,7 @@ class OpenCodeTuiPanel(
                         ApplicationManager.getApplication().invokeLater {
                             if (terminalView === view) {
                                 terminalView = null
+                                terminalTab = null
                                 remove(view.component)
                                 revalidate()
                                 repaint()
@@ -102,11 +106,6 @@ class OpenCodeTuiPanel(
         }
     }
 
-    /** Requests focus on the terminal. */
-    fun focusTerminal() {
-        terminalView?.preferredFocusableComponent?.requestFocusInWindow()
-    }
-
     /** True while a terminal session is live. */
     val isStarted: Boolean get() = terminalView != null
 
@@ -115,12 +114,19 @@ class OpenCodeTuiPanel(
 
     private fun tearDown() {
         val view = terminalView ?: return
+        val tab = terminalTab
         terminalView = null
+        terminalTab = null
         remove(view.component)
         revalidate()
         repaint()
-        // Cancelling the coroutine scope shuts down the shell process.
-        view.coroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        // closeTab removes the tab from the manager's tracking list and shuts down the shell.
+        if (tab != null) {
+            TerminalToolWindowTabsManager.getInstance(project).closeTab(tab)
+        } else {
+            // Fallback: cancel the scope directly if we somehow lost the tab reference.
+            view.coroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
     }
 
     override fun dispose() {
