@@ -6,6 +6,7 @@ import com.ashotn.opencode.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.api.transport.mapJsonArrayResponse
 import com.ashotn.opencode.api.transport.mapJsonObjectResponse
 import com.ashotn.opencode.api.transport.withParseContext
+import com.ashotn.opencode.diff.DiffTextUtil
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.SessionDiffStatus
 import com.ashotn.opencode.util.getIntOrNull
@@ -88,7 +89,7 @@ class SessionApiClient(
             is ApiResult.Failure -> snapshot
             is ApiResult.Success -> {
                 val match = snapshot.value.files.firstOrNull { diffFile ->
-                    toAbsolutePath(projectBase, diffFile.file) == absFilePath
+                    DiffTextUtil.toAbsolutePath(projectBase, diffFile.file) == absFilePath
                 } ?: return ApiResult.Success(null)
 
                 ApiResult.Success(FileDiffPreview(before = match.before, after = match.after))
@@ -150,8 +151,4 @@ class SessionApiClient(
         }.withParseContext(endpoint)
     }
 
-    private fun toAbsolutePath(projectBase: String, path: String): String {
-        val normalized = path.replace('\\', '/')
-        return if (normalized.startsWith('/')) normalized else "$projectBase/$normalized"
-    }
 }

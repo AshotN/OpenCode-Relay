@@ -8,6 +8,8 @@ This repo is a JetBrains IDE plugin that integrates the OpenCode AI coding assis
 
 Always prefer `jetbrains_*` tools over generic alternatives when both are available:
 
+- Use `jetbrains_*` tools for all file reads/edits/creates. Do not use `Read`, `Write`, `apply_patch`, or shell-based file editing unless a JetBrains tool fails.
+
 | Task | Prefer | Over |
 |------|--------|------|
 | Read a file | `jetbrains_get_file_text_by_path` | `Read` / `cat` |
