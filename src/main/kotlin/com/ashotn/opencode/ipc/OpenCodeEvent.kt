@@ -13,6 +13,9 @@ sealed class OpenCodeEvent {
      */
     data class SessionIdle(val sessionId: String) : OpenCodeEvent()
 
+    /** session.created — fired when a new session is created. */
+    data class SessionCreated(val sessionId: String) : OpenCodeEvent()
+
     /**
      * session.busy — fired when the AI starts or resumes work in a session.
      * Used to keep track of the latest active session.

@@ -65,6 +65,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
     /** Guards map updates that must commit atomically. */
     private val stateLock = Any()
+    private val pendingSessionSelection = PendingSessionSelection()
 
     private val permissionService = OpenCodePermissionService.getInstance(project)
     private val documentSyncService = DocumentSyncService(project)
@@ -144,6 +145,10 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
             is OpenCodeEvent.SessionIdle -> {
                 markSessionBusy(event.sessionId, false, generation)
+            }
+
+            is OpenCodeEvent.SessionCreated -> {
+                refreshSessionHierarchyAsync(generation)
             }
 
             is OpenCodeEvent.TurnPatch -> {
@@ -550,6 +555,18 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     }
 
     fun selectSession(sessionId: String?) {
+        val shouldDeferSelection = synchronized(stateLock) {
+            pendingSessionSelection.shouldDeferSelection(
+                requestedSessionId = sessionId,
+                sessionExists = { candidate -> sessionExistsLocked(candidate) },
+            )
+        }
+
+        if (shouldDeferSelection) {
+            refreshSessionHierarchyAsync()
+            return
+        }
+
         val previousFiles = synchronized(stateLock) { liveVisibleFilesLocked() }
         val selectedAfter = stateStore.commitSelectedSession(
             stateLock = stateLock,
@@ -752,8 +769,17 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
+                val deferredSelection = synchronized(stateLock) {
+                    if (generation != lifecycleGeneration.get()) return@synchronized null
+                    pendingSessionSelection.consumeIfResolved(snapshot.sessionIds)
+                }
+
                 if (changed) {
                     publishService.publishSessionStateChanged()
+                }
+
+                if (!deferredSelection.isNullOrBlank()) {
+                    selectSession(deferredSelection)
                 }
 
                 ensureHistoricalRootsLoadedAsync(snapshot.sessionIds, snapshot.parentBySessionId, generation)
@@ -795,6 +821,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         historicalDiffLoadInFlight.clear()
         historicalDiffLoadedSessions.clear()
         reconcileScheduleTokenBySession.clear()
+        pendingSessionSelection.clear()
         stateStore.resetState()
     }
 

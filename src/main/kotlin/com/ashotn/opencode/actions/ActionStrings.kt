@@ -24,6 +24,12 @@ enum class ActionStrings(
         description = "Stop the OpenCode server",
         disabledDescription = "Stop is available only when OpenCode was launched by this plugin",
     ),
+    NEW_SESSION(
+        text = "New Session",
+        disabledText = "New Session (OpenCode must be running)",
+        description = "Create a new OpenCode session and switch the TUI to it",
+        disabledDescription = "OpenCode must be running to create a new session",
+    ),
     CLEAR_INSTANCE(
         text = "Clear Session",
         disabledText = "Clear Session (no session selected)",

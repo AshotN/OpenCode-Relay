@@ -37,6 +37,7 @@ class SseClient(
         private const val READ_TIMEOUT_MS = 0
         private const val RETRY_INITIAL_MS = 1_000L
         private const val RETRY_MAX_MS = 10_000L
+        private val NO_OP: OpenCodeEvent? = null
     }
 
     private val log = logger<SseClient>()
@@ -140,8 +141,10 @@ class SseClient(
             val properties = root.getObjectOrNull("properties") ?: JsonObject()
 
             val event: OpenCodeEvent? = when (type) {
+                "server.connected" -> NO_OP
                 "session.diff" -> parseSessionDiff(properties)
                 "session.idle" -> parseSessionIdle(properties)
+                "session.created" -> parseSessionCreated(properties)
                 "session.status" -> parseSessionStatus(properties)
                 "message.part.updated" -> parseMessagePartUpdated(properties)
                 "permission.asked" -> parsePermissionAsked(properties)
@@ -247,6 +250,14 @@ class SseClient(
         val sessionId = props.getStringOrNull("sessionID") ?: return null
         val statusType = props.getObjectOrNull("status")?.getStringOrNull("type") ?: return null
         return if (statusType == "busy") OpenCodeEvent.SessionBusy(sessionId) else null
+    }
+
+    private fun parseSessionCreated(props: JsonObject): OpenCodeEvent.SessionCreated? {
+        val sessionId = props.getStringOrNull("sessionID")
+            ?: props.getStringOrNull("id")
+            ?: props.getObjectOrNull("session")?.getStringOrNull("id")
+            ?: return null
+        return OpenCodeEvent.SessionCreated(sessionId)
     }
 
     private fun parseMessagePartUpdated(props: JsonObject): OpenCodeEvent.TurnPatch? {
