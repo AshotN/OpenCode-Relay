@@ -1,7 +1,7 @@
 plugins {
     id("java")
     id("org.jetbrains.kotlin.jvm") version "2.1.0"
-    id("org.jetbrains.intellij.platform") version "2.2.1"
+    id("org.jetbrains.intellij.platform") version "2.10.4"
 }
 
 group = "com.ashotn"
@@ -16,8 +16,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdeaCommunity("2025.1")
-        instrumentationTools()
+        intellijIdea("2025.3.3")
         pluginVerifier()
         bundledPlugin("org.jetbrains.plugins.terminal")
     }
@@ -36,7 +35,7 @@ intellijPlatform {
         }
 
         ideaVersion {
-            sinceBuild = ""
+            sinceBuild = "253"
             untilBuild = ""
         }
     }

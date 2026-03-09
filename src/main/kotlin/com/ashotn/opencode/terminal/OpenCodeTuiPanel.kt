@@ -6,128 +6,122 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
-import com.intellij.terminal.ui.TerminalWidget
-import com.intellij.util.ui.update.UiNotifyConnector
-import org.jetbrains.plugins.terminal.LocalBlockTerminalRunner
-import org.jetbrains.plugins.terminal.ShellStartupOptions
+import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabsManager
+import com.intellij.terminal.frontend.view.TerminalView
+import com.intellij.terminal.frontend.view.TerminalViewSessionState
+import kotlinx.coroutines.launch
 import java.awt.BorderLayout
 import javax.swing.JPanel
 
 /**
- * Hosts an embedded terminal widget running `opencode attach <server-url>`.
+ * Hosts an embedded Reworked Terminal running `opencode attach <server-url>`.
+ *
+ * Uses the official [TerminalToolWindowTabsManager] API (available since 2025.3)
+ * to create a terminal session that is never shown in the Terminal tool window —
+ * [shouldAddToToolWindow(false)] keeps it fully detached so it lives only inside
+ * this panel. The [TerminalView.component] is embedded directly in the panel's
+ * [BorderLayout.CENTER].
  *
  * The terminal is started lazily on the first call to [startIfNeeded] and lives
- * for as long as this panel's [Disposable] parent is alive.
- *
- * The panel itself is a plain [JPanel] — callers embed it wherever they like in
- * the tool window hierarchy; no Terminal tool-window tab is created.
- *
- * **Sizing:** `startShellTerminalWidget` is called with `deferred = true` so the
- * underlying session only opens after the Swing component has been shown on screen
- * and has a real size (mirrors how the Terminal tool window defers startup via
- * `UiNotifyConnector.doWhenFirstShown`). The attach command is also deferred to
- * the same first-shown callback so it is sent after the shell is fully connected.
+ * for as long as this panel's parent [Disposable] is alive.
  */
 class OpenCodeTuiPanel(
     private val project: Project,
     parentDisposable: Disposable,
-    /** Invoked on the EDT whenever the running shell terminates unexpectedly. */
+    /** Invoked on the EDT when the shell process terminates. */
     private val onTerminated: (() -> Unit)? = null,
 ) : JPanel(BorderLayout()), Disposable {
 
-    private var widgetDisposable: Disposable? = null
-    private var widget: TerminalWidget? = null
+    private var terminalView: TerminalView? = null
 
     init {
         Disposer.register(parentDisposable, this)
     }
 
     /**
-     * Starts the embedded terminal (once) and displays it inside this panel.
-     * Safe to call multiple times — subsequent calls are no-ops unless the
-     * previous shell has already terminated.
+     * Creates and embeds the terminal (once). Safe to call multiple times —
+     * subsequent calls are no-ops while a session is alive.
      *
      * Must be called on the EDT.
      */
     fun startIfNeeded() {
-        if (widget != null) return
+        if (terminalView != null) return
 
         try {
-            val runner = LocalBlockTerminalRunner(project)
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val attachCmd = "opencode attach ${serverUrl(OpenCodeSettings.getInstance(project).serverPort)}"
-            // opencode handles Ctrl+C internally (calls renderer.destroy(), not process.exit),
-            // so there is no signal to intercept. The loop just relaunches attach whenever
-            // it exits for any reason. sleep 1 guards against a tight crash-loop if the
-            // server is unreachable; it's short enough that a Ctrl+C relaunch feels instant.
+            // Loop so the TUI reconnects automatically if opencode attach exits.
+            // sleep 1 prevents a tight crash-loop when the server is unreachable.
             val command = "while true; do $attachCmd; sleep 1; done"
 
-            val options = ShellStartupOptions.Builder()
+            val manager = TerminalToolWindowTabsManager.getInstance(project)
+
+            // shouldAddToToolWindow(false): create the session entirely detached —
+            // it never appears as a tab in the Terminal tool window.
+            val tab = manager.createTabBuilder()
                 .workingDirectory(workingDir)
-                .build()
+                .requestFocus(false)
+                .shouldAddToToolWindow(false)
+                .createTab()
 
-            val disposable = Disposer.newDisposable("OpenCodeTuiPanel.widget")
-            Disposer.register(this, disposable)
-            widgetDisposable = disposable
+            val view = tab.view
+            terminalView = view
 
-            // deferred = true: session starts only after the component is first shown
-            // (UiNotifyConnector.doWhenFirstShown internally), so the terminal knows
-            // its real pixel size before allocating the PTY columns/rows.
-            val newWidget = runner.startShellTerminalWidget(disposable, options, true)
-            widget = newWidget
-
-            // When the shell itself exits, tear down and let the owner rebuild.
-            newWidget.addTerminationCallback({
-                ApplicationManager.getApplication().invokeLater {
-                    tearDownWidget()
-                    onTerminated?.invoke()
+            // Watch sessionState flow: when Terminated the shell has exited.
+            view.coroutineScope.launch {
+                view.sessionState.collect { state ->
+                    if (state is TerminalViewSessionState.Terminated) {
+                        ApplicationManager.getApplication().invokeLater {
+                            if (terminalView === view) {
+                                terminalView = null
+                                remove(view.component)
+                                revalidate()
+                                repaint()
+                                onTerminated?.invoke()
+                            }
+                        }
+                    }
                 }
-            }, disposable)
+            }
 
-            // Embed the terminal Swing component first so it gets a real size.
-            add(newWidget.component, BorderLayout.CENTER)
+            add(view.component, BorderLayout.CENTER)
             revalidate()
             repaint()
 
-            // Send the attach command only after the component is shown on screen
-            // (and therefore has real dimensions and an open PTY session).
-            UiNotifyConnector.doWhenFirstShown(newWidget.component) {
-                newWidget.sendCommandToExecute(command)
-            }
+            // Send the attach command once the shell is ready.
+            // deferSessionStartUntilUiShown defaults to true in the builder, so
+            // the PTY is already sized correctly before the command is sent.
+            view.sendText(command + "\n")
 
         } catch (_: NoClassDefFoundError) {
-            // Terminal plugin not available – panel stays empty; caller falls back to external.
+            // Terminal plugin not available — panel stays empty.
         } catch (_: Exception) {
-            // Any other failure – silently ignore, panel stays empty.
+            // Any other failure — panel stays empty.
         }
     }
 
-    /** Requests focus on the embedded terminal input. */
+    /** Requests focus on the terminal. */
     fun focusTerminal() {
-        widget?.requestFocus()
+        terminalView?.preferredFocusableComponent?.requestFocusInWindow()
     }
 
-    /** Returns true if a live terminal widget is currently running. */
-    val isStarted: Boolean get() = widget != null
+    /** True while a terminal session is live. */
+    val isStarted: Boolean get() = terminalView != null
 
-    /**
-     * Stops the running terminal widget and cleans up. Safe to call when
-     * already stopped. The next [startIfNeeded] call will create a fresh widget.
-     */
-    fun stop() = tearDownWidget()
+    /** Tears down the running session. The next [startIfNeeded] will create a fresh one. */
+    fun stop() = tearDown()
 
-    private fun tearDownWidget() {
-        val w = widget ?: return
-        widget = null
-        widgetDisposable?.let { Disposer.dispose(it) }
-        widgetDisposable = null
-        remove(w.component)
+    private fun tearDown() {
+        val view = terminalView ?: return
+        terminalView = null
+        remove(view.component)
         revalidate()
         repaint()
+        // Cancelling the coroutine scope shuts down the shell process.
+        view.coroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 
     override fun dispose() {
-        widget = null
-        widgetDisposable = null
+        tearDown()
     }
 }
