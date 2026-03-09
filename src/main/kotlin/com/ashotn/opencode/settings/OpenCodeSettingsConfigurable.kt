@@ -3,6 +3,7 @@ package com.ashotn.opencode.settings
 import com.ashotn.opencode.OpenCodePlugin
 import com.ashotn.opencode.diff.EditorDiffRenderer
 import com.ashotn.opencode.toolwindow.OpenCodeToolWindowPanel
+import com.ashotn.opencode.util.BuildUtils
 import com.intellij.openapi.options.BoundConfigurable
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
@@ -50,12 +51,18 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 }
             }
             group("Terminal") {
+                val terminalSupported = BuildUtils.isEmbeddedTerminalSupported
                 row {
                     checkBox("Show inline terminal")
                         .bindSelected(settings::inlineTerminalEnabled)
+                        .enabled(terminalSupported)
                         .comment(
-                            "Embeds the OpenCode TUI directly inside the tool window panel when the " +
-                            "server is running. The toolbar button always opens an external terminal."
+                            if (terminalSupported) {
+                                "Embeds the OpenCode TUI directly inside the tool window panel when the " +
+                                "server is running."
+                            } else {
+                                "Requires IntelliJ IDEA 2025.3 or later."
+                            }
                         )
                 }
             }

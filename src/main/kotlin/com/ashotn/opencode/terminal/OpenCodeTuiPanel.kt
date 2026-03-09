@@ -1,6 +1,7 @@
 package com.ashotn.opencode.terminal
 
 import com.ashotn.opencode.settings.OpenCodeSettings
+import com.ashotn.opencode.util.BuildUtils
 import com.ashotn.opencode.util.serverUrl
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -46,6 +47,7 @@ class OpenCodeTuiPanel(
      */
     fun startIfNeeded() {
         if (terminalView != null) return
+        if (!BuildUtils.isEmbeddedTerminalSupported) return
 
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
