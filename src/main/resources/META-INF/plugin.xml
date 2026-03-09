@@ -1,6 +1,6 @@
 <idea-plugin>
-    <id>com.ashotn.opencode-intellij</id>
-    <name>OpenCode</name>
+    <id>com.ashotn.opencode-companion</id>
+    <name>OpenCode Companion</name>
     <vendor>Ashot Nazaryan</vendor>
     <resource-bundle>messages.OpenCodeBundle</resource-bundle>
 
@@ -16,13 +16,13 @@
         <toolWindow
             id="OpenCode"
             anchor="right"
-            factoryClass="com.ashotn.opencode.toolwindow.OpenCodeToolWindowFactory"
+            factoryClass="com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowFactory"
             icon="/icons/opencode.svg"
         />
         <projectConfigurable
             parentId="tools"
-            instance="com.ashotn.opencode.settings.OpenCodeSettingsConfigurable"
-            id="com.ashotn.opencode.settings"
+            instance="com.ashotn.opencode.companion.settings.OpenCodeSettingsConfigurable"
+            id="com.ashotn.opencode.companion.settings"
             key="configurable.opencode.displayName"
         />
         <notificationGroup id="OpenCode" displayType="BALLOON" key="notification.group.opencode"/>
@@ -32,29 +32,29 @@
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
 
         <action
-            id="com.ashotn.opencode.actions.ClearInstanceAction"
-            class="com.ashotn.opencode.actions.ClearInstanceAction">
+            id="com.ashotn.opencode.companion.actions.ClearInstanceAction"
+            class="com.ashotn.opencode.companion.actions.ClearInstanceAction">
             <!-- Global shortcut when panel is not focused -->
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.actions.SendSelectionAction"
-            class="com.ashotn.opencode.actions.SendSelectionAction">
+            id="com.ashotn.opencode.companion.actions.SendSelectionAction"
+            class="com.ashotn.opencode.companion.actions.SendSelectionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift 4"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.actions.SendFileAction"
-            class="com.ashotn.opencode.actions.SendFileAction">
+            id="com.ashotn.opencode.companion.actions.SendFileAction"
+            class="com.ashotn.opencode.companion.actions.SendFileAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.actions.SendFolderAction"
-            class="com.ashotn.opencode.actions.SendFolderAction">
+            id="com.ashotn.opencode.companion.actions.SendFolderAction"
+            class="com.ashotn.opencode.companion.actions.SendFolderAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
     </actions>

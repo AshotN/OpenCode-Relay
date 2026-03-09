@@ -1,1 +1,1 @@
-rootProject.name = "OpenCode-Plugin"
+rootProject.name = "OpenCode-Companion"
