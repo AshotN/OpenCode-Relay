@@ -8,7 +8,7 @@
     }
   },
   "permission": {
-    "webstorm_execute_terminal_command": "ask",
-    "webstorm_execute_run_configuration": "allow"
+    "jetbrains_execute_terminal_command": "ask",
+    "jetbrains_execute_run_configuration": "allow"
   }
 }

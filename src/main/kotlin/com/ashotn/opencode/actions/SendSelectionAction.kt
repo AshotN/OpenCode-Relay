@@ -33,29 +33,33 @@ class SendSelectionAction : AnAction() {
         val project = e.project
         val editor = e.getData(CommonDataKeys.EDITOR)
         val running = project != null && OpenCodePlugin.getInstance(project).isRunning
-        val hasSelection = editor?.selectionModel?.hasSelection() == true
 
         // Hide entirely when invoked outside an editor context (e.g. tool window, global shortcut)
         e.presentation.isVisible = editor != null
         e.presentation.icon = AllIcons.Actions.Upload
-        e.applyStrings(ActionStrings.SEND_SELECTION, running && hasSelection)
+        e.applyStrings(ActionStrings.SEND_SELECTION, running)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
 
-        val selectionModel = editor.selectionModel
-        if (!selectionModel.hasSelection()) {
-            project.showNotification("No text selected", "Select some code in the editor first.", NotificationType.INFORMATION)
-            return
-        }
-
         val document = editor.document
-        val startLine = document.getLineNumber(selectionModel.selectionStart) + 1
-        // Use selectionEnd - 1 so a cursor parked at column 0 of the next line doesn't
-        // inflate the range by one (e.g. selecting lines 1–3 ending at line 4 offset 0).
-        val endLine = document.getLineNumber((selectionModel.selectionEnd - 1).coerceAtLeast(selectionModel.selectionStart)) + 1
+        val selectionModel = editor.selectionModel
+
+        val startLine: Int
+        val endLine: Int
+        if (selectionModel.hasSelection()) {
+            startLine = document.getLineNumber(selectionModel.selectionStart) + 1
+            // Use selectionEnd - 1 so a cursor parked at column 0 of the next line doesn't
+            // inflate the range by one (e.g. selecting lines 1–3 ending at line 4 offset 0).
+            endLine = document.getLineNumber((selectionModel.selectionEnd - 1).coerceAtLeast(selectionModel.selectionStart)) + 1
+        } else {
+            // No selection — fall back to the line the caret is on
+            val caretLine = document.getLineNumber(editor.caretModel.offset) + 1
+            startLine = caretLine
+            endLine = caretLine
+        }
 
         val virtualFile = com.intellij.openapi.fileEditor.FileDocumentManager.getInstance().getFile(document)
         val relativePath = virtualFile?.path?.let { path ->
