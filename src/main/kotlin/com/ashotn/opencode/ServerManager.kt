@@ -1,16 +1,14 @@
 package com.ashotn.opencode
 
+import com.ashotn.opencode.api.health.HealthApiClient
 import com.ashotn.opencode.util.showNotification
-import com.ashotn.opencode.util.serverUrl
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import java.io.File
-import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
-import java.net.URI
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -53,8 +51,6 @@ class ServerManager(
         private const val PORT_POLL_INTERVAL_AFTER_START_SECONDS = 5L
         private const val HEALTH_POLL_INTERVAL_SECONDS = 2L
         private const val HEALTH_INITIAL_DELAY_SECONDS = 2L
-        private const val HEALTH_CONNECT_TIMEOUT_MS = 1_000
-        private const val HEALTH_READ_TIMEOUT_MS = 1_000
     }
 
     @Volatile private var disposed = false
@@ -76,6 +72,8 @@ class ServerManager(
 
     /** Monotonic revision to ignore stale external health checks. */
     private val externalHealthRevision = AtomicLong(0)
+
+    private val healthApiClient = HealthApiClient()
 
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "opencode-poll").apply { isDaemon = true }
@@ -191,20 +189,13 @@ class ServerManager(
         }
     }
 
-    private fun checkHealthOnce(port: Int): Boolean {
-        val conn = URI(serverUrl(port, "/global/health")).toURL().openConnection() as HttpURLConnection
-        return try {
-            conn.connectTimeout = HEALTH_CONNECT_TIMEOUT_MS
-            conn.readTimeout = HEALTH_READ_TIMEOUT_MS
-            conn.requestMethod = "GET"
-            conn.responseCode == 200
+    private fun checkHealthOnce(port: Int): Boolean =
+        try {
+            healthApiClient.isHealthy(port)
         } catch (e: Exception) {
             log.debug("ServerManager: health check failed for port $port", e)
             false
-        } finally {
-            conn.disconnect()
         }
-    }
 
     private fun isPortOpen(port: Int): Boolean {
         val addresses = try {

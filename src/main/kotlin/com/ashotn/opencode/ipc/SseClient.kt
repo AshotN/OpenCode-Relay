@@ -1,18 +1,14 @@
 package com.ashotn.opencode.ipc
 
+import com.ashotn.opencode.api.event.EventStreamClient
 import com.ashotn.opencode.util.getIntOrNull
 import com.ashotn.opencode.util.getObjectOrNull
 import com.ashotn.opencode.util.getStringOrNull
-import com.ashotn.opencode.util.serverUrl
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.logger
-import java.io.BufferedReader
 import java.io.IOException
-import java.io.InputStreamReader
 import java.net.ConnectException
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.Collections
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -47,10 +43,12 @@ class SseClient(
         Thread(r, "opencode-sse").apply { isDaemon = true }
     }
     private val unknownEventTypes = Collections.synchronizedSet(mutableSetOf<String>())
+    private val eventStreamClient = EventStreamClient(
+        connectTimeoutMs = CONNECT_TIMEOUT_MS,
+        readTimeoutMs = READ_TIMEOUT_MS,
+    )
 
     private var future: Future<*>? = null
-    @Volatile
-    private var activeConnection: HttpURLConnection? = null
 
     fun start() {
         if (executor.isShutdown) return
@@ -60,8 +58,7 @@ class SseClient(
 
     fun stop() {
         running.set(false)
-        activeConnection?.disconnect()
-        activeConnection = null
+        eventStreamClient.disconnect()
         future?.cancel(true)
         future = null
         executor.shutdownNow()
@@ -98,36 +95,31 @@ class SseClient(
     }
 
     private fun connect() {
-        log.info("SseClient: connecting to ${serverUrl(port, "/event")}")
-        val url = URI(serverUrl(port, "/event")).toURL()
-        val conn = url.openConnection() as HttpURLConnection
-        activeConnection = conn
+        log.info("SseClient: connecting to /event on port $port")
+        val dataBuffer = StringBuilder()
+        eventStreamClient.consume(port) { line ->
+            if (Thread.currentThread().isInterrupted) return@consume
 
-        conn.requestMethod = "GET"
-        conn.setRequestProperty("Accept", "text/event-stream")
-        conn.setRequestProperty("Cache-Control", "no-cache")
-        conn.connectTimeout = CONNECT_TIMEOUT_MS
-        conn.readTimeout = READ_TIMEOUT_MS
-        conn.connect()
-
-        try {
-            BufferedReader(InputStreamReader(conn.inputStream, Charsets.UTF_8)).use { reader ->
-                val dataBuffer = StringBuilder()
-                reader.forEachLine { line ->
-                    if (Thread.currentThread().isInterrupted) return@forEachLine
-
-                    when {
-                        line.startsWith("data:") -> dataBuffer.append(line.removePrefix("data:").trim())
-                        line.isEmpty() && dataBuffer.isNotEmpty() -> {
-                            dispatchRaw(dataBuffer.toString())
-                            dataBuffer.clear()
-                        }
+            when {
+                line.startsWith("data:") -> {
+                    val rawData = line.removePrefix("data:")
+                    val dataLine = if (rawData.startsWith(" ")) rawData.substring(1) else rawData
+                    if (dataBuffer.isNotEmpty()) {
+                        dataBuffer.append('\n')
                     }
+                    dataBuffer.append(dataLine)
+                }
+
+                line.isEmpty() && dataBuffer.isNotEmpty() -> {
+                    dispatchRaw(dataBuffer.toString())
+                    dataBuffer.clear()
                 }
             }
-        } finally {
-            conn.disconnect()
-            activeConnection = null
+        }
+
+        if (dataBuffer.isNotEmpty()) {
+            dispatchRaw(dataBuffer.toString())
+            dataBuffer.clear()
         }
     }
 

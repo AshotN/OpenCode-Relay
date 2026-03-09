@@ -1,5 +1,7 @@
 package com.ashotn.opencode.diff
 
+import com.ashotn.opencode.api.session.SessionApiClient
+import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.settings.OpenCodeSettings
 import com.ashotn.opencode.ipc.SseClient
@@ -723,7 +725,15 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             try {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
-                val snapshot = sessionApiClient.fetchSessionHierarchy(currentPort)
+                val snapshot = when (val result = sessionApiClient.fetchSessionHierarchy(currentPort)) {
+                    is ApiResult.Success -> result.value
+                    is ApiResult.Failure -> {
+                        log.debug(
+                            "OpenCodeDiffService: skip hierarchy refresh reason=requestFailed port=$currentPort generation=$generation",
+                        )
+                        return@executeOnPooledThread
+                    }
+                }
                 if (snapshot.sessionIds.isEmpty()) {
                     log.debug("OpenCodeDiffService: skip hierarchy refresh reason=emptySnapshot port=$currentPort generation=$generation")
                     return@executeOnPooledThread

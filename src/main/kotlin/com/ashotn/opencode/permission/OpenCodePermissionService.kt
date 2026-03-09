@@ -1,32 +1,28 @@
 package com.ashotn.opencode.permission
 
+import com.ashotn.opencode.api.permission.PermissionApiClient
+import com.ashotn.opencode.api.transport.ApiError
+import com.ashotn.opencode.api.transport.ApiResult
 import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.ipc.PermissionReply
-import com.ashotn.opencode.util.serverUrl
-import com.google.gson.Gson
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
-import java.net.HttpURLConnection
-import java.net.URI
 import java.util.concurrent.ConcurrentLinkedQueue
 
 @Service(Service.Level.PROJECT)
 class OpenCodePermissionService(private val project: Project) : Disposable {
 
     companion object {
-        private const val CONNECT_TIMEOUT_MS = 2_000
-        private const val READ_TIMEOUT_MS = 5_000
-
         fun getInstance(project: Project): OpenCodePermissionService =
             project.getService(OpenCodePermissionService::class.java)
     }
 
     private val log = logger<OpenCodePermissionService>()
-    private val gson = Gson()
+    private val permissionApiClient = PermissionApiClient()
 
     @Volatile private var port: Int = 0
 
@@ -68,38 +64,35 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
         }
 
         ApplicationManager.getApplication().executeOnPooledThread {
-            val url = URI(serverUrl(currentPort, "/session/${event.sessionId}/permissions/${event.requestId}")).toURL()
-            val conn = url.openConnection() as HttpURLConnection
-            try {
-                conn.connectTimeout = CONNECT_TIMEOUT_MS
-                conn.readTimeout = READ_TIMEOUT_MS
-                conn.requestMethod = "POST"
-                conn.setRequestProperty("Content-Type", "application/json")
-                conn.doOutput = true
-
-                val payload = gson.toJson(mapOf("response" to response.wireValue))
-                conn.outputStream.use { it.write(payload.toByteArray(Charsets.UTF_8)) }
-
-                val code = conn.responseCode
-                if (code in 200..299) {
-                    log.info("OpenCodePermissionService: permission reply ${response.wireValue} -> HTTP $code")
-                } else {
-                    val body = readResponseBody(conn)
-                    log.warn("OpenCodePermissionService: permission reply ${response.wireValue} failed -> HTTP $code body=${body.take(300)}")
+            when (
+                val result = permissionApiClient.reply(
+                    port = currentPort,
+                    sessionId = event.sessionId,
+                    permissionId = event.requestId,
+                    response = response.wireValue,
+                )
+            ) {
+                is ApiResult.Success -> {
+                    if (result.value) {
+                        log.info("OpenCodePermissionService: permission reply ${response.wireValue} accepted")
+                    } else {
+                        log.warn("OpenCodePermissionService: permission reply ${response.wireValue} rejected")
+                    }
                 }
-            } catch (e: Exception) {
-                log.warn("OpenCodePermissionService: failed to reply to permission ${event.requestId}", e)
-            } finally {
-                conn.disconnect()
+
+                is ApiResult.Failure -> {
+                    log.warn(
+                        "OpenCodePermissionService: permission reply ${response.wireValue} failed error=${apiErrorMessage(result.error)}",
+                    )
+                }
             }
         }
     }
 
-    private fun readResponseBody(conn: HttpURLConnection): String {
-        val stream = runCatching { conn.errorStream ?: conn.inputStream }.getOrNull() ?: return ""
-        return runCatching {
-            stream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-        }.getOrDefault("")
+    private fun apiErrorMessage(error: ApiError): String = when (error) {
+        is ApiError.HttpError -> "HTTP ${error.statusCode}"
+        is ApiError.NetworkError -> error.message
+        is ApiError.ParseError -> error.message
     }
 
     private fun publishPermissionChanged() {
