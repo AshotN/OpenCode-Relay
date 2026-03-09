@@ -1,5 +1,7 @@
 package com.ashotn.opencode.toolwindow
 
+import com.ashotn.opencode.actions.ClearInstanceAction
+import com.ashotn.opencode.actions.NewSessionAction
 import com.ashotn.opencode.diff.DiffHighlightKind
 import com.ashotn.opencode.diff.DiffHighlightStyles
 import com.ashotn.opencode.diff.DiffHunksChangedListener
@@ -11,6 +13,9 @@ import com.ashotn.opencode.ipc.OpenCodeEvent
 import com.ashotn.opencode.ipc.PermissionChangedListener
 import com.ashotn.opencode.ipc.PermissionReply
 import com.ashotn.opencode.permission.OpenCodePermissionService
+import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionToolbar
+import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.editor.DiffEditorTabFilesManager
 import com.intellij.diff.editor.SimpleDiffVirtualFile
@@ -155,10 +160,25 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         border = MatteBorder(1, 0, 0, 0, JBColor.border())
 
-        val header = JBLabel("Session changes").apply {
+        val headerLabel = JBLabel("Session changes").apply {
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
             border = JBUI.Borders.empty(6, 8, 4, 8)
+        }
+
+        val sessionActionsGroup = DefaultActionGroup().apply {
+            add(NewSessionAction(project))
+            add(ClearInstanceAction(project))
+        }
+        val sessionActionsToolbar = ActionManager.getInstance()
+            .createActionToolbar("OpenCode.SessionListHeader", sessionActionsGroup, true).apply {
+                targetComponent = this@PendingFilesPanel
+            }
+
+        val header = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(headerLabel, BorderLayout.WEST)
+            add(sessionActionsToolbar.component, BorderLayout.EAST)
         }
 
         sessionList.addListSelectionListener(object : ListSelectionListener {
