@@ -11,6 +11,7 @@ import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTab
 import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabsManager
 import com.intellij.terminal.frontend.view.TerminalView
 import com.intellij.terminal.frontend.view.TerminalViewSessionState
+import com.intellij.ui.content.Content
 import kotlinx.coroutines.launch
 import java.awt.BorderLayout
 import javax.swing.JPanel
@@ -35,6 +36,7 @@ class OpenCodeTuiPanel(
 ) : JPanel(BorderLayout()), Disposable {
 
     private var terminalTab: TerminalToolWindowTab? = null
+    private var terminalContent: Content? = null
     private var terminalView: TerminalView? = null
 
     init {
@@ -53,10 +55,7 @@ class OpenCodeTuiPanel(
 
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
-            val attachCmd = "opencode attach ${serverUrl(OpenCodeSettings.getInstance(project).serverPort)}"
-            // Loop so the TUI reconnects automatically if opencode attach exits.
-            // sleep 1 prevents a tight crash-loop when the server is unreachable.
-            val command = "while true; do $attachCmd; sleep 1; done"
+            val command = "opencode attach ${serverUrl(OpenCodeSettings.getInstance(project).serverPort)}"
 
             val manager = TerminalToolWindowTabsManager.getInstance(project)
 
@@ -69,8 +68,16 @@ class OpenCodeTuiPanel(
                 .createTab()
 
             val view = tab.view
+            val content = tab.content
             terminalTab = tab
+            terminalContent = content
             terminalView = view
+
+            // shouldAddToToolWindow(false) means the content is never added to a ContentManager,
+            // so closeTab() would be a no-op (it routes through ContentManager.removeContent).
+            // Register the content in our own disposable tree so it is properly disposed when
+            // this panel is disposed, and so Disposer does not flag it as leaked under ROOT_DISPOSABLE.
+            Disposer.register(this, content as Disposable)
 
             // Watch sessionState flow: when Terminated the shell has exited.
             view.coroutineScope.launch {
@@ -80,6 +87,7 @@ class OpenCodeTuiPanel(
                             if (terminalView === view) {
                                 terminalView = null
                                 terminalTab = null
+                                terminalContent = null
                                 remove(view.component)
                                 revalidate()
                                 repaint()
@@ -114,17 +122,21 @@ class OpenCodeTuiPanel(
 
     private fun tearDown() {
         val view = terminalView ?: return
-        val tab = terminalTab
+        val content = terminalContent
         terminalView = null
         terminalTab = null
+        terminalContent = null
         remove(view.component)
         revalidate()
         repaint()
-        // closeTab removes the tab from the manager's tracking list and shuts down the shell.
-        if (tab != null) {
-            TerminalToolWindowTabsManager.getInstance(project).closeTab(tab)
+        // Dispose the content to shut down the shell and release all associated resources.
+        // We can't use closeTab() here because it delegates to ContentManager.removeContent,
+        // which does nothing when the content has no manager (our case, since we used
+        // shouldAddToToolWindow(false) and never added the content to a ContentManager).
+        if (content != null) {
+            Disposer.dispose(content as Disposable)
         } else {
-            // Fallback: cancel the scope directly if we somehow lost the tab reference.
+            // Fallback in case we lost the content reference — cancel the coroutine scope directly.
             view.coroutineScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
         }
     }

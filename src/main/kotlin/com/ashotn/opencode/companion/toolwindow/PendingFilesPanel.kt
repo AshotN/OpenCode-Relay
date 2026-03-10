@@ -61,6 +61,7 @@ import javax.swing.KeyStroke
 import javax.swing.JMenuItem
 import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
+import javax.swing.Timer
 import javax.swing.border.MatteBorder
 import javax.swing.event.ListSelectionEvent
 import javax.swing.event.ListSelectionListener
@@ -106,8 +107,12 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     private val refreshScheduled = AtomicBoolean(false)
     private var didApplyInitialSessionSelection = false
     private var isUpdatingSessionSelection = false
-    private val busySessionIcon = AnimatedIcon.Default.INSTANCE
+    private val busySessionIcon = AnimatedIcon(50, *AnimatedIcon.Default.ICONS.toTypedArray())
     private val idleSessionIcon = EmptyIcon.create(busySessionIcon.iconWidth, busySessionIcon.iconHeight)
+
+    // Repaints the session list at the spinner frame rate so AnimatedIcon advances smoothly.
+    // Only runs while at least one session is busy.
+    private val spinnerTimer = Timer(50) { sessionList.repaint() }
 
     private val permissionLabel = JBLabel("").apply {
         font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
@@ -402,6 +407,10 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             isUpdatingSessionSelection = false
         }
 
+        val anyBusy = rows.any { it.isBusy }
+        if (anyBusy && !spinnerTimer.isRunning) spinnerTimer.start()
+        else if (!anyBusy && spinnerTimer.isRunning) spinnerTimer.stop()
+
         if (!didApplyInitialSessionSelection && rows.isNotEmpty()) {
             didApplyInitialSessionSelection = true
             ApplicationManager.getApplication().invokeLater {
@@ -530,6 +539,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     }
 
     override fun dispose() {
+        spinnerTimer.stop()
         // Message bus connections are closed automatically by Disposer when this is disposed.
     }
 
