@@ -200,9 +200,9 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         })
 
         val sessionSection = JPanel(BorderLayout()).apply {
-            border = JBUI.Borders.emptyBottom(4)
+            border = JBUI.Borders.emptyRight(4)
             add(sessionScrollPane, BorderLayout.CENTER)
-            minimumSize = JBUI.size(120, 90)
+            minimumSize = JBUI.size(200, 60)
         }
 
         val filesHeader = JBLabel("Files").apply {
@@ -256,11 +256,11 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         val filesSection = JPanel(BorderLayout()).apply {
             add(filesHeader, BorderLayout.NORTH)
             add(JBScrollPane(fileList), BorderLayout.CENTER)
-            minimumSize = JBUI.size(120, 140)
+            minimumSize = JBUI.size(60, 60)
         }
 
-        val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionSection, filesSection).apply {
-            resizeWeight = 0.35
+        val splitPane = JSplitPane(JSplitPane.HORIZONTAL_SPLIT, sessionSection, filesSection).apply {
+            resizeWeight = 0.85
             isContinuousLayout = true
             dividerSize = JBUI.scale(2)
             OpenCodeToolWindowPanel.applyThemedDivider(this)
