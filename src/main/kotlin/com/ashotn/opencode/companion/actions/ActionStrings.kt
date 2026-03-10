@@ -37,10 +37,10 @@ enum class ActionStrings(
         disabledDescription = "No session is currently selected",
     ),
     OPEN_SETTINGS(
-        text = "OpenCode Settings",
-        disabledText = "OpenCode Settings",
-        description = "Open OpenCode settings",
-        disabledDescription = "Open OpenCode settings",
+        text = "OpenCode Companion Settings",
+        disabledText = "OpenCode Companion Settings",
+        description = "Open OpenCode Companion settings",
+        disabledDescription = "Open OpenCode Companion settings",
     ),
     SEND_SELECTION(
         text = "Send Selection to OpenCode",
@@ -61,8 +61,8 @@ enum class ActionStrings(
         disabledDescription = "OpenCode must be running to send a folder",
     ),
     RESET_PLUGIN(
-        text = "Reset OpenCode",
-        disabledText = "Reset OpenCode (server must be running or starting)",
+        text = "Reset OpenCode Companion",
+        disabledText = "Reset OpenCode Companion (server must be running or starting)",
         description = "Disconnect from the server, reset all plugin state, and reconnect",
         disabledDescription = "Reset is only available when OpenCode is running or starting",
     ),

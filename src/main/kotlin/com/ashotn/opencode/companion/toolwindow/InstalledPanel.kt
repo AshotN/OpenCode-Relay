@@ -160,7 +160,7 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
                 buttonPanel.isVisible = false
             }
             ServerState.RESETTING -> {
-                portStatusLabel.text = "Resetting OpenCode…"
+                portStatusLabel.text = "Resetting OpenCode Companion…"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 buttonPanel.isVisible = false
             }

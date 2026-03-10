@@ -259,8 +259,8 @@ class ServerManager(
         val executable = File(executablePath)
         if (!executable.isFile || !executable.canExecute()) {
             project.showNotification(
-                "Failed to start OpenCode",
-                "OpenCode executable is not valid or executable: $executablePath",
+                "Failed to start OpenCode Companion",
+                "OpenCode Companion executable is not valid or executable: $executablePath",
                 NotificationType.ERROR,
             )
             applyState(ServerState.STOPPED)
@@ -307,8 +307,8 @@ class ServerManager(
                 val message = e.message ?: e.javaClass.simpleName
                 SwingUtilities.invokeLater {
                     project.showNotification(
-                        "Failed to start OpenCode",
-                        "Could not launch the OpenCode process: $message",
+                        "Failed to start OpenCode Companion",
+                        "Could not launch the OpenCode Companion process: $message",
                         NotificationType.ERROR,
                     )
                     applyState(ServerState.STOPPED)

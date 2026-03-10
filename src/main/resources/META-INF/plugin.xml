@@ -5,7 +5,7 @@
     <resource-bundle>messages.OpenCodeBundle</resource-bundle>
 
     <description><![CDATA[
-        OpenCode AI coding assistant integration for IntelliJ IDEA.
+        OpenCode Companion — AI coding assistant integration for IntelliJ IDEA.
         Brings the power of OpenCode directly into your IDE.
     ]]></description>
 
@@ -14,7 +14,7 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
-            id="OpenCode"
+            id="OpenCode Companion"
             anchor="right"
             factoryClass="com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowFactory"
             icon="/icons/opencode.svg"
@@ -25,7 +25,7 @@
             id="com.ashotn.opencode.companion.settings"
             key="configurable.opencode.displayName"
         />
-        <notificationGroup id="OpenCode" displayType="BALLOON" key="notification.group.opencode"/>
+        <notificationGroup id="OpenCode Companion" displayType="BALLOON" key="notification.group.opencode"/>
     </extensions>
 
     <actions>

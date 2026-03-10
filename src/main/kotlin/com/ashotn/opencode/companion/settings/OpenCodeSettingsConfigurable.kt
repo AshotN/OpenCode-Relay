@@ -12,7 +12,7 @@ import com.intellij.ui.dsl.builder.*
 import javax.swing.SwingUtilities
 
 class OpenCodeSettingsConfigurable(private val project: Project) :
-    BoundConfigurable("OpenCode") {
+    BoundConfigurable("OpenCode Companion") {
 
     override fun createPanel(): DialogPanel {
         val settings = OpenCodeSettings.getInstance(project)
@@ -20,11 +20,11 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         return panel {
             if (running) {
                 row {
-                    comment("Some settings are read-only while OpenCode is running. Stop the server to make changes.")
+                    comment("Some settings are read-only while OpenCode Companion is running. Stop the server to make changes.")
                 }
             }
             group("Executable") {
-                row("OpenCode Path:") {
+                row("OpenCode Companion Path:") {
                     textField()
                         .bindText(settings::executablePath)
                         .comment("Path to the opencode executable. Leave blank to auto-detect.")
@@ -99,7 +99,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
     private fun refreshToolWindowPanel() {
         SwingUtilities.invokeLater {
-            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("OpenCode") ?: return@invokeLater
+            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("OpenCode Companion") ?: return@invokeLater
             val content = toolWindow.contentManager.getContent(0) ?: return@invokeLater
             (content.component as? OpenCodeToolWindowPanel)?.refresh()
         }
