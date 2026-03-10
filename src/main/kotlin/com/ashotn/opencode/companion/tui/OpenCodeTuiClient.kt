@@ -80,25 +80,55 @@ class OpenCodeTuiClient(private val project: Project) {
     /**
      * Creates a new root session via POST /session and switches the TUI to it via
      * POST /tui/select-session.
+     *
+     * If the newest known session has no messages, no tracked files, and is not busy,
+     * we reuse it instead of creating a new one — there is no point in accumulating
+     * blank sessions. The [onResult] callback receives [reused]=true in that case.
+     *
+     * Runs all work on a pooled thread and invokes [onResult] from that thread.
      */
     fun createSessionAndSelectInTui(
-        onResult: (success: Boolean, sessionId: String?, error: String?) -> Unit,
+        onResult: (success: Boolean, sessionId: String?, reused: Boolean, error: String?) -> Unit,
     ) {
-        createSession { success, sessionId, error ->
-            if (!success || sessionId.isNullOrBlank()) {
-                onResult(false, sessionId, error)
-                return@createSession
+        val currentPort = port
+        if (currentPort <= 0) {
+            onResult(false, null, false, "OpenCode server is not running")
+            return
+        }
+
+        val diffService = OpenCodeDiffService.getInstance(project)
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val existingEmpty = diffService.listSessions()
+                .maxByOrNull { it.updatedAtMillis }
+                ?.takeIf { !it.hasMessages && it.trackedFileCount == 0 && !it.isBusy }
+
+            if (existingEmpty != null) {
+                selectTuiSession(existingEmpty.sessionId) { selectSuccess, selectError ->
+                    if (!selectSuccess) {
+                        onResult(false, existingEmpty.sessionId, true, selectError)
+                        return@selectTuiSession
+                    }
+                    diffService.selectSession(existingEmpty.sessionId)
+                    onResult(true, existingEmpty.sessionId, true, null)
+                }
+                return@executeOnPooledThread
             }
 
-            selectTuiSession(sessionId) { selectSuccess, selectError ->
-                if (!selectSuccess) {
-                    onResult(false, sessionId, selectError)
-                    return@selectTuiSession
+            createSession { success, sessionId, error ->
+                if (!success || sessionId.isNullOrBlank()) {
+                    onResult(false, sessionId, false, error)
+                    return@createSession
                 }
 
-                val diffService = OpenCodeDiffService.getInstance(project)
-                diffService.selectSession(sessionId)
-                onResult(true, sessionId, null)
+                selectTuiSession(sessionId) { selectSuccess, selectError ->
+                    if (!selectSuccess) {
+                        onResult(false, sessionId, false, selectError)
+                        return@selectTuiSession
+                    }
+
+                    diffService.selectSession(sessionId)
+                    onResult(true, sessionId, false, null)
+                }
             }
         }
     }

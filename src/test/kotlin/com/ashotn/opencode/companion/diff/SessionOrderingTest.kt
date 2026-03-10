@@ -212,6 +212,7 @@ class SessionOrderingTest {
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
+            sessionIdsWithMessages = emptySet(),
         )
 
         assertEquals(3, sessions.size)
@@ -263,6 +264,7 @@ class SessionOrderingTest {
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
+            sessionIdsWithMessages = emptySet(),
         )
 
         // sessionB is busy → sorts first regardless of timestamp (busy-first rule)

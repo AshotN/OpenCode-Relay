@@ -32,6 +32,8 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         val isBusy: Boolean,
         val trackedFileCount: Int,
         val updatedAtMillis: Long,
+        /** True if the server has reported a summary for this session, indicating it has messages. */
+        val hasMessages: Boolean,
     )
 
     data class FileDiffPreview(
@@ -64,6 +66,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     /** sessionId -> title/summary metadata from /session. */
     private val sessionTitleById = ConcurrentHashMap<String, String>()
     private val sessionDescriptionById = ConcurrentHashMap<String, String>()
+
+    /** Session IDs that have at least one message (server returned a summary). */
+    private val sessionIdsWithMessages = ConcurrentHashMap.newKeySet<String>()
 
     /** Guards map updates that must commit atomically. */
     private val stateLock = Any()
@@ -549,6 +554,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             addedBySession = stateStore.addedBySession,
             deletedBySession = stateStore.deletedBySession,
             updatedAtBySession = stateStore.updatedAtBySession,
+            sessionIdsWithMessages = sessionIdsWithMessages,
         )
     }
 
@@ -759,6 +765,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     val parentsChanged = parentBySessionId != snapshot.parentBySessionId
                     val titlesChanged = sessionTitleById != snapshot.titleBySessionId
                     val descriptionsChanged = sessionDescriptionById != snapshot.descriptionBySessionId
+                    val messagesChanged = sessionIdsWithMessages != snapshot.sessionIdsWithMessages
 
                     // Seed updatedAtBySession from the server-reported timestamps for sessions
                     // that have no locally-observed timestamp yet (or whose local timestamp is older).
@@ -773,7 +780,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                         }
                     }
 
-                    if (!idsChanged && !parentsChanged && !titlesChanged && !descriptionsChanged && !timestampsChanged) {
+                    if (!idsChanged && !parentsChanged && !titlesChanged && !descriptionsChanged && !timestampsChanged && !messagesChanged) {
                         false
                     } else {
                         hierarchySessionIds.clear()
@@ -787,6 +794,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
                         sessionDescriptionById.clear()
                         sessionDescriptionById.putAll(snapshot.descriptionBySessionId)
+
+                        sessionIdsWithMessages.clear()
+                        sessionIdsWithMessages.addAll(snapshot.sessionIdsWithMessages)
                         true
                     }
                 }
@@ -839,6 +849,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     private fun resetStateLocked() {
         sessionTitleById.clear()
         sessionDescriptionById.clear()
+        sessionIdsWithMessages.clear()
         documentSyncService.reset()
         parentBySessionId.clear()
         hierarchySessionIds.clear()

@@ -32,6 +32,12 @@
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
 
         <action
+            id="com.ashotn.opencode.companion.actions.NewSessionAction"
+            class="com.ashotn.opencode.companion.actions.NewSessionAction">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift 5"/>
+        </action>
+
+        <action
             id="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction"
             class="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction">
             <!-- Global shortcut when panel is not focused -->

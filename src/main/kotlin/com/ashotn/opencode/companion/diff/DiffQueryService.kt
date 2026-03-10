@@ -73,6 +73,7 @@ internal class DiffQueryService {
         addedBySession: Map<String, Set<String>>,
         deletedBySession: Map<String, Set<String>>,
         updatedAtBySession: Map<String, Long>,
+        sessionIdsWithMessages: Set<String>,
     ): List<OpenCodeDiffService.SessionInfo> {
         return knownSessionIds
             .map { sessionId ->
@@ -86,6 +87,7 @@ internal class DiffQueryService {
                         (addedBySession[sessionId] ?: emptySet()) +
                         (deletedBySession[sessionId] ?: emptySet())).size,
                     updatedAtMillis = updatedAtBySession[sessionId] ?: 0L,
+                    hasMessages = sessionId in sessionIdsWithMessages,
                 )
             }
             .sortedWith(

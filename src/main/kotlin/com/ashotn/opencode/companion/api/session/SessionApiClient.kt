@@ -32,6 +32,8 @@ class SessionApiClient(
         val titleBySessionId: Map<String, String>,
         val descriptionBySessionId: Map<String, String>,
         val updatedAtBySessionId: Map<String, Long>,
+        /** Session IDs that have at least one message (server returned a non-null summary). */
+        val sessionIdsWithMessages: Set<String>,
     )
 
     fun createSession(port: Int): ApiResult<CreatedSession> {
@@ -106,6 +108,7 @@ class SessionApiClient(
             val titleBySession = HashMap<String, String>()
             val descriptionBySession = HashMap<String, String>()
             val updatedAtBySession = HashMap<String, Long>()
+            val sessionIdsWithMessages = linkedSetOf<String>()
 
             sessionArray.forEach { element ->
                 if (!element.isJsonObject) return@forEach
@@ -137,6 +140,12 @@ class SessionApiClient(
                 if (updatedAt != null && updatedAt > 0L) {
                     updatedAtBySession[id] = updatedAt
                 }
+
+                // A session has messages if the server returns a non-null summary object.
+                // Brand-new sessions with no messages have no summary field at all.
+                if (sessionObj.getObjectOrNull("summary") != null) {
+                    sessionIdsWithMessages.add(id)
+                }
             }
 
             ApiResult.Success(
@@ -146,6 +155,7 @@ class SessionApiClient(
                     titleBySessionId = titleBySession,
                     descriptionBySessionId = descriptionBySession,
                     updatedAtBySessionId = updatedAtBySession,
+                    sessionIdsWithMessages = sessionIdsWithMessages,
                 )
             )
         }.withParseContext(endpoint)
