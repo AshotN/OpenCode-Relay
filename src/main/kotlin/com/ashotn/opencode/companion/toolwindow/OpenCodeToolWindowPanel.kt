@@ -62,10 +62,10 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, outerCardPanel, tuiPanel.apply {
         minimumSize = JBUI.size(0, 120)
     }).apply {
-        // resizeWeight = 1.0: all resize delta is absorbed by the top panel.
-        // This keeps the terminal (bottom) pane at a stable size when the tool window
-        // is resized, preventing it from shifting up and becoming hidden.
-        resizeWeight = 1.0
+        // resizeWeight = 0.0: all resize delta goes to the bottom (terminal) panel.
+        // This means when the tool window grows, the terminal expands rather than
+        // the session/file section, making the terminal the priority for new space.
+        resizeWeight = 0.0
         isContinuousLayout = true
         border = null
         // Hide the divider bar until the server is READY.
