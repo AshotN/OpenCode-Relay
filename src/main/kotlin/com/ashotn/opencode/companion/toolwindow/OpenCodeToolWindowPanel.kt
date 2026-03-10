@@ -41,7 +41,10 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     // Split pane that stacks content (top) and TUI (bottom).
     // The TUI half is hidden until the server is READY.
     private val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, outerCardPanel, tuiPanel).apply {
-        resizeWeight = 0.45
+        // resizeWeight = 1.0: all resize delta is absorbed by the top panel.
+        // This keeps the terminal (bottom) pane at a stable size when the tool window
+        // is resized, preventing it from shifting up and becoming hidden (X11/XToolkit).
+        resizeWeight = 1.0
         isContinuousLayout = true
         border = null
         // Hide the divider bar until the server is READY.
