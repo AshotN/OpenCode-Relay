@@ -1,6 +1,5 @@
 package com.ashotn.opencode.companion.diff
 
-import com.ashotn.opencode.companion.diff.NoOpDiffTracer
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 

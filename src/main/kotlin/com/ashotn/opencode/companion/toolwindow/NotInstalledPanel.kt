@@ -20,7 +20,7 @@ class NotInstalledPanel : JPanel(GridBagLayout()) {
             gridx = 0
             fill = GridBagConstraints.HORIZONTAL
             anchor = GridBagConstraints.CENTER
-            insets = Insets(JBUI.scale(4), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
+            insets = JBUI.insets(JBUI.scale(4), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
         }
 
         val base = UIUtil.getLabelFont()
@@ -50,11 +50,11 @@ class NotInstalledPanel : JPanel(GridBagLayout()) {
         }
 
         gbc.gridy = 0; add(emojiLabel, gbc)
-        gbc.gridy = 1; gbc.insets = Insets(JBUI.scale(8), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
+        gbc.gridy = 1; gbc.insets = JBUI.insets(JBUI.scale(8), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
         add(titleLabel, gbc)
-        gbc.gridy = 2; gbc.insets = Insets(JBUI.scale(4), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
+        gbc.gridy = 2; gbc.insets = JBUI.insets(JBUI.scale(4), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
         add(subtitleLabel, gbc)
-        gbc.gridy = 3; gbc.insets = Insets(JBUI.scale(16), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
+        gbc.gridy = 3; gbc.insets = JBUI.insets(JBUI.scale(16), JBUI.scale(16), JBUI.scale(4), JBUI.scale(16))
         add(linkLabel, gbc)
     }
 }

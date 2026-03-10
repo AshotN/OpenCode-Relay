@@ -534,8 +534,8 @@ class SessionDiffPipelineTest {
         )
 
         // After historical reload: file count is tracked but inline highlights are gone.
-        val liveAfterReload = freshStore.liveHunksBySessionAndFile[h.sessionId]?.keys ?: emptySet<String>()
-        val cumAfterReload = freshStore.hunksBySessionAndFile[h.sessionId]?.keys ?: emptySet<String>()
+        val liveAfterReload = freshStore.liveHunksBySessionAndFile[h.sessionId]?.keys ?: emptySet()
+        val cumAfterReload = freshStore.hunksBySessionAndFile[h.sessionId]?.keys ?: emptySet()
 
         assertTrue(liveAfterReload.isEmpty(),
             "post-restart historical reload must not restore inline highlights, got liveHunkFiles: $liveAfterReload")

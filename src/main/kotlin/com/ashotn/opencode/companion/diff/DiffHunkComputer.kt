@@ -28,6 +28,8 @@ internal class DiffHunkComputer(private val logger: Logger) {
                     sessionId = sessionId,
                 )
             }
+        } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
+            throw e
         } catch (e: Exception) {
             logger.warn("OpenCodeDiffService: failed to compute hunks for ${fileDiff.file}", e)
             emptyList()

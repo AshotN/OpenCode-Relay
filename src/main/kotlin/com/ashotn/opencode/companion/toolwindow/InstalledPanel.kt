@@ -51,13 +51,13 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
             isOpaque = false
             val gbc = GridBagConstraints().apply {
                 gridx = 0; fill = GridBagConstraints.NONE; anchor = GridBagConstraints.CENTER
-                insets = Insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
+                insets = JBUI.insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
             }
 
             portStatusLabel.font = base.deriveFont(base.size * 1.1f)
 
             gbc.gridy = 0; add(portStatusLabel, gbc)
-            gbc.gridy = 1; gbc.insets = Insets(JBUI.scale(12), pad, JBUI.scale(4), pad)
+            gbc.gridy = 1; gbc.insets = JBUI.insets(JBUI.scale(12), pad, JBUI.scale(4), pad)
             add(buttonPanel, gbc)
         }
 
@@ -66,7 +66,7 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
             isOpaque = false
             val gbc = GridBagConstraints().apply {
                 gridx = 0; fill = GridBagConstraints.HORIZONTAL
-                insets = Insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
+                insets = JBUI.insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
             }
 
             val versionSuffix = if (resolvedExecutableInfo.version.isNotBlank()) "(${resolvedExecutableInfo.version})" else ""
@@ -80,7 +80,7 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
             }
 
             gbc.gridy = 0; add(subtitleLabel, gbc)
-            gbc.gridy = 1; gbc.insets = Insets(JBUI.scale(2), pad, JBUI.scale(16), pad)
+            gbc.gridy = 1; gbc.insets = JBUI.insets(JBUI.scale(2), pad, JBUI.scale(16), pad)
             add(pathLabel, gbc)
         }
 

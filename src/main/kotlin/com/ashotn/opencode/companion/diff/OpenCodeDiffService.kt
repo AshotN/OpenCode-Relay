@@ -444,16 +444,16 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             val stateSnapshot = synchronized(stateLock) {
                 val baselineSizes = stateStore.baselineBeforeBySessionAndFile[sessionId]
                     ?.mapValues { (_, v) -> v.length }
-                    ?: emptyMap<String, Int>()
+                    ?: emptyMap()
                 val lastAfterSizes = stateStore.lastAfterBySessionAndFile[sessionId]
                     ?.mapValues { (_, v) -> v.length }
-                    ?: emptyMap<String, Int>()
+                    ?: emptyMap()
                 mapOf(
-                    "hunkFiles" to (stateStore.hunksBySessionAndFile[sessionId]?.keys?.sorted() ?: emptyList<String>()),
+                    "hunkFiles" to (stateStore.hunksBySessionAndFile[sessionId]?.keys?.sorted() ?: emptyList()),
                     "liveHunkFiles" to (stateStore.liveHunksBySessionAndFile[sessionId]?.keys?.sorted()
-                        ?: emptyList<String>()),
-                    "deletedFiles" to (stateStore.deletedBySession[sessionId]?.sorted() ?: emptyList<String>()),
-                    "addedFiles" to (stateStore.addedBySession[sessionId]?.sorted() ?: emptyList<String>()),
+                        ?: emptyList()),
+                    "deletedFiles" to (stateStore.deletedBySession[sessionId]?.sorted() ?: emptyList()),
+                    "addedFiles" to (stateStore.addedBySession[sessionId]?.sorted() ?: emptyList()),
                     "baselineBeforeSizeByFile" to baselineSizes,
                     "lastAfterSizeByFile" to lastAfterSizes,
                 )

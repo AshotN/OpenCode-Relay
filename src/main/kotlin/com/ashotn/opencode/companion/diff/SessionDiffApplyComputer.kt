@@ -1,6 +1,5 @@
 package com.ashotn.opencode.companion.diff
 
-import com.ashotn.opencode.companion.diff.DiffTracer
 import com.ashotn.opencode.companion.ipc.FileDiff
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
@@ -184,7 +183,7 @@ internal class SessionDiffApplyComputer(
                     "baselineMatchCount" to baselineMatchCount,
                     "zeroHunkCount" to zeroHunkCount,
                     "outOfScopeCount" to outOfScopeCount,
-                    "analyses" to (analyses ?: emptyList<Map<String, Any?>>()),
+                    "analyses" to (analyses ?: emptyList()),
                 ),
             )
         }

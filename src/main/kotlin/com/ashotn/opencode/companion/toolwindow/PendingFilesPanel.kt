@@ -14,7 +14,6 @@ import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.ipc.PermissionReply
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.intellij.openapi.actionSystem.ActionManager
-import com.intellij.openapi.actionSystem.ActionToolbar
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.editor.DiffEditorTabFilesManager
@@ -55,7 +54,6 @@ import javax.swing.BorderFactory
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
-import javax.swing.JComponent
 import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
@@ -255,7 +253,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionSection, filesSection).apply {
             resizeWeight = 0.35
-            setContinuousLayout(true)
+            isContinuousLayout = true
             border = JBUI.Borders.empty()
         }
 
@@ -277,7 +275,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 OpenCodeDiffService.getInstance(project).selectSession(null)
             }
         }
-        getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+        getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
             .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clearSession")
         actionMap.put("clearSession", escAction)
 
@@ -342,7 +340,6 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
     private fun refresh() {
         val diffService = OpenCodeDiffService.getInstance(project)
-        val permissionService = OpenCodePermissionService.getInstance(project)
 
         val sessions = diffService.listSessions()
         val selectedSessionId = diffService.selectedSessionId()
@@ -469,7 +466,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 // Force BasicButtonUI so Darcula/IntelliJ L&F delegates cannot override
                 // isContentAreaFilled=false and paint their own opaque chrome.
                 setUI(javax.swing.plaf.basic.BasicButtonUI())
-                foreground = Color.WHITE
+                foreground = JBColor.WHITE
                 isContentAreaFilled = false
                 isBorderPainted = false
                 isFocusPainted = false
@@ -494,7 +491,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 // width-1/height-1: fillRoundRect excludes the last pixel row/column
                 g2.fillRoundRect(0, 0, width - 1, height - 1, arc, arc)
                 if (isFocusOwner) {
-                    g2.color = Color(255, 255, 255, 180)
+                    g2.color = JBColor(Color(0, 0, 0, 180), Color(255, 255, 255, 180))
                     g2.stroke = java.awt.BasicStroke(JBUI.scale(2).toFloat())
                     val inset = JBUI.scale(2)
                     g2.drawRoundRect(inset, inset, width - 1 - inset * 2, height - 1 - inset * 2, arc, arc)

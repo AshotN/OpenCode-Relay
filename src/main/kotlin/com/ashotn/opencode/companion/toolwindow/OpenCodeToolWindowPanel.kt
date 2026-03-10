@@ -55,7 +55,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         outerCardPanel.add(JPanel(BorderLayout()), CARD_CONTENT) // placeholder until buildContent runs
         outerCardPanel.add(pendingFilesPanel, CARD_PENDING)
 
-        Disposer.register(project, this)
+        Disposer.register(plugin, this)
         Disposer.register(this, slotDisposable)
 
         project.messageBus.connect(this).subscribe(

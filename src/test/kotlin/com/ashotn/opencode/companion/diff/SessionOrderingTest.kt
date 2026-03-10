@@ -1,5 +1,6 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -112,15 +113,15 @@ class SessionOrderingTest {
                 currentGeneration = { generation },
             )!!
 
-            val event = com.ashotn.opencode.companion.ipc.OpenCodeEvent.SessionDiff(
+            val event = OpenCodeEvent.SessionDiff(
                 sessionId = sid,
-                files = listOf(com.ashotn.opencode.companion.ipc.OpenCodeEvent.SessionDiffFile(
+                files = listOf(OpenCodeEvent.SessionDiffFile(
                     file = absPath,
                     before = "",
                     after = "ai content",
                     additions = 1,
                     deletions = 0,
-                    status = com.ashotn.opencode.companion.ipc.SessionDiffStatus.MODIFIED,
+                    status = SessionDiffStatus.MODIFIED,
                 )),
             )
 
