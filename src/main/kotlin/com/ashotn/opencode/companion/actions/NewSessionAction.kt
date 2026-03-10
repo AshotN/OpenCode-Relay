@@ -1,6 +1,7 @@
 package com.ashotn.opencode.companion.actions
 
 import com.ashotn.opencode.companion.OpenCodePlugin
+import com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowPanel
 import com.ashotn.opencode.companion.tui.OpenCodeTuiClient
 import com.ashotn.opencode.companion.util.applyStrings
 import com.ashotn.opencode.companion.util.showNotification
@@ -11,6 +12,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.wm.ToolWindowManager
 
 /**
  * Creates a new OpenCode session and selects it in the TUI.
@@ -38,6 +40,7 @@ class NewSessionAction(private val project: Project? = null) : AnAction() {
         OpenCodeTuiClient.getInstance(proj).createSessionAndSelectInTui { success, sessionId, reused, error ->
             ApplicationManager.getApplication().invokeLater {
                 if (success && !sessionId.isNullOrBlank()) {
+                    focusToolWindowTerminal(proj)
                     if (reused) {
                         proj.showNotification(
                             "Session already empty",
@@ -60,5 +63,13 @@ class NewSessionAction(private val project: Project? = null) : AnAction() {
                 }
             }
         }
+    }
+
+    private fun focusToolWindowTerminal(project: Project) {
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("OpenCode Companion") ?: return
+        val panel = toolWindow.contentManager.contents
+            .mapNotNull { it.component as? OpenCodeToolWindowPanel }
+            .firstOrNull() ?: return
+        toolWindow.activate { panel.focusTerminal() }
     }
 }

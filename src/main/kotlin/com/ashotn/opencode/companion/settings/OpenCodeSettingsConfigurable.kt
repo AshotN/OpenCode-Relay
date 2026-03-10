@@ -20,11 +20,11 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         return panel {
             if (running) {
                 row {
-                    comment("Some settings are read-only while OpenCode Companion is running. Stop the server to make changes.")
+                    comment("Some settings are read-only while the OpenCode server is running. Stop the server to make changes.")
                 }
             }
             group("Executable") {
-                row("OpenCode Companion Path:") {
+                row("OpenCode Path:") {
                     textField()
                         .bindText(settings::executablePath)
                         .comment("Path to the opencode executable. Leave blank to auto-detect.")

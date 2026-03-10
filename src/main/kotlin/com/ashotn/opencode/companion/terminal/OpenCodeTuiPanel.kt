@@ -116,6 +116,13 @@ class OpenCodeTuiPanel(
         }
     }
 
+
+
+    fun focusTerminal() {
+        val view = terminalView ?: return
+        view.preferredFocusableComponent.requestFocusInWindow()
+    }
+
     /** True while a terminal session is live. */
     val isStarted: Boolean get() = terminalView != null
 

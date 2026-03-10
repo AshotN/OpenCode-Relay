@@ -151,6 +151,10 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         outerCardLayout.show(outerCardPanel, if (showPending) CARD_PENDING else CARD_CONTENT)
     }
 
+    fun focusTerminal() {
+        tuiPanel.focusTerminal()
+    }
+
     fun refresh() {
         // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
         Disposer.dispose(slotDisposable)

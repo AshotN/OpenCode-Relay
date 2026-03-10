@@ -33,8 +33,10 @@
 
         <action
             id="com.ashotn.opencode.companion.actions.NewSessionAction"
-            class="com.ashotn.opencode.companion.actions.NewSessionAction">
-            <keyboard-shortcut keymap="$default" first-keystroke="shift 5"/>
+            class="com.ashotn.opencode.companion.actions.NewSessionAction"
+            text="New Session"
+            description="Create a new OpenCode session and switch the TUI to it">
+            <keyboard-shortcut keymap="$default" first-keystroke="shift F12"/>
         </action>
 
         <action
@@ -47,7 +49,8 @@
         <action
             id="com.ashotn.opencode.companion.actions.SendSelectionAction"
             class="com.ashotn.opencode.companion.actions.SendSelectionAction">
-            <keyboard-shortcut keymap="$default" first-keystroke="shift 4"/>
+            <keyboard-shortcut keymap="$default" first-keystroke="alt X"/>
+            <mouse-shortcut keymap="$default" keystroke="shift button2"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 

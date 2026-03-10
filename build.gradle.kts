@@ -27,7 +27,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         id = "com.ashotn.opencode-companion"
-        name = "OpenCode"
+        name = "OpenCode Companion"
         version = project.version.toString()
 
         vendor {
