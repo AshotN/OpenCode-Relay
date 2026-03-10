@@ -42,6 +42,7 @@ import java.awt.Color
 import java.awt.Component
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.Graphics
 import java.awt.Point
 import java.awt.RenderingHints
 import java.awt.event.ActionEvent
@@ -58,6 +59,8 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.KeyStroke
+import javax.swing.plaf.basic.BasicSplitPaneDivider
+import javax.swing.plaf.basic.BasicSplitPaneUI
 import javax.swing.JMenuItem
 import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
@@ -259,7 +262,8 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, sessionSection, filesSection).apply {
             resizeWeight = 0.35
             isContinuousLayout = true
-            border = JBUI.Borders.empty()
+            dividerSize = JBUI.scale(2)
+            OpenCodeToolWindowPanel.applyThemedDivider(this)
         }
 
         val contentCenter = JPanel(BorderLayout()).apply {

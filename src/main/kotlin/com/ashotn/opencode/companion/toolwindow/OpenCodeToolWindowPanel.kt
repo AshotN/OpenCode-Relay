@@ -15,17 +15,36 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Disposer
+import com.intellij.ui.JBColor
+import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.CardLayout
+import java.awt.Graphics
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JPanel
 import javax.swing.JSplitPane
+import javax.swing.plaf.basic.BasicSplitPaneDivider
+import javax.swing.plaf.basic.BasicSplitPaneUI
 
 class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayout()), Disposable {
 
     companion object {
         private const val CARD_CONTENT = "content"
         private const val CARD_PENDING = "pending"
+
+        /** Installs a theme-adaptive, 1px divider on [pane] so it matches the IDE border color. */
+        fun applyThemedDivider(pane: JSplitPane) {
+            pane.setUI(object : BasicSplitPaneUI() {
+                override fun createDefaultDivider(): BasicSplitPaneDivider =
+                    object : BasicSplitPaneDivider(this) {
+                        override fun paint(g: Graphics) {
+                            g.color = JBColor.border()
+                            g.fillRect(0, 0, width, height)
+                        }
+                    }
+            })
+            pane.border = null
+        }
     }
 
     private var slotDisposable: Disposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
@@ -51,6 +70,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         dividerSize = 0
         // Start with the divider all the way down so TUI is not visible yet.
         dividerLocation = Int.MAX_VALUE
+        applyThemedDivider(this)
     }
 
     init {
@@ -102,7 +122,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
                 ApplicationManager.getApplication().invokeLater {
                     val total = splitPane.height
                     if (total > 0) {
-                        splitPane.dividerSize = 4
+                        splitPane.dividerSize = JBUI.scale(2)
                         splitPane.dividerLocation = (total * 0.45).toInt()
                     }
                 }
