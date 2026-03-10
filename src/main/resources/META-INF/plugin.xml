@@ -32,8 +32,8 @@
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
 
         <action
-            id="com.ashotn.opencode.companion.actions.ClearInstanceAction"
-            class="com.ashotn.opencode.companion.actions.ClearInstanceAction">
+            id="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction"
+            class="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction">
             <!-- Global shortcut when panel is not focused -->
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
         </action>

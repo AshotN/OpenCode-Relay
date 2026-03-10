@@ -1,3 +1,5 @@
+@file:Suppress("UnstableApiUsage")
+
 package com.ashotn.opencode.companion.terminal
 
 import com.ashotn.opencode.companion.settings.OpenCodeSettings

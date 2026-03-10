@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion.toolwindow
 
-import com.ashotn.opencode.companion.actions.ClearInstanceAction
+import com.ashotn.opencode.companion.actions.ClearSelectedSessionAction
 import com.ashotn.opencode.companion.actions.NewSessionAction
 import com.ashotn.opencode.companion.diff.DiffHighlightKind
 import com.ashotn.opencode.companion.diff.DiffHighlightStyles
@@ -171,7 +171,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         val sessionActionsGroup = DefaultActionGroup().apply {
             add(NewSessionAction(project))
-            add(ClearInstanceAction(project))
+            add(ClearSelectedSessionAction(project))
         }
         val sessionActionsToolbar = ActionManager.getInstance()
             .createActionToolbar("OpenCode.SessionListHeader", sessionActionsGroup, true).apply {

@@ -30,9 +30,9 @@ enum class ActionStrings(
         description = "Create a new OpenCode session and switch the TUI to it",
         disabledDescription = "OpenCode must be running to create a new session",
     ),
-    CLEAR_INSTANCE(
-        text = "Clear Session",
-        disabledText = "Clear Session (no session selected)",
+    CLEAR_SELECTED_SESSION(
+        text = "Clear Selection",
+        disabledText = "Clear Selection (no session selected)",
         description = "Clear the selected session and remove all diff highlights",
         disabledDescription = "No session is currently selected",
     ),

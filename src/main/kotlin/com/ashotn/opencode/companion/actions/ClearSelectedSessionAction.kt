@@ -14,14 +14,14 @@ import com.intellij.openapi.project.Project
  * Can be constructed with an explicit [project] (for toolbar registration via setTitleActions)
  * or with no args (for XML registration, where the project is resolved from [AnActionEvent]).
  */
-class ClearInstanceAction(private val project: Project? = null) : AnAction() {
+class ClearSelectedSessionAction(private val project: Project? = null) : AnAction() {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         val proj = project ?: e.project
-        val strings = ActionStrings.CLEAR_INSTANCE
-        e.presentation.icon = AllIcons.Actions.GC
+        val strings = ActionStrings.CLEAR_SELECTED_SESSION
+        e.presentation.icon = AllIcons.Actions.ClearCash
         if (proj == null) {
             e.presentation.isEnabled = false
             e.presentation.text = strings.disabledText
