@@ -66,4 +66,10 @@ enum class ActionStrings(
         description = "Disconnect from the server, reset all plugin state, and reconnect",
         disabledDescription = "Reset is only available when OpenCode is running or starting",
     ),
+    MCP_SERVERS(
+        text = "MCP Servers",
+        disabledText = "MCP Servers (OpenCode must be running)",
+        description = "View and toggle MCP server connections",
+        disabledDescription = "OpenCode must be running to manage MCP servers",
+    ),
 }

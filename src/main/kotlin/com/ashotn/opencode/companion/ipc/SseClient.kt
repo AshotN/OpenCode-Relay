@@ -139,6 +139,7 @@ class SseClient(
                 "session.created" -> parseSessionCreated(properties)
                 "session.status" -> parseSessionStatus(properties)
                 "message.part.updated" -> parseMessagePartUpdated(properties)
+                "mcp.tools.changed" -> parseMcpToolsChanged(properties)
                 "permission.asked" -> parsePermissionAsked(properties)
                 "permission.replied" -> parsePermissionReplied(properties)
                 else -> {
@@ -270,6 +271,11 @@ class SseClient(
     private fun parseSessionIdle(props: JsonObject): OpenCodeEvent.SessionIdle? {
         val sessionId = props.getStringOrNull("sessionID") ?: return null
         return OpenCodeEvent.SessionIdle(sessionId)
+    }
+
+    private fun parseMcpToolsChanged(props: JsonObject): OpenCodeEvent.McpToolsChanged? {
+        val server = props.getStringOrNull("server") ?: return null
+        return OpenCodeEvent.McpToolsChanged(server)
     }
 
 }

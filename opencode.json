@@ -11,7 +11,10 @@
     "jetbrains_execute_terminal_command": "ask",
     "jetbrains_execute_run_configuration": "allow"
   },
-  "keybinds": {
-    "app_exit": "none"
+  "agent": {
+    "explore": {
+      "mode": "subagent",
+      "model": "anthropic/claude-haiku-4-5"
+    }
   }
 }

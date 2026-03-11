@@ -2,6 +2,7 @@ package com.ashotn.opencode.companion.diff
 
 import com.ashotn.opencode.companion.api.session.SessionApiClient
 import com.ashotn.opencode.companion.api.transport.ApiResult
+import com.ashotn.opencode.companion.ipc.McpChangedListener
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.ipc.SseClient
@@ -185,6 +186,9 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 log.debug("OpenCodeDiffService: turn.patch recorded session=${event.sessionId} touchedFileCount=${touchedPaths.size} generation=$generation")
             }
 
+            is OpenCodeEvent.McpToolsChanged -> {
+                project.messageBus.syncPublisher(McpChangedListener.TOPIC).onMcpChanged()
+            }
             is OpenCodeEvent.PermissionAsked -> permissionService.handlePermissionAsked(event)
             is OpenCodeEvent.PermissionReplied -> permissionService.handlePermissionReplied(event)
         }

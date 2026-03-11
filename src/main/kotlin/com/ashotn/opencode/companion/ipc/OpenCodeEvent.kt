@@ -59,6 +59,12 @@ sealed class OpenCodeEvent {
     )
 
     /**
+     * mcp.tools.changed — fired when an MCP server reports its tool list has changed.
+     * Used as a proxy signal that an MCP server's connection status may have changed.
+     */
+    data class McpToolsChanged(val serverName: String) : OpenCodeEvent()
+
+    /**
      * permission.asked — fired when OpenCode needs the user to approve a tool
      * call before it proceeds. OpenCode blocks until a reply is posted to
      * POST /permission/:requestId/reply.
