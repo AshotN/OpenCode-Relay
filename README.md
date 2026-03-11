@@ -1,6 +1,22 @@
 # OpenCode Companion for JetBrains IDEs
 
 Integrates the [OpenCode](https://opencode.ai) AI coding assistant into IntelliJ-based IDEs.
+<table>
+  <tr>
+    <td width="33%">
+      <img height="300" src="https://github.com/user-attachments/assets/444bb0d1-2f13-495a-9bd2-b0b8fb54b4a5" alt="Screenshot 1" />
+      <p align="center"><b>Inline diffs</b></p>
+    </td>
+    <td width="33%">
+      <img height="300" src="https://github.com/user-attachments/assets/1eb25eac-06aa-4f67-90eb-45c911627735" alt="Screenshot 2" />
+      <p align="center"><b>Detailed 3 panel diff</b></p>
+    </td>
+    <td width="33%">
+      <img height="300" src="https://github.com/user-attachments/assets/165dfcd4-592b-46fa-9015-37841a3fe070" alt="Screenshot 3" />
+      <p align="center"><b>Customizable Settings</b></p>
+    </td>
+  </tr>
+</table>
 
 ## Features
 
