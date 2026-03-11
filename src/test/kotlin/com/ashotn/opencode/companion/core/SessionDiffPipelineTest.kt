@@ -1,7 +1,7 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.Session
-import com.ashotn.opencode.companion.api.session.SessionTime
+import com.ashotn.opencode.companion.core.session.SessionScopeResolver
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import org.junit.Test
@@ -54,7 +54,10 @@ class SessionDiffPipelineTest {
         h.commitTurnPatch(listOf(file))
         h.applySessionDiff(emptyList())
 
-        assertTrue(h.hunkFiles().isEmpty(), "turn 3: hunkFiles should be empty after empty diff for scoped file, got: ${h.hunkFiles()}")
+        assertTrue(
+            h.hunkFiles().isEmpty(),
+            "turn 3: hunkFiles should be empty after empty diff for scoped file, got: ${h.hunkFiles()}"
+        )
         assertTrue(h.liveHunkFiles().isEmpty(), "turn 3: liveHunkFiles should be empty")
 
         // Turn 4: add content again — baseline must be "" not stale "line1\nline2\n"
@@ -117,7 +120,10 @@ class SessionDiffPipelineTest {
         val hunks = h.hunksFor(file)
         assertEquals(1, hunks.size, "turn 2: expected one hunk")
         val hunk = hunks.single()
-        assertTrue(hunk.removedLines.isEmpty(), "removedLines must be empty for a new file addition, got: ${hunk.removedLines}")
+        assertTrue(
+            hunk.removedLines.isEmpty(),
+            "removedLines must be empty for a new file addition, got: ${hunk.removedLines}"
+        )
         assertEquals(listOf("1"), hunk.addedLines, "addedLines should contain the new content")
     }
 
@@ -161,7 +167,7 @@ class SessionDiffPipelineTest {
         val childSessions = (1..5).map { "ses_child$it" }
         val files = childSessions.mapIndexed { i, sid -> sid to "notes/note${i + 1}.md" }
 
-        val stateStore = DiffStateStore()
+        val stateStore = StateStore()
         val stateLock = Any()
         val disk = mutableMapOf<String, String>()
 
@@ -170,10 +176,12 @@ class SessionDiffPipelineTest {
             hunkComputer = { fileDiff, sid ->
                 if (fileDiff.before == fileDiff.after) emptyList()
                 else listOf(
-                    DiffHunk(fileDiff.file, 0,
+                    DiffHunk(
+                        fileDiff.file, 0,
                         emptyList(),
                         if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
-                        sid)
+                        sid
+                    )
                 )
             },
             log = NoOpLogger,
@@ -260,7 +268,7 @@ class SessionDiffPipelineTest {
         val emptySessions = emptyMap<String, Session>() // empty — race condition
 
         val scopeResolver = SessionScopeResolver()
-        val queryService = DiffQueryService()
+        val queryService = QueryService()
 
         // Select the root session (user is viewing the parent conversation).
         stateStore.commitSelectedSession(
@@ -322,8 +330,10 @@ class SessionDiffPipelineTest {
             files = listOf(file to SessionDiffStatus.MODIFIED),
             serverAfterByFile = mapOf(h.abs(file) to withJoke),
         )
-        assertEquals(withJoke, h.serverAfter(file),
-            "after turn 1: serverAfter should hold the joke content")
+        assertEquals(
+            withJoke, h.serverAfter(file),
+            "after turn 1: serverAfter should hold the joke content"
+        )
 
         // Turn 2: AI empties the file — server sends empty string as after
         h.disk[h.abs(file)] = ""
@@ -339,7 +349,7 @@ class SessionDiffPipelineTest {
             "",
             h.serverAfter(file),
             "After AI panel must show empty string when AI emptied the file, " +
-                "but serverAfter still holds stale content: '${h.serverAfter(file)}'",
+                    "but serverAfter still holds stale content: '${h.serverAfter(file)}'",
         )
     }
 
@@ -481,7 +491,7 @@ class SessionDiffPipelineTest {
         // Simulate IDE restart: create fresh state store and replay the session
         // diff as a historical load (fromHistory=true), exactly as the plugin does
         // when it calls /session/{id}/diff on startup.
-        val freshStore = DiffStateStore()
+        val freshStore = StateStore()
         val freshLock = Any()
         val revision = freshStore.reserveRevisionForSessionDiffApply(
             stateLock = freshLock,
@@ -507,14 +517,16 @@ class SessionDiffPipelineTest {
         )
         val event = OpenCodeEvent.SessionDiff(
             sessionId = h.sessionId,
-            files = listOf(OpenCodeEvent.SessionDiffFile(
-                file = h.abs(file),
-                before = "",
-                after = "line1\n",
-                additions = 1,
-                deletions = 0,
-                status = SessionDiffStatus.MODIFIED,
-            )),
+            files = listOf(
+                OpenCodeEvent.SessionDiffFile(
+                    file = h.abs(file),
+                    before = "",
+                    after = "line1\n",
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            ),
         )
         val computedState = computer.compute(
             projectBase = h.projectBase,
@@ -538,10 +550,14 @@ class SessionDiffPipelineTest {
         val liveAfterReload = freshStore.liveHunksBySessionAndFile[h.sessionId]?.keys ?: emptySet()
         val cumAfterReload = freshStore.hunksBySessionAndFile[h.sessionId]?.keys ?: emptySet()
 
-        assertTrue(liveAfterReload.isEmpty(),
-            "post-restart historical reload must not restore inline highlights, got liveHunkFiles: $liveAfterReload")
-        assertEquals(setOf(h.abs(file)), cumAfterReload,
-            "cumulative hunk state must be populated for file count / diff preview")
+        assertTrue(
+            liveAfterReload.isEmpty(),
+            "post-restart historical reload must not restore inline highlights, got liveHunkFiles: $liveAfterReload"
+        )
+        assertEquals(
+            setOf(h.abs(file)), cumAfterReload,
+            "cumulative hunk state must be populated for file count / diff preview"
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -571,10 +587,12 @@ class SessionDiffPipelineTest {
         // Turn 2: touch note2.md only — server diff now reports both files cumulatively
         h.disk[h.abs(file2)] = "line2\n"
         h.commitTurnPatch(listOf(file2))
-        h.applySessionDiff(listOf(
-            file1 to SessionDiffStatus.MODIFIED,
-            file2 to SessionDiffStatus.MODIFIED,
-        ))
+        h.applySessionDiff(
+            listOf(
+                file1 to SessionDiffStatus.MODIFIED,
+                file2 to SessionDiffStatus.MODIFIED,
+            )
+        )
         assertEquals(
             setOf(h.abs(file2)),
             h.liveHunkFiles(),
@@ -584,11 +602,13 @@ class SessionDiffPipelineTest {
         // Turn 3: touch note3.md only — server diff now reports all three files cumulatively
         h.disk[h.abs(file3)] = "line3\n"
         h.commitTurnPatch(listOf(file3))
-        h.applySessionDiff(listOf(
-            file1 to SessionDiffStatus.MODIFIED,
-            file2 to SessionDiffStatus.MODIFIED,
-            file3 to SessionDiffStatus.ADDED,
-        ))
+        h.applySessionDiff(
+            listOf(
+                file1 to SessionDiffStatus.MODIFIED,
+                file2 to SessionDiffStatus.MODIFIED,
+                file3 to SessionDiffStatus.ADDED,
+            )
+        )
         assertEquals(
             setOf(h.abs(file3)),
             h.liveHunkFiles(),
@@ -646,7 +666,7 @@ class SessionDiffPipelineTest {
         val afterPoem = "$originalContent\n## Poem\n\nRoses are red.\n"
         val afterSignature = "$afterPoem\n— Cipher Moonwhisper\n"
 
-        val stateStore = DiffStateStore()
+        val stateStore = StateStore()
         val stateLock = Any()
         val disk = mutableMapOf<String, String>()
 
@@ -654,10 +674,14 @@ class SessionDiffPipelineTest {
             contentReader = { absPath -> disk[absPath] ?: "" },
             hunkComputer = { fileDiff, sid ->
                 if (fileDiff.before == fileDiff.after) emptyList()
-                else listOf(DiffHunk(fileDiff.file, 0,
-                    if (fileDiff.before.isEmpty()) emptyList() else listOf(fileDiff.before),
-                    if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
-                    sid))
+                else listOf(
+                    DiffHunk(
+                        fileDiff.file, 0,
+                        if (fileDiff.before.isEmpty()) emptyList() else listOf(fileDiff.before),
+                        if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
+                        sid
+                    )
+                )
             },
             log = NoOpLogger,
             tracer = NoOpDiffTracer,
@@ -684,14 +708,16 @@ class SessionDiffPipelineTest {
             )!!
             val event = OpenCodeEvent.SessionDiff(
                 sessionId = sessionId,
-                files = listOf(OpenCodeEvent.SessionDiffFile(
-                    file = absFile,
-                    before = serverBefore, // server's authoritative original
-                    after = currentContent,
-                    additions = 1,
-                    deletions = 0,
-                    status = SessionDiffStatus.MODIFIED,
-                )),
+                files = listOf(
+                    OpenCodeEvent.SessionDiffFile(
+                        file = absFile,
+                        before = serverBefore, // server's authoritative original
+                        after = currentContent,
+                        additions = 1,
+                        deletions = 0,
+                        status = SessionDiffStatus.MODIFIED,
+                    )
+                ),
             )
             val computedState = computer.compute(
                 projectBase = projectBase,
@@ -728,8 +754,8 @@ class SessionDiffPipelineTest {
             originalContent,
             storedBefore,
             "diff preview 'before' must be the server-provided original file content, " +
-                "but got before.length=${storedBefore?.length} " +
-                "(afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
+                    "but got before.length=${storedBefore?.length} " +
+                    "(afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
         )
     }
 }

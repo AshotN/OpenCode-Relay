@@ -4,7 +4,7 @@ import com.ashotn.opencode.companion.api.session.SessionApiClient
 import com.ashotn.opencode.companion.api.transport.ApiError
 import com.ashotn.opencode.companion.api.transport.ApiResult
 import com.ashotn.opencode.companion.api.tui.TuiApiClient
-import com.ashotn.opencode.companion.diff.OpenCodeDiffService
+import com.ashotn.opencode.companion.core.OpenCodeCoreService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
@@ -12,7 +12,7 @@ import com.intellij.openapi.project.Project
 /**
  * Project-level service for sending commands to the running OpenCode TUI via HTTP.
  *
- * This is intentionally separate from [com.ashotn.opencode.companion.diff.OpenCodeDiffService],
+ * This is intentionally separate from [com.ashotn.opencode.companion.core.OpenCodeCoreService],
  * which owns the SSE connection and diff state. TUI interactions (appending prompt text,
  * switching sessions) are UI/action concerns and belong here.
  *
@@ -25,7 +25,8 @@ class OpenCodeTuiClient(private val project: Project) {
     private val sessionApiClient = SessionApiClient()
     private val tuiApiClient = TuiApiClient()
 
-    @Volatile private var port: Int = 0
+    @Volatile
+    private var port: Int = 0
 
     fun setPort(port: Int) {
         this.port = port
@@ -96,7 +97,7 @@ class OpenCodeTuiClient(private val project: Project) {
             return
         }
 
-        val diffService = OpenCodeDiffService.getInstance(project)
+        val diffService = OpenCodeCoreService.getInstance(project)
         ApplicationManager.getApplication().executeOnPooledThread {
             val existingEmpty = diffService.listSessions()
                 .maxByOrNull { it.updatedAtMillis }
@@ -182,9 +183,10 @@ class OpenCodeTuiClient(private val project: Project) {
         ApplicationManager.getApplication().executeOnPooledThread {
             when (val result = sessionApiClient.updateSession(currentPort, sessionId, newTitle)) {
                 is ApiResult.Success -> {
-                    OpenCodeDiffService.getInstance(project).updateSessionState(result.value)
+                    OpenCodeCoreService.getInstance(project).updateSessionState(result.value)
                     onResult(true, null)
                 }
+
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
         }

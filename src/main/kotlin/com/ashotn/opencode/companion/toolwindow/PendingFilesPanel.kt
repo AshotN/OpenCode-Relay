@@ -2,12 +2,13 @@ package com.ashotn.opencode.companion.toolwindow
 
 import com.ashotn.opencode.companion.actions.ClearSelectedSessionAction
 import com.ashotn.opencode.companion.actions.NewSessionAction
-import com.ashotn.opencode.companion.diff.DiffHighlightKind
-import com.ashotn.opencode.companion.diff.DiffHighlightStyles
-import com.ashotn.opencode.companion.diff.DiffHunksChangedListener
-import com.ashotn.opencode.companion.diff.OpenCodeDiffService
+import com.ashotn.opencode.companion.core.DiffHighlightKind
+import com.ashotn.opencode.companion.core.DiffHighlightStyles
+import com.ashotn.opencode.companion.core.DiffHunksChangedListener
+import com.ashotn.opencode.companion.core.OpenCodeCoreService
 import com.ashotn.opencode.companion.tui.OpenCodeTuiClient
-import com.ashotn.opencode.companion.diff.SessionStateChangedListener
+import com.ashotn.opencode.companion.core.session.SessionInfo
+import com.ashotn.opencode.companion.core.session.SessionStateChangedListener
 import com.ashotn.opencode.companion.util.toProjectRelativePath
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.PermissionChangedListener
@@ -42,7 +43,6 @@ import java.awt.Color
 import java.awt.Component
 import java.awt.FlowLayout
 import java.awt.Font
-import java.awt.Graphics
 import java.awt.Point
 import java.awt.RenderingHints
 import java.awt.event.ActionEvent
@@ -59,8 +59,6 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.KeyStroke
-import javax.swing.plaf.basic.BasicSplitPaneDivider
-import javax.swing.plaf.basic.BasicSplitPaneUI
 import javax.swing.JMenuItem
 import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
@@ -73,7 +71,8 @@ import javax.swing.event.ListSelectionListener
  * Shows the session list and files with AI session diff highlights.
  * Double-clicking a file opens a before/after diff preview.
  */
-class PendingFilesPanel(private val project: Project, parentDisposable: Disposable) : JPanel(BorderLayout()), Disposable {
+class PendingFilesPanel(private val project: Project, parentDisposable: Disposable) : JPanel(BorderLayout()),
+    Disposable {
 
     private data class PendingFileRow(
         val path: String,
@@ -191,7 +190,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 if (e.valueIsAdjusting) return
                 if (isUpdatingSessionSelection) return
                 val row = sessionList.selectedValue ?: return
-                val diffService = OpenCodeDiffService.getInstance(project)
+                val diffService = OpenCodeCoreService.getInstance(project)
                 diffService.selectSession(row.sessionId)
                 OpenCodeTuiClient.getInstance(project).selectTuiSession(row.sessionId)
                 refresh()
@@ -302,7 +301,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         // Esc clears the selected session when the panel (or any child) has focus.
         val escAction = object : AbstractAction() {
             override fun actionPerformed(event: ActionEvent) {
-                OpenCodeDiffService.getInstance(project).selectSession(null)
+                OpenCodeCoreService.getInstance(project).selectSession(null)
             }
         }
         getInputMap(WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
@@ -369,7 +368,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     }
 
     private fun refresh() {
-        val diffService = OpenCodeDiffService.getInstance(project)
+        val diffService = OpenCodeCoreService.getInstance(project)
 
         val sessions = diffService.listSessions()
         val selectedSessionId = diffService.selectedSessionId()
@@ -441,7 +440,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     }
 
     private fun updateSessionList(
-        sessions: List<OpenCodeDiffService.SessionInfo>,
+        sessions: List<SessionInfo>,
         selectedSessionId: String?,
     ) {
         val rows = sessions
@@ -488,7 +487,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     }
 
     private fun openBuiltInDiff(row: PendingFileRow) {
-        val diffService = OpenCodeDiffService.getInstance(project)
+        val diffService = OpenCodeCoreService.getInstance(project)
         diffService.getFileDiffPreview(row.path) { preview ->
             if (preview == null) return@getFileDiffPreview
             ApplicationManager.getApplication().invokeLater {
@@ -553,8 +552,13 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 cursor = java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR)
                 addActionListener { onClick() }
                 addMouseListener(object : MouseAdapter() {
-                    override fun mouseEntered(e: MouseEvent) { hovered = true; repaint() }
-                    override fun mouseExited(e: MouseEvent) { hovered = false; repaint() }
+                    override fun mouseEntered(e: MouseEvent) {
+                        hovered = true; repaint()
+                    }
+
+                    override fun mouseExited(e: MouseEvent) {
+                        hovered = false; repaint()
+                    }
                 })
             }
 

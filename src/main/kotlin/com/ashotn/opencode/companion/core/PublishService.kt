@@ -1,8 +1,9 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
+import com.ashotn.opencode.companion.core.session.SessionStateChangedListener
 import com.intellij.openapi.project.Project
 
-internal class DiffPublishService(private val project: Project) {
+internal class PublishService(private val project: Project) {
     fun publishChanged(filePath: String) {
         if (project.isDisposed) return
         project.messageBus

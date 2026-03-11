@@ -1,7 +1,7 @@
 package com.ashotn.opencode.companion.settings
 
 import com.ashotn.opencode.companion.OpenCodePlugin
-import com.ashotn.opencode.companion.diff.EditorDiffRenderer
+import com.ashotn.opencode.companion.core.EditorDiffRenderer
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowPanel
 import com.ashotn.opencode.companion.util.BuildUtils

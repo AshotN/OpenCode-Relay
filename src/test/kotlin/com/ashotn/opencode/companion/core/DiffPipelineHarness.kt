@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
@@ -23,21 +23,23 @@ internal class DiffPipelineHarness(
     /** Simulated disk: keyed by absolute path. */
     val disk = mutableMapOf<String, String>()
 
-    val stateStore = DiffStateStore()
+    val stateStore = StateStore()
     val stateLock = Any()
-    val eventReducer = DiffEventReducer()
+    val eventReducer = EventReducer()
 
     private val computer = SessionDiffApplyComputer(
         contentReader = { absPath -> disk[absPath] ?: "" },
         hunkComputer = hunkComputer ?: { fileDiff, sid ->
             // Default fake: emit one hunk whenever before != after
             if (fileDiff.before == fileDiff.after) emptyList()
-            else listOf(DiffHunk(
-                fileDiff.file, 0,
-                if (fileDiff.before.isEmpty()) emptyList() else listOf(fileDiff.before),
-                if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
-                sid,
-            ))
+            else listOf(
+                DiffHunk(
+                    fileDiff.file, 0,
+                    if (fileDiff.before.isEmpty()) emptyList() else listOf(fileDiff.before),
+                    if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
+                    sid,
+                )
+            )
         },
         log = NoOpLogger,
         tracer = NoOpDiffTracer,
@@ -60,7 +62,7 @@ internal class DiffPipelineHarness(
     fun applySessionDiff(
         files: List<Pair<String, SessionDiffStatus>>,
         serverAfterByFile: Map<String, String> = emptyMap(),
-    ): DiffStateStore.SessionDiffCommitResult? {
+    ): StateStore.SessionDiffCommitResult? {
         val decision = eventReducer.beginSessionDiffApply(
             stateStore = stateStore,
             stateLock = stateLock,
@@ -128,11 +130,11 @@ internal class DiffPipelineHarness(
     fun deletedFiles(): Set<String> =
         stateStore.deletedBySession[sessionId] ?: emptySet()
 
-    /** Mirrors the trackedFileCount logic in DiffQueryService.listSessions. */
+    /** Mirrors the trackedFileCount logic in QueryService.listSessions. */
     fun trackedFileCount(): Int =
         ((stateStore.hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
-            (stateStore.addedBySession[sessionId] ?: emptySet()) +
-            (stateStore.deletedBySession[sessionId] ?: emptySet())).size
+                (stateStore.addedBySession[sessionId] ?: emptySet()) +
+                (stateStore.deletedBySession[sessionId] ?: emptySet())).size
 
     fun hunksFor(relPath: String): List<DiffHunk> =
         stateStore.hunksBySessionAndFile[sessionId]?.get(abs(relPath)) ?: emptyList()

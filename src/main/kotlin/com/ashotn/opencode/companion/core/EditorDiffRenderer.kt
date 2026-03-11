@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.intellij.openapi.Disposable
@@ -54,7 +54,7 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         bus.subscribe(FileDocumentManagerListener.TOPIC, object : FileDocumentManagerListener {
             override fun fileContentReloaded(file: VirtualFile, document: Document) {
                 val filePath = file.path
-                val diffService = OpenCodeDiffService.getInstance(project)
+                val diffService = OpenCodeCoreService.getInstance(project)
                 if (!diffService.hasPendingHunks(filePath)) return
                 ApplicationManager.getApplication().invokeLater {
                     refreshFile(filePath)
@@ -65,7 +65,7 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
 
     override fun fileOpened(source: FileEditorManager, file: VirtualFile) {
         val filePath = file.path
-        val diffService = OpenCodeDiffService.getInstance(project)
+        val diffService = OpenCodeCoreService.getInstance(project)
         if (diffService.hasPendingHunks(filePath)) {
             ApplicationManager.getApplication().invokeLater {
                 refreshFile(filePath)
@@ -78,7 +78,7 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
         if (!OpenCodeSettings.getInstance(project).inlineDiffEnabled) {
             clearAll()
         } else {
-            val diffService = OpenCodeDiffService.getInstance(project)
+            val diffService = OpenCodeCoreService.getInstance(project)
             diffService.allTrackedFiles().forEach { refreshFile(it) }
         }
     }
@@ -88,7 +88,7 @@ class EditorDiffRenderer(private val project: Project) : Disposable, FileEditorM
 
         if (!OpenCodeSettings.getInstance(project).inlineDiffEnabled) return
 
-        val diffService = OpenCodeDiffService.getInstance(project)
+        val diffService = OpenCodeCoreService.getInstance(project)
         val hunks = diffService.getHunks(filePath)
         log.debug("EditorDiffRenderer: refresh file=$filePath pendingHunkCount=${hunks.size}")
         if (hunks.isEmpty()) return

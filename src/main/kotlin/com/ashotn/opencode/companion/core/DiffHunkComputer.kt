@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.FileDiff
 import com.intellij.diff.comparison.ComparisonManager
@@ -31,7 +31,7 @@ internal class DiffHunkComputer(private val logger: Logger) {
         } catch (e: com.intellij.openapi.progress.ProcessCanceledException) {
             throw e
         } catch (e: Exception) {
-            logger.warn("OpenCodeDiffService: failed to compute hunks for ${fileDiff.file}", e)
+            logger.warn("OpenCodeCoreService: failed to compute hunks for ${fileDiff.file}", e)
             emptyList()
         }
     }

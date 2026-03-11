@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.Session
 import com.ashotn.opencode.companion.api.session.SessionTime
@@ -40,10 +40,10 @@ class SessionOrderingTest {
     @Test
     fun `session order is determined by server timestamps, not by reconcile completion order`() {
         // Use a single shared store so commitReconcile mutations are visible to listSessions.
-        val store = DiffStateStore()
+        val store = StateStore()
         val stateLock = Any()
         val generation = 1L
-        val eventReducer = DiffEventReducer()
+        val eventReducer = EventReducer()
         val projectBase = "/project"
 
         // Three sessions. The server reports them newest → oldest:
@@ -80,8 +80,12 @@ class SessionOrderingTest {
             contentReader = { absPath -> disk[absPath] ?: "" },
             hunkComputer = { fileDiff, sid ->
                 if (fileDiff.before == fileDiff.after) emptyList()
-                else listOf(DiffHunk(fileDiff.file, 0,
-                    listOf(fileDiff.before), listOf(fileDiff.after), sid))
+                else listOf(
+                    DiffHunk(
+                        fileDiff.file, 0,
+                        listOf(fileDiff.before), listOf(fileDiff.after), sid
+                    )
+                )
             },
             log = NoOpLogger,
             tracer = NoOpDiffTracer,
@@ -117,14 +121,16 @@ class SessionOrderingTest {
 
             val event = OpenCodeEvent.SessionDiff(
                 sessionId = sid,
-                files = listOf(OpenCodeEvent.SessionDiffFile(
-                    file = absPath,
-                    before = "",
-                    after = "ai content",
-                    additions = 1,
-                    deletions = 0,
-                    status = SessionDiffStatus.MODIFIED,
-                )),
+                files = listOf(
+                    OpenCodeEvent.SessionDiffFile(
+                        file = absPath,
+                        before = "",
+                        after = "ai content",
+                        additions = 1,
+                        deletions = 0,
+                        status = SessionDiffStatus.MODIFIED,
+                    )
+                ),
             )
 
             val computedState = computer.compute(
@@ -200,12 +206,42 @@ class SessionOrderingTest {
             "reconcile must not overwrite server-seeded timestamps",
         )
 
-        val sessions = DiffQueryService().listSessions(
+        val sessions = QueryService().listSessions(
             knownSessionIds = setOf(sessionNew, sessionMid, sessionOld),
             sessions = mapOf(
-                sessionNew to Session(id = sessionNew, projectID = null, directory = null, parentID = null, title = "Newest session", version = null, time = SessionTime(0L, tNew, null), summary = null, share = null),
-                sessionMid to Session(id = sessionMid, projectID = null, directory = null, parentID = null, title = "Middle session", version = null, time = SessionTime(0L, tMid, null), summary = null, share = null),
-                sessionOld to Session(id = sessionOld, projectID = null, directory = null, parentID = null, title = "Oldest session", version = null, time = SessionTime(0L, tOld, null), summary = null, share = null),
+                sessionNew to Session(
+                    id = sessionNew,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Newest session",
+                    version = null,
+                    time = SessionTime(0L, tNew, null),
+                    summary = null,
+                    share = null
+                ),
+                sessionMid to Session(
+                    id = sessionMid,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Middle session",
+                    version = null,
+                    time = SessionTime(0L, tMid, null),
+                    summary = null,
+                    share = null
+                ),
+                sessionOld to Session(
+                    id = sessionOld,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Oldest session",
+                    version = null,
+                    time = SessionTime(0L, tOld, null),
+                    summary = null,
+                    share = null
+                ),
             ),
             busyBySession = emptyMap(),
             hunksBySessionAndFile = emptyMap(),
@@ -215,12 +251,18 @@ class SessionOrderingTest {
         )
 
         assertEquals(3, sessions.size)
-        assertEquals(sessionNew, sessions[0].sessionId,
-            "newest session (tNew=$tNew) must be first, got: ${sessions.map { "${it.sessionId}(updatedAt=${store.updatedAtBySession[it.sessionId]})" }}")
-        assertEquals(sessionMid, sessions[1].sessionId,
-            "middle session (tMid=$tMid) must be second, got: ${sessions.map { it.sessionId }}")
-        assertEquals(sessionOld, sessions[2].sessionId,
-            "oldest session (tOld=$tOld) must be last, got: ${sessions.map { it.sessionId }}")
+        assertEquals(
+            sessionNew, sessions[0].sessionId,
+            "newest session (tNew=$tNew) must be first, got: ${sessions.map { "${it.sessionId}(updatedAt=${store.updatedAtBySession[it.sessionId]})" }}"
+        )
+        assertEquals(
+            sessionMid, sessions[1].sessionId,
+            "middle session (tMid=$tMid) must be second, got: ${sessions.map { it.sessionId }}"
+        )
+        assertEquals(
+            sessionOld, sessions[2].sessionId,
+            "oldest session (tOld=$tOld) must be last, got: ${sessions.map { it.sessionId }}"
+        )
     }
 
     // -------------------------------------------------------------------------
@@ -230,7 +272,7 @@ class SessionOrderingTest {
     // -------------------------------------------------------------------------
     @Test
     fun `live SSE busy event advances session to top of list`() {
-        val store = DiffStateStore()
+        val store = StateStore()
         val stateLock = Any()
         val generation = 1L
 
@@ -242,7 +284,7 @@ class SessionOrderingTest {
         store.updatedAtBySession[sessionB] = 1000L
 
         // sessionB receives a live busy event with a more recent timestamp
-        val eventReducer = DiffEventReducer()
+        val eventReducer = EventReducer()
         eventReducer.commitSessionBusy(
             stateStore = store,
             stateLock = stateLock,
@@ -253,11 +295,31 @@ class SessionOrderingTest {
             currentGeneration = { generation },
         )
 
-        val sessions = DiffQueryService().listSessions(
+        val sessions = QueryService().listSessions(
             knownSessionIds = setOf(sessionA, sessionB),
             sessions = mapOf(
-                sessionA to Session(id = sessionA, projectID = null, directory = null, parentID = null, title = "Session A", version = null, time = SessionTime(0L, 2000L, null), summary = null, share = null),
-                sessionB to Session(id = sessionB, projectID = null, directory = null, parentID = null, title = "Session B", version = null, time = SessionTime(0L, 1000L, null), summary = null, share = null),
+                sessionA to Session(
+                    id = sessionA,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Session A",
+                    version = null,
+                    time = SessionTime(0L, 2000L, null),
+                    summary = null,
+                    share = null
+                ),
+                sessionB to Session(
+                    id = sessionB,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Session B",
+                    version = null,
+                    time = SessionTime(0L, 1000L, null),
+                    summary = null,
+                    share = null
+                ),
             ),
             busyBySession = store.busyBySession,
             hunksBySessionAndFile = emptyMap(),
@@ -267,8 +329,10 @@ class SessionOrderingTest {
         )
 
         // sessionB is busy → sorts first regardless of timestamp (busy-first rule)
-        assertEquals(sessionB, sessions[0].sessionId,
-            "busy session must sort first, got ${sessions.map { it.sessionId }}")
+        assertEquals(
+            sessionB, sessions[0].sessionId,
+            "busy session must sort first, got ${sessions.map { it.sessionId }}"
+        )
         assertEquals(sessionA, sessions[1].sessionId)
     }
 }

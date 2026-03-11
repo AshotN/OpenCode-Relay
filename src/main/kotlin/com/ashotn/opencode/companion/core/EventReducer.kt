@@ -1,6 +1,9 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
-internal class DiffEventReducer {
+import com.ashotn.opencode.companion.util.TextUtil
+import com.ashotn.opencode.companion.util.toAbsolutePath
+
+internal class EventReducer {
     enum class SessionDiffSkipReason {
         UNSCOPED_LIVE,
         STALE_OR_ALREADY_LOADED,
@@ -26,10 +29,10 @@ internal class DiffEventReducer {
     )
 
     fun reduceTurnPatchTouchedPaths(projectBase: String, files: List<String>): Set<String> =
-        files.map { path -> DiffTextUtil.toAbsolutePath(projectBase, path) }.toSet()
+        files.map { path -> toAbsolutePath(projectBase, path) }.toSet()
 
     fun commitTurnPatch(
-        stateStore: DiffStateStore,
+        stateStore: StateStore,
         stateLock: Any,
         sessionId: String,
         touchedPaths: Set<String>,
@@ -46,7 +49,7 @@ internal class DiffEventReducer {
     }
 
     fun commitSessionBusy(
-        stateStore: DiffStateStore,
+        stateStore: StateStore,
         stateLock: Any,
         sessionId: String,
         isBusy: Boolean,
@@ -65,7 +68,7 @@ internal class DiffEventReducer {
     }
 
     private fun reduceSessionDiffScope(
-        stateStore: DiffStateStore,
+        stateStore: StateStore,
         stateLock: Any,
         sessionId: String,
         fromHistory: Boolean,
@@ -86,7 +89,7 @@ internal class DiffEventReducer {
     }
 
     fun beginSessionDiffApply(
-        stateStore: DiffStateStore,
+        stateStore: StateStore,
         stateLock: Any,
         sessionId: String,
         fromHistory: Boolean,
@@ -151,7 +154,7 @@ internal class DiffEventReducer {
             val baseline = currentBaselines[absPath] ?: continue
             val diskContent = readCurrentContent(absPath)
             val matchesBaseline =
-                DiffTextUtil.normalizeContent(diskContent) == DiffTextUtil.normalizeContent(baseline)
+                TextUtil.normalizeContent(diskContent) == TextUtil.normalizeContent(baseline)
             if (matchesBaseline) {
                 // Clear hunks so inline editor highlights are removed, but keep the
                 // file key in updatedHunks with an empty list so it remains visible

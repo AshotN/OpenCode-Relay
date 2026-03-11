@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import com.intellij.openapi.application.ApplicationManager

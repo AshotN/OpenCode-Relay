@@ -1,8 +1,11 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.Session
 import com.ashotn.opencode.companion.api.session.SessionApiClient
 import com.ashotn.opencode.companion.api.transport.ApiResult
+import com.ashotn.opencode.companion.core.session.PendingSessionSelection
+import com.ashotn.opencode.companion.core.session.SessionInfo
+import com.ashotn.opencode.companion.core.session.SessionScopeResolver
 import com.ashotn.opencode.companion.ipc.McpChangedListener
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
@@ -24,18 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
  * and maintains AI diff hunks by session.
  */
 @Service(Service.Level.PROJECT)
-class OpenCodeDiffService(private val project: Project) : Disposable {
-
-    data class SessionInfo(
-        val sessionId: String,
-        val parentSessionId: String?,
-        val title: String,
-        val isBusy: Boolean,
-        val trackedFileCount: Int,
-        val updatedAtMillis: Long,
-        /** True if the server has reported a summary for this session, indicating it has messages. */
-        val hasMessages: Boolean,
-    )
+class OpenCodeCoreService(private val project: Project) : Disposable {
 
     data class FileDiffPreview(
         val filePath: String,
@@ -46,7 +38,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         val aiAfter: String,
     )
 
-    private val log = logger<OpenCodeDiffService>()
+    private val log = logger<OpenCodeCoreService>()
     private val tracer: DiffTracer = run {
         val settings = OpenCodeSettings.getInstance(project)
         DiffTracer.fromSettings(
@@ -78,11 +70,11 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         log = log,
         tracer = tracer,
     )
-    private val publishService = DiffPublishService(project)
+    private val publishService = PublishService(project)
     private val scopeResolver = SessionScopeResolver()
-    private val queryService = DiffQueryService()
-    private val eventReducer = DiffEventReducer()
-    private val stateStore = DiffStateStore()
+    private val queryService = QueryService()
+    private val eventReducer = EventReducer()
+    private val stateStore = StateStore()
     private val hierarchyRefreshInFlight = AtomicBoolean(false)
     private val historicalDiffLoadInFlight = ConcurrentHashMap.newKeySet<String>()
     private val historicalDiffLoadedSessions = ConcurrentHashMap.newKeySet<String>()
@@ -101,7 +93,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
         this.port = port
         permissionService.setPort(port)
-        log.info("OpenCodeDiffService: starting SSE listener on port $port")
+        log.info("OpenCodeCoreService: starting SSE listener on port $port")
         EditorDiffRenderer.getInstance(project)
         sseClient = SseClient(
             port = port,
@@ -151,7 +143,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             is OpenCodeEvent.TurnPatch -> {
                 val projectBase = project.basePath
                 if (projectBase == null) {
-                    log.debug("OpenCodeDiffService: skip turn.patch reason=missingProjectBase generation=$generation")
+                    log.debug("OpenCodeCoreService: skip turn.patch reason=missingProjectBase generation=$generation")
                     return
                 }
                 val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(projectBase, event.files)
@@ -172,12 +164,13 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                         "generation" to generation,
                     )
                 }
-                log.debug("OpenCodeDiffService: turn.patch recorded session=${event.sessionId} touchedFileCount=${touchedPaths.size} generation=$generation")
+                log.debug("OpenCodeCoreService: turn.patch recorded session=${event.sessionId} touchedFileCount=${touchedPaths.size} generation=$generation")
             }
 
             is OpenCodeEvent.McpToolsChanged -> {
                 project.messageBus.syncPublisher(McpChangedListener.TOPIC).onMcpChanged()
             }
+
             is OpenCodeEvent.PermissionAsked -> permissionService.handlePermissionAsked(event)
             is OpenCodeEvent.PermissionReplied -> permissionService.handlePermissionReplied(event)
         }
@@ -226,7 +219,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         if (generation != lifecycleGeneration.get()) return
         val projectBase = project.basePath
         if (projectBase == null) {
-            log.debug("OpenCodeDiffService: skip session.diff reason=missingProjectBase session=${event.sessionId} generation=$generation")
+            log.debug("OpenCodeCoreService: skip session.diff reason=missingProjectBase session=${event.sessionId} generation=$generation")
             return
         }
 
@@ -252,12 +245,12 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         }
         if (!applyDecision.shouldApply) {
             when (applyDecision.skipReason) {
-                DiffEventReducer.SessionDiffSkipReason.UNSCOPED_LIVE -> {
-                    log.debug("OpenCodeDiffService: skip session.diff reason=unscopedLive session=${event.sessionId} generation=$generation")
+                EventReducer.SessionDiffSkipReason.UNSCOPED_LIVE -> {
+                    log.debug("OpenCodeCoreService: skip session.diff reason=unscopedLive session=${event.sessionId} generation=$generation")
                 }
 
-                DiffEventReducer.SessionDiffSkipReason.STALE_OR_ALREADY_LOADED -> {
-                    log.debug("OpenCodeDiffService: skip session.diff reason=historyAlreadyLoaded session=${event.sessionId} generation=$generation")
+                EventReducer.SessionDiffSkipReason.STALE_OR_ALREADY_LOADED -> {
+                    log.debug("OpenCodeCoreService: skip session.diff reason=historyAlreadyLoaded session=${event.sessionId} generation=$generation")
                 }
 
                 null -> {
@@ -272,7 +265,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
             log.debug(
-                "OpenCodeDiffService: apply session.diff session=${event.sessionId} revision=$revision fileCount=${event.files.size} fromHistory=$fromHistory generation=$generation",
+                "OpenCodeCoreService: apply session.diff session=${event.sessionId} revision=$revision fileCount=${event.files.size} fromHistory=$fromHistory generation=$generation",
             )
 
             val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
@@ -310,7 +303,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 currentGeneration = { lifecycleGeneration.get() },
             )
             if (commitResult == null) {
-                log.debug("OpenCodeDiffService: skip session.diff reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
+                log.debug("OpenCodeCoreService: skip session.diff reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
                 trace("session.diff.commitSkipped", fromHistory = fromHistory) {
                     mapOf(
                         "sessionId" to event.sessionId,
@@ -339,7 +332,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             val filesToRefresh = changedFiles + previousLiveVisibleFiles + nextLiveVisibleFiles
 
             log.debug(
-                "OpenCodeDiffService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} refreshedFileCount=${filesToRefresh.size} generation=$generation",
+                "OpenCodeCoreService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} refreshedFileCount=${filesToRefresh.size} generation=$generation",
             )
 
             if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
@@ -401,7 +394,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
         if (reconcileDecision.removedPaths.isNotEmpty()) {
             log.debug(
-                "OpenCodeDiffService: reconcile session=$sessionId revision=$revision removedBaselineMatchCount=${reconcileDecision.removedPaths.size} generation=$generation",
+                "OpenCodeCoreService: reconcile session=$sessionId revision=$revision removedBaselineMatchCount=${reconcileDecision.removedPaths.size} generation=$generation",
             )
         }
 
@@ -644,7 +637,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             when (val result = sessionApiClient.fetchFileDiffPreview(currentPort, sessionId, projectBase, filePath)) {
                 is ApiResult.Failure -> {
                     log.debug(
-                        "OpenCodeDiffService: failed diff preview fetch session=$sessionId file=$filePath port=$currentPort reason=${result.error}",
+                        "OpenCodeCoreService: failed diff preview fetch session=$sessionId file=$filePath port=$currentPort reason=${result.error}",
                     )
                     onResult(null)
                 }
@@ -717,7 +710,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 val event = when (val result = sessionApiClient.fetchSessionDiffSnapshot(currentPort, sessionId)) {
                     is ApiResult.Failure -> {
                         log.debug(
-                            "OpenCodeDiffService: skip historical snapshot reason=requestFailed session=$sessionId port=$currentPort generation=$generation error=${result.error}",
+                            "OpenCodeCoreService: skip historical snapshot reason=requestFailed session=$sessionId port=$currentPort generation=$generation error=${result.error}",
                         )
                         return@executeOnPooledThread
                     }
@@ -729,7 +722,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                 handleSessionDiff(event, fromHistory = true, generation = generation)
             } catch (e: Exception) {
                 log.debug(
-                    "OpenCodeDiffService: failed historical snapshot load session=$sessionId port=$currentPort generation=$generation",
+                    "OpenCodeCoreService: failed historical snapshot load session=$sessionId port=$currentPort generation=$generation",
                     e
                 )
             } finally {
@@ -753,13 +746,13 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     is ApiResult.Success -> result.value
                     is ApiResult.Failure -> {
                         log.debug(
-                            "OpenCodeDiffService: skip hierarchy refresh reason=requestFailed port=$currentPort generation=$generation",
+                            "OpenCodeCoreService: skip hierarchy refresh reason=requestFailed port=$currentPort generation=$generation",
                         )
                         return@executeOnPooledThread
                     }
                 }
                 if (sessions.isEmpty()) {
-                    log.debug("OpenCodeDiffService: skip hierarchy refresh reason=emptySnapshot port=$currentPort generation=$generation")
+                    log.debug("OpenCodeCoreService: skip hierarchy refresh reason=emptySnapshot port=$currentPort generation=$generation")
                     return@executeOnPooledThread
                 }
 
@@ -819,7 +812,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     ensureHistoricalFamilyLoadedAsync(selected, generation)
                 }
             } catch (e: Exception) {
-                log.debug("OpenCodeDiffService: failed hierarchy refresh port=$currentPort generation=$generation", e)
+                log.debug("OpenCodeCoreService: failed hierarchy refresh port=$currentPort generation=$generation", e)
             } finally {
                 hierarchyRefreshInFlight.set(false)
             }
@@ -864,7 +857,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     }
 
     companion object {
-        fun getInstance(project: Project): OpenCodeDiffService =
-            project.getService(OpenCodeDiffService::class.java)
+        fun getInstance(project: Project): OpenCodeCoreService =
+            project.getService(OpenCodeCoreService::class.java)
     }
 }

@@ -1,8 +1,8 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import java.util.concurrent.ConcurrentHashMap
 
-internal class DiffStateStore {
+internal class StateStore {
     data class SessionDiffComputedState(
         val nextAfterByFile: MutableMap<String, String>,
         val processedPaths: Set<String>, // Paths touched by the current apply pass.
@@ -30,6 +30,7 @@ internal class DiffStateStore {
     val addedBySession = ConcurrentHashMap<String, Set<String>>()
     val baselineBeforeBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
     val lastAfterBySessionAndFile = ConcurrentHashMap<String, MutableMap<String, String>>()
+
     /** The server's intended "after AI" content per file per session, sourced from SessionDiffFile.after. */
     val serverAfterBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
     val pendingTurnFilesBySession = ConcurrentHashMap<String, Set<String>>()
@@ -165,6 +166,7 @@ internal class DiffStateStore {
             requestedSessionId == null -> {
                 selectedSessionId = null
             }
+
             sessionExists(requestedSessionId) -> {
                 selectedSessionId = requestedSessionId
             }

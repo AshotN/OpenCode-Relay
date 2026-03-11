@@ -7,7 +7,7 @@ import com.ashotn.opencode.companion.api.transport.parseBooleanResponse
 import com.ashotn.opencode.companion.api.transport.mapJsonArrayResponse
 import com.ashotn.opencode.companion.api.transport.mapJsonObjectResponse
 import com.ashotn.opencode.companion.api.transport.withParseContext
-import com.ashotn.opencode.companion.diff.DiffTextUtil
+import com.ashotn.opencode.companion.util.toAbsolutePath
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import com.ashotn.opencode.companion.util.getIntOrNull
@@ -87,7 +87,7 @@ class SessionApiClient(
             is ApiResult.Failure -> snapshot
             is ApiResult.Success -> {
                 val match = snapshot.value.files.firstOrNull { diffFile ->
-                    DiffTextUtil.toAbsolutePath(projectBase, diffFile.file) == absFilePath
+                    toAbsolutePath(projectBase, diffFile.file) == absFilePath
                 } ?: return ApiResult.Success(null)
 
                 ApiResult.Success(FileDiffPreview(before = match.before, after = match.after))

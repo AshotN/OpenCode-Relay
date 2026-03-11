@@ -4,9 +4,9 @@ import com.ashotn.opencode.companion.OpenCodeChecker
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
-import com.ashotn.opencode.companion.diff.DiffHunksChangedListener
-import com.ashotn.opencode.companion.diff.OpenCodeDiffService
-import com.ashotn.opencode.companion.diff.SessionStateChangedListener
+import com.ashotn.opencode.companion.core.DiffHunksChangedListener
+import com.ashotn.opencode.companion.core.OpenCodeCoreService
+import com.ashotn.opencode.companion.core.session.SessionStateChangedListener
 import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
@@ -144,7 +144,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
         val showPending = when (plugin.serverState) {
             ServerState.READY -> {
-                val diffService = OpenCodeDiffService.getInstance(project)
+                val diffService = OpenCodeCoreService.getInstance(project)
                 val permissionService = OpenCodePermissionService.getInstance(project)
                 val hasPending = diffService.allTrackedFiles().isNotEmpty()
                 val hasSessions = diffService.listSessions().isNotEmpty()
@@ -200,7 +200,11 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         ApplicationManager.getApplication().executeOnPooledThread {
             val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
             ApplicationManager.getApplication().invokeLater {
-                val screen = if (executableInfo != null) InstalledPanel(project, slotDisposable, executableInfo) else NotInstalledPanel()
+                val screen = if (executableInfo != null) InstalledPanel(
+                    project,
+                    slotDisposable,
+                    executableInfo
+                ) else NotInstalledPanel()
                 // Replace the content card with the new screen
                 val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
                 if (existingContent != null) outerCardPanel.remove(existingContent)

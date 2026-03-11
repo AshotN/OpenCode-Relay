@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion.actions
 
-import com.ashotn.opencode.companion.diff.OpenCodeDiffService
+import com.ashotn.opencode.companion.core.OpenCodeCoreService
 import com.ashotn.opencode.companion.util.applyStrings
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
@@ -28,12 +28,12 @@ class ClearSelectedSessionAction(private val project: Project? = null) : AnActio
             e.presentation.description = strings.disabledDescription
             return
         }
-        val hasSelectedSession = OpenCodeDiffService.getInstance(proj).selectedSessionId() != null
+        val hasSelectedSession = OpenCodeCoreService.getInstance(proj).selectedSessionId() != null
         e.applyStrings(strings, hasSelectedSession)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
         val proj = project ?: e.project ?: return
-        OpenCodeDiffService.getInstance(proj).selectSession(null)
+        OpenCodeCoreService.getInstance(proj).selectSession(null)
     }
 }

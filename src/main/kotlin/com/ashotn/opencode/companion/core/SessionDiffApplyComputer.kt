@@ -1,13 +1,15 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.FileDiff
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
+import com.ashotn.opencode.companion.util.TextUtil
+import com.ashotn.opencode.companion.util.toAbsolutePath
 import com.intellij.openapi.diagnostic.Logger
 
 internal class SessionDiffApplyComputer(
-    private val contentReader: ContentReader,
-    private val hunkComputer: HunkComputer,
+    private val contentReader: (String) -> String,
+    private val hunkComputer: (FileDiff, String) -> List<DiffHunk>,
     private val onFileProcessing: ((absPath: String, status: SessionDiffStatus) -> Unit)? = null,
     private val log: Logger,
     private val tracer: DiffTracer,
@@ -18,7 +20,7 @@ internal class SessionDiffApplyComputer(
         fromHistory: Boolean,
         turnScope: Set<String>?,
         previousAfterByFile: Map<String, String>,
-    ): DiffStateStore.SessionDiffComputedState {
+    ): StateStore.SessionDiffComputedState {
         val newHunksByFile = HashMap<String, List<DiffHunk>>()
         val newDeleted = HashSet<String>()
         val newAdded = HashSet<String>()
@@ -32,7 +34,7 @@ internal class SessionDiffApplyComputer(
         val analyses = if (tracer.enabled) mutableListOf<Map<String, Any?>>() else null
 
         for (diffFile in event.files) {
-            val absPath = DiffTextUtil.toAbsolutePath(projectBase, diffFile.file)
+            val absPath = toAbsolutePath(projectBase, diffFile.file)
 
             if (!fromHistory && turnScope != null && absPath !in turnScope) {
                 outOfScopeCount += 1
@@ -57,7 +59,7 @@ internal class SessionDiffApplyComputer(
                 onFileProcessing?.invoke(absPath, diffFile.status)
             }
 
-            val actualAfter = contentReader.readCurrentContent(absPath)
+            val actualAfter = contentReader(absPath)
             val effectiveBefore = if (fromHistory) {
                 diffFile.before
             } else {
@@ -65,7 +67,7 @@ internal class SessionDiffApplyComputer(
             }
 
             val hasContentChange =
-                DiffTextUtil.normalizeContent(effectiveBefore) != DiffTextUtil.normalizeContent(actualAfter)
+                TextUtil.normalizeContent(effectiveBefore) != TextUtil.normalizeContent(actualAfter)
 
             nextAfterByFile[absPath] = actualAfter
 
@@ -105,7 +107,7 @@ internal class SessionDiffApplyComputer(
                 additions = diffFile.additions,
                 deletions = diffFile.deletions,
             )
-            val hunks = hunkComputer.compute(fileDiff, event.sessionId)
+            val hunks = hunkComputer(fileDiff, event.sessionId)
             if (hunks.isEmpty()) {
                 zeroHunkCount += 1
                 analyses?.add(
@@ -155,7 +157,7 @@ internal class SessionDiffApplyComputer(
             for (scopedPath in turnScope) {
                 if (scopedPath !in processedPaths) {
                     processedPaths.add(scopedPath)
-                    nextAfterByFile[scopedPath] = contentReader.readCurrentContent(scopedPath)
+                    nextAfterByFile[scopedPath] = contentReader(scopedPath)
                     analyses?.add(
                         mapOf(
                             "absPath" to scopedPath,
@@ -188,7 +190,7 @@ internal class SessionDiffApplyComputer(
             )
         }
 
-        return DiffStateStore.SessionDiffComputedState(
+        return StateStore.SessionDiffComputedState(
             nextAfterByFile = nextAfterByFile,
             processedPaths = processedPaths,
             newHunksByFile = newHunksByFile,

@@ -1,4 +1,4 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core.session
 
 import com.intellij.util.messages.Topic
 

@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion
 
-import com.ashotn.opencode.companion.diff.OpenCodeDiffService
+import com.ashotn.opencode.companion.core.OpenCodeCoreService
 import com.ashotn.opencode.companion.tui.OpenCodeTuiClient
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -26,13 +26,13 @@ class OpenCodePlugin(private val project: Project) : Disposable {
             val port = com.ashotn.opencode.companion.settings.OpenCodeSettings.getInstance(project).serverPort
             ApplicationManager.getApplication().executeOnPooledThread {
                 if (project.isDisposed) return@executeOnPooledThread
-                OpenCodeDiffService.getInstance(project).startListening(port)
+                OpenCodeCoreService.getInstance(project).startListening(port)
                 OpenCodeTuiClient.getInstance(project).setPort(port)
             }
         } else if (state == ServerState.STOPPED) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 if (project.isDisposed) return@executeOnPooledThread
-                OpenCodeDiffService.getInstance(project).stopListening()
+                OpenCodeCoreService.getInstance(project).stopListening()
                 OpenCodeTuiClient.getInstance(project).setPort(0)
             }
         }
@@ -41,7 +41,8 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     val isRunning: Boolean get() = serverManager.isRunning
     val ownsProcess: Boolean get() = serverManager.ownsProcess
 
-    @Volatile private var overrideState: ServerState? = null
+    @Volatile
+    private var overrideState: ServerState? = null
     val serverState: ServerState get() = overrideState ?: serverManager.serverState
 
     private fun broadcastState(state: ServerState) {
@@ -58,7 +59,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         broadcastState(ServerState.RESETTING)
         ApplicationManager.getApplication().executeOnPooledThread {
             if (project.isDisposed) return@executeOnPooledThread
-            val diffService = OpenCodeDiffService.getInstance(project)
+            val diffService = OpenCodeCoreService.getInstance(project)
             diffService.stopListening()
             overrideState = null
             diffService.startListening(port)

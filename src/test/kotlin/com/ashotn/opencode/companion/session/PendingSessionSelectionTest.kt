@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion.session
 
-import com.ashotn.opencode.companion.diff.PendingSessionSelection
+import com.ashotn.opencode.companion.core.session.PendingSessionSelection
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse

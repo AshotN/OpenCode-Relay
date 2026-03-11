@@ -1,8 +1,9 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core
 
 import com.ashotn.opencode.companion.api.session.Session
+import com.ashotn.opencode.companion.core.session.SessionInfo
 
-internal class DiffQueryService {
+internal class QueryService {
     fun visibleFiles(
         familySessionIds: () -> Set<String>,
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
@@ -73,24 +74,24 @@ internal class DiffQueryService {
         addedBySession: Map<String, Set<String>>,
         deletedBySession: Map<String, Set<String>>,
         updatedAtBySession: Map<String, Long>,
-    ): List<OpenCodeDiffService.SessionInfo> {
+    ): List<SessionInfo> {
         return knownSessionIds
             .map { sessionId ->
                 val session = sessions[sessionId]
-                OpenCodeDiffService.SessionInfo(
+                SessionInfo(
                     sessionId = sessionId,
                     parentSessionId = session?.parentID,
                     title = session?.title ?: sessionId.take(12),
                     isBusy = busyBySession[sessionId] == true,
                     trackedFileCount = ((hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
-                        (addedBySession[sessionId] ?: emptySet()) +
-                        (deletedBySession[sessionId] ?: emptySet())).size,
+                            (addedBySession[sessionId] ?: emptySet()) +
+                            (deletedBySession[sessionId] ?: emptySet())).size,
                     updatedAtMillis = updatedAtBySession[sessionId] ?: 0L,
                     hasMessages = session?.summary != null,
                 )
             }
             .sortedWith(
-                compareByDescending<OpenCodeDiffService.SessionInfo> { it.isBusy }
+                compareByDescending<SessionInfo> { it.isBusy }
                     .thenByDescending { it.updatedAtMillis }
                     .thenBy { it.sessionId },
             )

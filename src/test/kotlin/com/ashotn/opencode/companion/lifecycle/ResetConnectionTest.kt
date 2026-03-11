@@ -1,14 +1,14 @@
 package com.ashotn.opencode.companion.lifecycle
 
-import com.ashotn.opencode.companion.diff.DiffPipelineHarness
-import com.ashotn.opencode.companion.diff.DiffStateStore
+import com.ashotn.opencode.companion.core.DiffPipelineHarness
+import com.ashotn.opencode.companion.core.StateStore
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /**
- * Verifies that [DiffStateStore.resetState] — the core of the "Reset Connection"
+ * Verifies that [StateStore.resetState] — the core of the "Reset Connection"
  * action — clears all accumulated client-side state after real diff activity.
  *
  * The test populates the store via the full pipeline (turn.patch → session.diff)
@@ -38,11 +38,13 @@ class ResetConnectionTest {
         h.disk[h.abs("src/New.kt")] = ""
 
         h.commitTurnPatch(listOf("src/Main.kt", "src/Util.kt", "src/New.kt"))
-        h.applySessionDiff(listOf(
-            "src/Main.kt" to SessionDiffStatus.MODIFIED,
-            "src/Util.kt" to SessionDiffStatus.MODIFIED,
-            "src/New.kt" to SessionDiffStatus.ADDED,
-        ))
+        h.applySessionDiff(
+            listOf(
+                "src/Main.kt" to SessionDiffStatus.MODIFIED,
+                "src/Util.kt" to SessionDiffStatus.MODIFIED,
+                "src/New.kt" to SessionDiffStatus.ADDED,
+            )
+        )
 
         // Also set a selected session and a pending turn patch to verify those are cleared
         h.stateStore.commitSelectedSession(
@@ -64,7 +66,7 @@ class ResetConnectionTest {
         h.stateStore.resetState()
 
         // Assert: every field on the store matches a freshly constructed instance.
-        // Uses reflection so that any new field added to DiffStateStore is automatically
+        // Uses reflection so that any new field added to StateStore is automatically
         // covered — no manual update to this assertion is ever needed.
         assertMatchesFreshStore(h.stateStore)
     }
@@ -101,25 +103,36 @@ class ResetConnectionTest {
         val result = h.applySessionDiff(listOf("note.md" to SessionDiffStatus.MODIFIED))
 
         assertEquals(setOf(h.abs("note.md")), h.hunkFiles(), "post-reset activity: file should be tracked again")
-        assertEquals(setOf(h.abs("note.md")), result?.changedFiles, "post-reset activity: changedFiles should reflect new state")
+        assertEquals(
+            setOf(h.abs("note.md")),
+            result?.changedFiles,
+            "post-reset activity: changedFiles should reflect new state"
+        )
         // The baseline after reset should be the empty string (file had no prior content as far
         // as the fresh pipeline is concerned), not the "original\n" content from before the reset.
-        assertEquals("", h.baseline("note.md"), "post-reset activity: baseline should reflect fresh-start content, not pre-reset data")
+        assertEquals(
+            "",
+            h.baseline("note.md"),
+            "post-reset activity: baseline should reflect fresh-start content, not pre-reset data"
+        )
     }
 }
 
 /**
  * Asserts that every field of [store] matches the corresponding field on a freshly
- * constructed [DiffStateStore]. Uses reflection (including private fields) so new
+ * constructed [StateStore]. Uses reflection (including private fields) so new
  * fields are automatically covered without any changes to this helper or the test.
  */
-private fun assertMatchesFreshStore(store: DiffStateStore) {
-    val fresh = DiffStateStore()
-    val mismatches = DiffStateStore::class.java.declaredFields.mapNotNull { field ->
+private fun assertMatchesFreshStore(store: StateStore) {
+    val fresh = StateStore()
+    val mismatches = StateStore::class.java.declaredFields.mapNotNull { field ->
         field.isAccessible = true
         val actual = field.get(store)
         val expected = field.get(fresh)
         if (actual != expected) "  ${field.name}: expected $expected but was $actual" else null
     }
-    assertTrue(mismatches.isEmpty(), "store should match a fresh DiffStateStore after reset, but these fields differ:\n${mismatches.joinToString("\n")}")
+    assertTrue(
+        mismatches.isEmpty(),
+        "store should match a fresh StateStore after reset, but these fields differ:\n${mismatches.joinToString("\n")}"
+    )
 }

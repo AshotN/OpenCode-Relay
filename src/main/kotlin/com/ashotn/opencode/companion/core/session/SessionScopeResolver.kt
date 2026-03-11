@@ -1,6 +1,7 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core.session
 
 import com.ashotn.opencode.companion.api.session.Session
+import com.ashotn.opencode.companion.core.DiffHunk
 
 internal class SessionScopeResolver {
     fun knownSessionIds(
@@ -73,14 +74,15 @@ internal class SessionScopeResolver {
         val selectedIsRoot = !parentBySessionId.containsKey(selectedSessionId)
         val selectedIsActive =
             (busyBySession[selectedSessionId] == true) ||
-                (selectedUpdatedAt > 0L && nowMillis - selectedUpdatedAt <= RECENT_WINDOW_MILLIS) ||
-                (selectedIsRoot && knownSessionIds.any { sid ->
-                    sid !in result &&
-                        parentBySessionId[sid].let { it == null || it == selectedSessionId } &&
-                        (busyBySession[sid] == true ||
-                            (updatedAtBySession[sid] ?: 0L).let { it > 0L && nowMillis - it <= RECENT_WINDOW_MILLIS }) &&
-                        hunksBySessionAndFile.containsKey(sid)
-                })
+                    (selectedUpdatedAt > 0L && nowMillis - selectedUpdatedAt <= RECENT_WINDOW_MILLIS) ||
+                    (selectedIsRoot && knownSessionIds.any { sid ->
+                        sid !in result &&
+                                parentBySessionId[sid].let { it == null || it == selectedSessionId } &&
+                                (busyBySession[sid] == true ||
+                                        (updatedAtBySession[sid]
+                                            ?: 0L).let { it > 0L && nowMillis - it <= RECENT_WINDOW_MILLIS }) &&
+                                hunksBySessionAndFile.containsKey(sid)
+                    })
 
         if (selectedIsActive) {
             knownSessionIds.forEach { sessionId ->
@@ -89,7 +91,7 @@ internal class SessionScopeResolver {
 
                 // Skip independent sessions that belong to a different conversation.
                 val isKnownRoot = !parentBySessionId.containsKey(sessionId) &&
-                    (updatedAtBySession[sessionId] ?: 0L) > 0L
+                        (updatedAtBySession[sessionId] ?: 0L) > 0L
                 if (isKnownRoot && sessionId !in result) return@forEach
 
                 val updatedAt = updatedAtBySession[sessionId] ?: 0L

@@ -8,3 +8,8 @@ package com.ashotn.opencode.companion.util
  */
 fun String.toProjectRelativePath(projectBase: String): String =
     if (startsWith(projectBase)) removePrefix(projectBase).trimStart('/') else this
+
+fun toAbsolutePath(projectBase: String, path: String): String {
+    val normalized = path.replace('\\', '/')
+    return if (normalized.startsWith("/")) normalized else "$projectBase/$normalized"
+}

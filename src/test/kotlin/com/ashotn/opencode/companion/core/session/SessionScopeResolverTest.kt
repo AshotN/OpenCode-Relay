@@ -1,7 +1,8 @@
-package com.ashotn.opencode.companion.diff
+package com.ashotn.opencode.companion.core.session
 
 import com.ashotn.opencode.companion.api.session.Session
 import com.ashotn.opencode.companion.api.session.SessionTime
+import com.ashotn.opencode.companion.core.DiffHunk
 import org.junit.Test
 import kotlin.test.assertEquals
 
@@ -38,8 +39,28 @@ class SessionScopeResolverTest {
 
         val knownSessionIds = setOf(session1, session2)
         val sessions = mapOf(
-            session1 to Session(id = session1, projectID = null, directory = null, parentID = null, title = "Session 1", version = null, time = SessionTime(0L, t0, null), summary = null, share = null),
-            session2 to Session(id = session2, projectID = null, directory = null, parentID = null, title = "Session 2", version = null, time = SessionTime(0L, t0 + 1_000L, null), summary = null, share = null),
+            session1 to Session(
+                id = session1,
+                projectID = null,
+                directory = null,
+                parentID = null,
+                title = "Session 1",
+                version = null,
+                time = SessionTime(0L, t0, null),
+                summary = null,
+                share = null
+            ),
+            session2 to Session(
+                id = session2,
+                projectID = null,
+                directory = null,
+                parentID = null,
+                title = "Session 2",
+                version = null,
+                time = SessionTime(0L, t0 + 1_000L, null),
+                summary = null,
+                share = null
+            ),
         )
         val busyBySession = mapOf(session1 to false, session2 to false)
         val updatedAtBySession = mapOf(session1 to t0, session2 to t0 + 1_000L)
@@ -65,7 +86,7 @@ class SessionScopeResolverTest {
             setOf(session1),
             familyForSession1,
             "Session 1's family must contain only Session 1 — not Session 2 — " +
-                "but got: $familyForSession1",
+                    "but got: $familyForSession1",
         )
 
         // When Session 2 is selected, only file2 should be in the family scope.
@@ -83,7 +104,7 @@ class SessionScopeResolverTest {
             setOf(session2),
             familyForSession2,
             "Session 2's family must contain only Session 2 — not Session 1 — " +
-                "but got: $familyForSession2",
+                    "but got: $familyForSession2",
         )
     }
 }
