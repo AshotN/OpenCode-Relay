@@ -14,6 +14,7 @@ import com.intellij.terminal.frontend.toolwindow.TerminalToolWindowTabsManager
 import com.intellij.terminal.frontend.view.TerminalView
 import com.intellij.terminal.frontend.view.TerminalViewSessionState
 import com.intellij.ui.content.Content
+import com.intellij.openapi.diagnostic.Logger
 import kotlinx.coroutines.launch
 import java.awt.BorderLayout
 import javax.swing.JPanel
@@ -57,8 +58,11 @@ class OpenCodeTuiPanel(
 
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
-            val command = "opencode attach ${serverUrl(OpenCodeSettings.getInstance(project).serverPort)}"
-
+            val command = listOf(
+                "opencode",
+                "attach",
+                serverUrl(OpenCodeSettings.getInstance(project).serverPort),
+            )
             val manager = TerminalToolWindowTabsManager.getInstance(project)
 
             // shouldAddToToolWindow(false): create the session entirely detached —
@@ -67,6 +71,8 @@ class OpenCodeTuiPanel(
                 .workingDirectory(workingDir)
                 .requestFocus(false)
                 .shouldAddToToolWindow(false)
+                .tabName("OpenCode Companion")
+                .shellCommand(command)
                 .createTab()
 
             val view = tab.view
@@ -84,6 +90,7 @@ class OpenCodeTuiPanel(
             // Watch sessionState flow: when Terminated the shell has exited.
             view.coroutineScope.launch {
                 view.sessionState.collect { state ->
+                    logger.debug("Terminal session state",state)
                     if (state is TerminalViewSessionState.Terminated) {
                         ApplicationManager.getApplication().invokeLater {
                             if (terminalView === view) {
@@ -103,11 +110,6 @@ class OpenCodeTuiPanel(
             add(view.component, BorderLayout.CENTER)
             revalidate()
             repaint()
-
-            // Send the attach command once the shell is ready.
-            // deferSessionStartUntilUiShown defaults to true in the builder, so
-            // the PTY is already sized correctly before the command is sent.
-            view.sendText(command + "\n")
 
         } catch (_: NoClassDefFoundError) {
             // Terminal plugin not available — panel stays empty.
@@ -152,5 +154,9 @@ class OpenCodeTuiPanel(
 
     override fun dispose() {
         tearDown()
+    }
+
+    companion object {
+        private val logger = Logger.getInstance(OpenCodeTuiPanel::class.java)
     }
 }
