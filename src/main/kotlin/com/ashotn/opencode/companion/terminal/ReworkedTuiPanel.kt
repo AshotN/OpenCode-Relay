@@ -117,7 +117,7 @@ class ReworkedTuiPanel(
             logger.warn("Reworked terminal classes unavailable", e)
             // Panel stays empty.
         } catch (e: Exception) {
-            logger.warn("Failed to start classic terminal", e)
+            logger.warn("Failed to start reworked terminal", e)
             // Panel stays empty.
         }
     }

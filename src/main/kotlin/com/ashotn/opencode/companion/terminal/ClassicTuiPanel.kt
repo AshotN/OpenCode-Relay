@@ -96,7 +96,7 @@ class ClassicTuiPanel(
     }
 
     override fun focusTerminal() {
-        terminalWidget?.requestFocus()
+        terminalWidget?.component?.requestFocusInWindow()
     }
 
     override val isStarted: Boolean get() = terminalWidget != null
@@ -115,14 +115,7 @@ class ClassicTuiPanel(
         Disposer.dispose(widget)
     }
 
-    override fun dispose() {
-        val widget = terminalWidget ?: return
-        terminalWidget = null
-        remove(widget.component)
-        revalidate()
-        repaint()
-        Disposer.dispose(widget)
-    }
+    override fun dispose() = tearDown()
 
     companion object {
         private val logger = Logger.getInstance(ClassicTuiPanel::class.java)

@@ -57,7 +57,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project, this)
     private var tuiPanel: TuiPanel = createTuiPanel()
-    private var activeTuiEngine: TerminalEngine = OpenCodeSettings.getInstance(project).terminalEngine
+    private var activeTuiEngine: TerminalEngine = effectiveEngine(OpenCodeSettings.getInstance(project).terminalEngine)
     private val syncScheduled = AtomicBoolean(false)
     private val plugin = OpenCodePlugin.getInstance(project)
     private val serverStateListener = ServerStateListener { requestSyncCard() }
@@ -177,12 +177,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
      * it into the split pane — all without requiring an IDE restart.
      */
     private fun swapTuiPanelIfEngineChanged() {
-        val requestedEngine = OpenCodeSettings.getInstance(project).terminalEngine
-        val effectiveEngine = if (requestedEngine == TerminalEngine.REWORKED && !BuildUtils.isEmbeddedTerminalSupported) {
-            TerminalEngine.CLASSIC
-        } else {
-            requestedEngine
-        }
+        val effectiveEngine = effectiveEngine(OpenCodeSettings.getInstance(project).terminalEngine)
         if (effectiveEngine == activeTuiEngine) return
 
         // Stop and dispose the old panel.
@@ -224,13 +219,23 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
      */
     private fun createTuiPanel(): TuiPanel {
         val settings = OpenCodeSettings.getInstance(project)
-        val engine = settings.terminalEngine
-        return if (engine == TerminalEngine.REWORKED && BuildUtils.isEmbeddedTerminalSupported) {
+        return if (effectiveEngine(settings.terminalEngine) == TerminalEngine.REWORKED) {
             ReworkedTuiPanel(project, this, onTerminated = { requestSyncCard() })
         } else {
             ClassicTuiPanel(project, this, onTerminated = { requestSyncCard() })
         }
     }
+
+    /**
+     * Resolves the effective [TerminalEngine] to use, falling back to [TerminalEngine.CLASSIC]
+     * when [TerminalEngine.REWORKED] is requested but the IDE version does not support it.
+     */
+    private fun effectiveEngine(requested: TerminalEngine): TerminalEngine =
+        if (requested == TerminalEngine.REWORKED && !BuildUtils.isEmbeddedTerminalSupported) {
+            TerminalEngine.CLASSIC
+        } else {
+            requested
+        }
 
     private var disposed = false
 
