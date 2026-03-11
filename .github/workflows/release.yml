@@ -1,16 +1,15 @@
-name: Tests
+name: Release
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
-    tags-ignore:
-      - "**"
+    tags:
+      - "v*.*.*"
 
 jobs:
-  test:
+  release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # needed to create a GitHub Release
 
     steps:
       - name: Checkout
@@ -32,5 +31,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: test-results
+          name: test-results-release
           path: build/reports/tests/test/
+
+      - name: Build plugin ZIP
+        run: ./gradlew buildPlugin
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: build/distributions/*.zip

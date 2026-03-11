@@ -5,7 +5,7 @@ plugins {
 }
 
 group = "com.ashotn"
-version = "1.0-SNAPSHOT"
+version = providers.gradleProperty("pluginVersion").get()
 
 repositories {
     mavenCentral()
