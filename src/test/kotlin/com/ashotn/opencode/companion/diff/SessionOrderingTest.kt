@@ -1,5 +1,7 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.api.session.Session
+import com.ashotn.opencode.companion.api.session.SessionTime
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import org.junit.Test
@@ -200,19 +202,16 @@ class SessionOrderingTest {
 
         val sessions = DiffQueryService().listSessions(
             knownSessionIds = setOf(sessionNew, sessionMid, sessionOld),
-            parentBySessionId = emptyMap(),
-            titleBySessionId = mapOf(
-                sessionNew to "Newest session",
-                sessionMid to "Middle session",
-                sessionOld to "Oldest session",
+            sessions = mapOf(
+                sessionNew to Session(id = sessionNew, projectID = null, directory = null, parentID = null, title = "Newest session", version = null, time = SessionTime(0L, tNew, null), summary = null, share = null),
+                sessionMid to Session(id = sessionMid, projectID = null, directory = null, parentID = null, title = "Middle session", version = null, time = SessionTime(0L, tMid, null), summary = null, share = null),
+                sessionOld to Session(id = sessionOld, projectID = null, directory = null, parentID = null, title = "Oldest session", version = null, time = SessionTime(0L, tOld, null), summary = null, share = null),
             ),
-            descriptionBySessionId = emptyMap(),
             busyBySession = emptyMap(),
             hunksBySessionAndFile = emptyMap(),
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
-            sessionIdsWithMessages = emptySet(),
         )
 
         assertEquals(3, sessions.size)
@@ -256,15 +255,15 @@ class SessionOrderingTest {
 
         val sessions = DiffQueryService().listSessions(
             knownSessionIds = setOf(sessionA, sessionB),
-            parentBySessionId = emptyMap(),
-            titleBySessionId = mapOf(sessionA to "Session A", sessionB to "Session B"),
-            descriptionBySessionId = emptyMap(),
+            sessions = mapOf(
+                sessionA to Session(id = sessionA, projectID = null, directory = null, parentID = null, title = "Session A", version = null, time = SessionTime(0L, 2000L, null), summary = null, share = null),
+                sessionB to Session(id = sessionB, projectID = null, directory = null, parentID = null, title = "Session B", version = null, time = SessionTime(0L, 1000L, null), summary = null, share = null),
+            ),
             busyBySession = store.busyBySession,
             hunksBySessionAndFile = emptyMap(),
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
-            sessionIdsWithMessages = emptySet(),
         )
 
         // sessionB is busy → sorts first regardless of timestamp (busy-first rule)

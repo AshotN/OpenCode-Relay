@@ -29,14 +29,14 @@ class McpApiClient(
 
     fun connect(port: Int, name: String): ApiResult<Boolean> {
         val endpoint = McpEndpoints.connect(name)
-        val response = transport.postJson(port = port, path = endpoint.path, payload = "{}")
+        val response = transport.post(port = port, path = endpoint.path, payload = "{}")
         return transport.parseBooleanResponse(response, emptyBodyValue = true)
             .withParseContext(endpoint)
     }
 
     fun disconnect(port: Int, name: String): ApiResult<Boolean> {
         val endpoint = McpEndpoints.disconnect(name)
-        val response = transport.postJson(port = port, path = endpoint.path, payload = "{}")
+        val response = transport.post(port = port, path = endpoint.path, payload = "{}")
         return transport.parseBooleanResponse(response, emptyBodyValue = true)
             .withParseContext(endpoint)
     }

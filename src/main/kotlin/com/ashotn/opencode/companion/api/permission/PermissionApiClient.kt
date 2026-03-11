@@ -12,7 +12,7 @@ class PermissionApiClient(
     fun reply(port: Int, sessionId: String, permissionId: String, response: String): ApiResult<Boolean> {
         val endpoint = PermissionEndpoints.reply(sessionId, permissionId)
         val payload = JsonObject().also { it.addProperty("response", response) }
-        val rawResponse = transport.postJson(
+        val rawResponse = transport.post(
             port = port,
             path = endpoint.path,
             payload = payload.toString(),

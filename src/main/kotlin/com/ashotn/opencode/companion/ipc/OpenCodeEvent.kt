@@ -84,16 +84,3 @@ sealed class OpenCodeEvent {
     ) : OpenCodeEvent()
 }
 
-/**
- * The before/after content for a single file within a session diff.
- *
- * Maps to the FileDiff type in the OpenCode TypeScript SDK:
- * { file, before, after, additions, deletions }
- */
-data class FileDiff(
-    val file: String,
-    val before: String,
-    val after: String,
-    val additions: Int,
-    val deletions: Int,
-)

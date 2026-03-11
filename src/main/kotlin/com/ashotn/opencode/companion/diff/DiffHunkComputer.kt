@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion.diff
 
-import com.ashotn.opencode.companion.ipc.FileDiff
+import com.ashotn.opencode.companion.api.session.FileDiff
 import com.intellij.diff.comparison.ComparisonManager
 import com.intellij.diff.comparison.ComparisonPolicy
 import com.intellij.openapi.diagnostic.Logger

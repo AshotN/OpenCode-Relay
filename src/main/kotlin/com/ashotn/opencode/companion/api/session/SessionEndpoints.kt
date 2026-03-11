@@ -9,4 +9,8 @@ internal object SessionEndpoints {
     fun list(): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session")
 
     fun diff(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session/$sessionId/diff")
+
+    fun delete(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.DELETE, path = "/session/$sessionId")
+
+    fun update(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.PATCH, path = "/session/$sessionId")
 }

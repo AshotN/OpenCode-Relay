@@ -1,6 +1,6 @@
 package com.ashotn.opencode.companion.diff
 
-import com.ashotn.opencode.companion.ipc.FileDiff
+import com.ashotn.opencode.companion.api.session.FileDiff
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import com.intellij.openapi.diagnostic.Logger

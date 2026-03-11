@@ -32,7 +32,7 @@ class OpenCodeHttpTransport(
         timeouts = timeouts,
     )
 
-    fun postJson(
+    fun post(
         port: Int,
         path: String,
         payload: String,
@@ -44,6 +44,37 @@ class OpenCodeHttpTransport(
         path = path,
         payload = payload,
         contentType = APPLICATION_JSON,
+        accept = accept,
+        timeouts = timeouts,
+    )
+
+    fun patch(
+        port: Int,
+        path: String,
+        payload: String,
+        timeouts: Timeouts? = null,
+        accept: String = APPLICATION_JSON,
+    ): ApiResult<String?> = execute(
+        method = "PATCH",
+        port = port,
+        path = path,
+        payload = payload,
+        contentType = APPLICATION_JSON,
+        accept = accept,
+        timeouts = timeouts,
+    )
+
+    fun delete(
+        port: Int,
+        path: String,
+        timeouts: Timeouts? = null,
+        accept: String = APPLICATION_JSON,
+    ): ApiResult<String?> = execute(
+        method = "DELETE",
+        port = port,
+        path = path,
+        payload = null,
+        contentType = null,
         accept = accept,
         timeouts = timeouts,
     )

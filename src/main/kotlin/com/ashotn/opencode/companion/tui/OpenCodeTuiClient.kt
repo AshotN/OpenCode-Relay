@@ -151,6 +151,45 @@ class OpenCodeTuiClient(private val project: Project) {
         }
     }
 
+    /**
+     * Deletes a session via DELETE /session/{sessionId}.
+     */
+    fun deleteSession(sessionId: String, onResult: (success: Boolean, error: String?) -> Unit) {
+        val currentPort = port
+        if (currentPort <= 0) {
+            onResult(false, "OpenCode server is not running")
+            return
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            when (val result = sessionApiClient.deleteSession(currentPort, sessionId)) {
+                is ApiResult.Success -> onResult(true, null)
+                is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
+            }
+        }
+    }
+
+    /**
+     * Renames a session via PATCH /session/{sessionId}.
+     */
+    fun renameSession(sessionId: String, newTitle: String, onResult: (success: Boolean, error: String?) -> Unit) {
+        val currentPort = port
+        if (currentPort <= 0) {
+            onResult(false, "OpenCode server is not running")
+            return
+        }
+
+        ApplicationManager.getApplication().executeOnPooledThread {
+            when (val result = sessionApiClient.updateSession(currentPort, sessionId, newTitle)) {
+                is ApiResult.Success -> {
+                    OpenCodeDiffService.getInstance(project).updateSessionState(result.value)
+                    onResult(true, null)
+                }
+                is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
+            }
+        }
+    }
+
     private fun apiErrorMessage(error: ApiError): String = when (error) {
         is ApiError.HttpError -> "Server returned HTTP ${error.statusCode}"
         is ApiError.NetworkError -> error.message

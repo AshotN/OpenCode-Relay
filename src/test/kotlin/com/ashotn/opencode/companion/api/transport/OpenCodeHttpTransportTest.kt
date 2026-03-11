@@ -64,7 +64,7 @@ class OpenCodeHttpTransportTest {
             }
 
             val transport = OpenCodeHttpTransport()
-            val result = transport.postJson(port, "/submit", "{\"text\":\"hello\"}")
+            val result = transport.post(port, "/submit", "{\"text\":\"hello\"}")
 
             assertIs<ApiResult.Success<String?>>(result)
             assertEquals("POST", capturedMethod)

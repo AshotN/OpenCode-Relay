@@ -3,6 +3,8 @@ package com.ashotn.opencode.companion.api.transport
 enum class HttpMethod {
     GET,
     POST,
+    DELETE,
+    PATCH,
 }
 
 data class ApiEndpoint(

@@ -1,9 +1,10 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.api.session.Session
+import com.ashotn.opencode.companion.api.session.SessionTime
 import com.ashotn.opencode.companion.ipc.OpenCodeEvent
 import com.ashotn.opencode.companion.ipc.SessionDiffStatus
 import org.junit.Test
-import java.util.concurrent.ConcurrentHashMap
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -252,11 +253,11 @@ class SessionDiffPipelineTest {
 
         val allExpectedFiles = files.map { (_, rel) -> "$projectBase/$rel" }.toSet()
 
-        // Simulate: hierarchy refresh has NOT returned yet — parentBySessionId is empty.
+        // Simulate: hierarchy refresh has NOT returned yet — sessions map is empty.
         // With no hierarchy, the root session has no children, so its family = {root} only,
         // and root has no liveHunks. The selected child session family = {child} only,
         // so only that child's one file is visible.
-        val parentBySessionId = ConcurrentHashMap<String, String>() // empty — race condition
+        val emptySessions = emptyMap<String, Session>() // empty — race condition
 
         val scopeResolver = SessionScopeResolver()
         val queryService = DiffQueryService()
@@ -270,7 +271,7 @@ class SessionDiffPipelineTest {
 
         val familyWithoutHierarchy = scopeResolver.familySessionIds(
             selectedSessionId = rootSession,
-            parentBySessionId = parentBySessionId,
+            sessions = emptySessions,
             knownSessionIds = (childSessions + rootSession).toSet(),
             busyBySession = stateStore.busyBySession,
             updatedAtBySession = stateStore.updatedAtBySession,

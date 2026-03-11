@@ -175,13 +175,12 @@ class SessionApiClientTest {
                       {
                         "id": "ses_1",
                         "title": "Root",
-                        "description": "desc",
-                        "time": { "updated": 123 }
+                        "time": { "created": 100, "updated": 123 }
                       },
                       {
                         "id": "ses_2",
                         "parentID": "ses_1",
-                        "name": "Child"
+                        "title": "Child"
                       }
                     ]
                 """.trimIndent()
@@ -192,12 +191,13 @@ class SessionApiClientTest {
             val client = SessionApiClient()
             val result = client.fetchSessionHierarchy(port)
 
-            val success = assertIs<ApiResult.Success<SessionApiClient.HierarchySnapshot>>(result)
-            assertEquals(setOf("ses_1", "ses_2"), success.value.sessionIds)
-            assertEquals("ses_1", success.value.parentBySessionId["ses_2"])
-            assertEquals("Root", success.value.titleBySessionId["ses_1"])
-            assertEquals("desc", success.value.descriptionBySessionId["ses_1"])
-            assertEquals(123L, success.value.updatedAtBySessionId["ses_1"])
+            val success = assertIs<ApiResult.Success<List<Session>>>(result)
+            assertEquals(2, success.value.size)
+            val ses1 = success.value.first { it.id == "ses_1" }
+            val ses2 = success.value.first { it.id == "ses_2" }
+            assertEquals("Root", ses1.title)
+            assertEquals(123L, ses1.time.updated)
+            assertEquals("ses_1", ses2.parentID)
         }
     }
 

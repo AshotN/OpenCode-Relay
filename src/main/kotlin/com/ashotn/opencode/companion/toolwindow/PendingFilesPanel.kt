@@ -86,7 +86,6 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     private data class SessionRow(
         val sessionId: String,
         val title: String,
-        val description: String,
         val isBusy: Boolean,
         val trackedFileCount: Int,
     )
@@ -196,6 +195,36 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 diffService.selectSession(row.sessionId)
                 OpenCodeTuiClient.getInstance(project).selectTuiSession(row.sessionId)
                 refresh()
+            }
+        })
+
+        sessionList.addMouseListener(object : MouseAdapter() {
+            override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
+            override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
+
+            private fun maybeShowPopup(e: MouseEvent) {
+                if (!e.isPopupTrigger) return
+
+                val index = sessionList.locationToIndex(e.point)
+                if (index >= 0) sessionList.selectedIndex = index
+
+                val row = sessionList.selectedValue ?: return
+
+                val popup = JPopupMenu()
+
+                val renameItem = JMenuItem("Rename")
+                renameItem.addActionListener {
+                    showRenameDialog(row)
+                }
+                popup.add(renameItem)
+
+                val deleteItem = JMenuItem("Delete")
+                deleteItem.addActionListener {
+                    deleteSession(row.sessionId)
+                }
+                popup.add(deleteItem)
+
+                popup.show(sessionList, e.x, e.y)
             }
         })
 
@@ -369,6 +398,48 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         repaint()
     }
 
+    private fun deleteSession(sessionId: String) {
+        val tuiClient = OpenCodeTuiClient.getInstance(project)
+        tuiClient.deleteSession(sessionId) { success, error ->
+            if (!success) {
+                ApplicationManager.getApplication().invokeLater {
+                    com.intellij.openapi.ui.Messages.showMessageDialog(
+                        project,
+                        "Failed to delete session: $error",
+                        "Error",
+                        com.intellij.openapi.ui.Messages.getErrorIcon(),
+                    )
+                }
+            }
+        }
+    }
+
+    private fun showRenameDialog(row: SessionRow) {
+        val inputDialog = com.intellij.openapi.ui.Messages.showInputDialog(
+            project,
+            "Enter new session name:",
+            "Rename Session",
+            null,
+            row.title,
+            null,
+        )
+        if (!inputDialog.isNullOrBlank() && inputDialog != row.title) {
+            val tuiClient = OpenCodeTuiClient.getInstance(project)
+            tuiClient.renameSession(row.sessionId, inputDialog) { success, error ->
+                if (!success) {
+                    ApplicationManager.getApplication().invokeLater {
+                        com.intellij.openapi.ui.Messages.showMessageDialog(
+                            project,
+                            "Failed to rename session: $error",
+                            "Error",
+                            com.intellij.openapi.ui.Messages.getErrorIcon(),
+                        )
+                    }
+                }
+            }
+        }
+    }
+
     private fun updateSessionList(
         sessions: List<OpenCodeDiffService.SessionInfo>,
         selectedSessionId: String?,
@@ -378,8 +449,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             .map { session ->
                 SessionRow(
                     sessionId = session.sessionId,
-                    title = session.title ?: session.sessionId.take(12),
-                    description = session.description ?: session.sessionId,
+                    title = session.title,
                     isBusy = session.isBusy,
                     trackedFileCount = session.trackedFileCount,
                 )
@@ -526,9 +596,8 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             }
             val titleHex = String.format("%06x", titleColor.rgb and 0xFFFFFF)
             val statusText = if (row.isBusy) "&nbsp;<font color='#$dimHex'>running...</font>" else ""
-            val safeDescription = row.description.ifBlank { row.sessionId }
             text =
-                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font><br/><font color='#$dimHex'>$safeDescription</font></html>"
+                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font></html>"
             border = JBUI.Borders.empty(4, 8)
             return this
         }

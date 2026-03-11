@@ -1,5 +1,7 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.api.session.Session
+
 internal class DiffQueryService {
     fun visibleFiles(
         familySessionIds: () -> Set<String>,
@@ -65,29 +67,26 @@ internal class DiffQueryService {
 
     fun listSessions(
         knownSessionIds: Set<String>,
-        parentBySessionId: Map<String, String>,
-        titleBySessionId: Map<String, String>,
-        descriptionBySessionId: Map<String, String>,
+        sessions: Map<String, Session>,
         busyBySession: Map<String, Boolean>,
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
         addedBySession: Map<String, Set<String>>,
         deletedBySession: Map<String, Set<String>>,
         updatedAtBySession: Map<String, Long>,
-        sessionIdsWithMessages: Set<String>,
     ): List<OpenCodeDiffService.SessionInfo> {
         return knownSessionIds
             .map { sessionId ->
+                val session = sessions[sessionId]
                 OpenCodeDiffService.SessionInfo(
                     sessionId = sessionId,
-                    parentSessionId = parentBySessionId[sessionId],
-                    title = titleBySessionId[sessionId],
-                    description = descriptionBySessionId[sessionId],
+                    parentSessionId = session?.parentID,
+                    title = session?.title ?: sessionId.take(12),
                     isBusy = busyBySession[sessionId] == true,
                     trackedFileCount = ((hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
                         (addedBySession[sessionId] ?: emptySet()) +
                         (deletedBySession[sessionId] ?: emptySet())).size,
                     updatedAtMillis = updatedAtBySession[sessionId] ?: 0L,
-                    hasMessages = sessionId in sessionIdsWithMessages,
+                    hasMessages = session?.summary != null,
                 )
             }
             .sortedWith(

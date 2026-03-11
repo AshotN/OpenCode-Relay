@@ -1,5 +1,6 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.api.session.Session
 import com.ashotn.opencode.companion.api.session.SessionApiClient
 import com.ashotn.opencode.companion.api.transport.ApiResult
 import com.ashotn.opencode.companion.ipc.McpChangedListener
@@ -28,8 +29,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     data class SessionInfo(
         val sessionId: String,
         val parentSessionId: String?,
-        val title: String?,
-        val description: String?,
+        val title: String,
         val isBusy: Boolean,
         val trackedFileCount: Int,
         val updatedAtMillis: Long,
@@ -57,19 +57,8 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         )
     }
 
-    /** childSessionId -> parentSessionId */
-    private val parentBySessionId = ConcurrentHashMap<String, String>()
-
-    /** Session IDs discovered from /session list, including root sessions. */
-    private val hierarchySessionIds = ConcurrentHashMap.newKeySet<String>()
-
-
-    /** sessionId -> title/summary metadata from /session. */
-    private val sessionTitleById = ConcurrentHashMap<String, String>()
-    private val sessionDescriptionById = ConcurrentHashMap<String, String>()
-
-    /** Session IDs that have at least one message (server returned a summary). */
-    private val sessionIdsWithMessages = ConcurrentHashMap.newKeySet<String>()
+    /** Session metadata indexed by session ID, populated from the /session list response. */
+    private val sessionById = ConcurrentHashMap<String, Session>()
 
     /** Guards map updates that must commit atomically. */
     private val stateLock = Any()
@@ -488,8 +477,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
             busyBySession = stateStore.busyBySession,
             updatedAtBySession = stateStore.updatedAtBySession,
-            hierarchySessionIds = hierarchySessionIds,
-            parentBySessionId = parentBySessionId,
+            sessions = sessionById,
         )
 
     private fun sessionExistsLocked(sessionId: String): Boolean =
@@ -504,14 +492,16 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         )
     }
 
-    private fun knownFamilySessionIdsForRootLocked(rootSessionId: String): Set<String> =
-        scopeResolver.knownFamilySessionIdsForRoot(rootSessionId, parentBySessionId)
+    private fun knownFamilySessionIdsForRootLocked(rootSessionId: String): Set<String> {
+        val parentBySessionId = sessionById.values.mapNotNull { s -> s.parentID?.let { s.id to it } }.toMap()
+        return scopeResolver.knownFamilySessionIdsForRoot(rootSessionId, parentBySessionId)
+    }
 
     private fun familySessionIdsLocked(): Set<String> {
         val selected = resolveSelectedSessionIdLocked() ?: return emptySet()
         return scopeResolver.familySessionIds(
             selectedSessionId = selected,
-            parentBySessionId = parentBySessionId,
+            sessions = sessionById,
             knownSessionIds = knownSessionIdsLocked(),
             busyBySession = stateStore.busyBySession,
             updatedAtBySession = stateStore.updatedAtBySession,
@@ -547,18 +537,28 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
         liveHunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
     )
 
+    /**
+     * Updates the stored metadata for a single session and publishes a state change.
+     *
+     * Used for optimistic UI updates — e.g. after a rename completes via the API, before
+     * the next SSE-triggered hierarchy refresh arrives.
+     */
+    fun updateSessionState(session: Session) {
+        synchronized(stateLock) {
+            sessionById[session.id] = session
+        }
+        publishService.publishSessionStateChanged()
+    }
+
     fun listSessions(): List<SessionInfo> = synchronized(stateLock) {
         queryService.listSessions(
             knownSessionIds = knownSessionIdsLocked(),
-            parentBySessionId = parentBySessionId,
-            titleBySessionId = sessionTitleById,
-            descriptionBySessionId = sessionDescriptionById,
+            sessions = sessionById,
             busyBySession = stateStore.busyBySession,
             hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
             addedBySession = stateStore.addedBySession,
             deletedBySession = stateStore.deletedBySession,
             updatedAtBySession = stateStore.updatedAtBySession,
-            sessionIdsWithMessages = sessionIdsWithMessages,
         )
     }
 
@@ -749,7 +749,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
             try {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
-                val snapshot = when (val result = sessionApiClient.fetchSessionHierarchy(currentPort)) {
+                val sessions: List<Session> = when (val result = sessionApiClient.fetchSessionHierarchy(currentPort)) {
                     is ApiResult.Success -> result.value
                     is ApiResult.Failure -> {
                         log.debug(
@@ -758,49 +758,38 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                         return@executeOnPooledThread
                     }
                 }
-                if (snapshot.sessionIds.isEmpty()) {
+                if (sessions.isEmpty()) {
                     log.debug("OpenCodeDiffService: skip hierarchy refresh reason=emptySnapshot port=$currentPort generation=$generation")
                     return@executeOnPooledThread
                 }
 
+                val newSessionIds = sessions.map { it.id }.toSet()
+                val newParentBySessionId = sessions.mapNotNull { s -> s.parentID?.let { s.id to it } }.toMap()
+
                 val changed = synchronized(stateLock) {
                     if (generation != lifecycleGeneration.get()) return@synchronized false
-                    val idsChanged = hierarchySessionIds != snapshot.sessionIds
-                    val parentsChanged = parentBySessionId != snapshot.parentBySessionId
-                    val titlesChanged = sessionTitleById != snapshot.titleBySessionId
-                    val descriptionsChanged = sessionDescriptionById != snapshot.descriptionBySessionId
-                    val messagesChanged = sessionIdsWithMessages != snapshot.sessionIdsWithMessages
+                    val idsChanged = sessionById.keys != newSessionIds
+                    val sessionsChanged = idsChanged || sessions.any { sessionById[it.id] != it }
 
                     // Seed updatedAtBySession from the server-reported timestamps for sessions
                     // that have no locally-observed timestamp yet (or whose local timestamp is older).
                     // This ensures the session list is ordered correctly (newest first) even before
                     // any SSE events have been received for a session.
                     var timestampsChanged = false
-                    for ((sessionId, serverUpdatedAt) in snapshot.updatedAtBySessionId) {
-                        val localUpdatedAt = stateStore.updatedAtBySession[sessionId] ?: 0L
+                    for (session in sessions) {
+                        val serverUpdatedAt = session.time.updated
+                        val localUpdatedAt = stateStore.updatedAtBySession[session.id] ?: 0L
                         if (serverUpdatedAt > localUpdatedAt) {
-                            stateStore.updatedAtBySession[sessionId] = serverUpdatedAt
+                            stateStore.updatedAtBySession[session.id] = serverUpdatedAt
                             timestampsChanged = true
                         }
                     }
 
-                    if (!idsChanged && !parentsChanged && !titlesChanged && !descriptionsChanged && !timestampsChanged && !messagesChanged) {
+                    if (!sessionsChanged && !timestampsChanged) {
                         false
                     } else {
-                        hierarchySessionIds.clear()
-                        hierarchySessionIds.addAll(snapshot.sessionIds)
-
-                        parentBySessionId.clear()
-                        parentBySessionId.putAll(snapshot.parentBySessionId)
-
-                        sessionTitleById.clear()
-                        sessionTitleById.putAll(snapshot.titleBySessionId)
-
-                        sessionDescriptionById.clear()
-                        sessionDescriptionById.putAll(snapshot.descriptionBySessionId)
-
-                        sessionIdsWithMessages.clear()
-                        sessionIdsWithMessages.addAll(snapshot.sessionIdsWithMessages)
+                        sessionById.clear()
+                        sessions.forEach { sessionById[it.id] = it }
                         true
                     }
                 }
@@ -809,7 +798,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
 
                 val deferredSelection = synchronized(stateLock) {
                     if (generation != lifecycleGeneration.get()) return@synchronized null
-                    pendingSessionSelection.consumeIfResolved(snapshot.sessionIds)
+                    pendingSessionSelection.consumeIfResolved(newSessionIds)
                 }
 
                 if (changed) {
@@ -820,7 +809,7 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
                     selectSession(deferredSelection)
                 }
 
-                ensureHistoricalRootsLoadedAsync(snapshot.sessionIds, snapshot.parentBySessionId, generation)
+                ensureHistoricalRootsLoadedAsync(newSessionIds, newParentBySessionId, generation)
 
                 val selected = synchronized(stateLock) {
                     if (generation != lifecycleGeneration.get()) return@synchronized null
@@ -851,12 +840,8 @@ class OpenCodeDiffService(private val project: Project) : Disposable {
     }
 
     private fun resetStateLocked() {
-        sessionTitleById.clear()
-        sessionDescriptionById.clear()
-        sessionIdsWithMessages.clear()
+        sessionById.clear()
         documentSyncService.reset()
-        parentBySessionId.clear()
-        hierarchySessionIds.clear()
         historicalDiffLoadInFlight.clear()
         historicalDiffLoadedSessions.clear()
         reconcileScheduleTokenBySession.clear()

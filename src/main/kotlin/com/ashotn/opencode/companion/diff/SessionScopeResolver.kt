@@ -1,20 +1,21 @@
 package com.ashotn.opencode.companion.diff
 
+import com.ashotn.opencode.companion.api.session.Session
+
 internal class SessionScopeResolver {
     fun knownSessionIds(
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
         busyBySession: Map<String, Boolean>,
         updatedAtBySession: Map<String, Long>,
-        hierarchySessionIds: Set<String>,
-        parentBySessionId: Map<String, String>,
+        sessions: Map<String, Session>,
     ): Set<String> {
         val sessionIds = HashSet<String>()
         sessionIds.addAll(hunksBySessionAndFile.keys)
         sessionIds.addAll(busyBySession.keys)
         sessionIds.addAll(updatedAtBySession.keys)
-        sessionIds.addAll(hierarchySessionIds)
-        sessionIds.addAll(parentBySessionId.keys)
-        sessionIds.addAll(parentBySessionId.values)
+        sessionIds.addAll(sessions.keys)
+        // also include parent IDs so that parent sessions are discoverable
+        sessions.values.mapNotNull { it.parentID }.forEach { sessionIds.add(it) }
         return sessionIds
     }
 
@@ -55,13 +56,14 @@ internal class SessionScopeResolver {
 
     fun familySessionIds(
         selectedSessionId: String,
-        parentBySessionId: Map<String, String>,
+        sessions: Map<String, Session>,
         knownSessionIds: Set<String>,
         busyBySession: Map<String, Boolean>,
         updatedAtBySession: Map<String, Long>,
         hunksBySessionAndFile: Map<String, Map<String, List<DiffHunk>>>,
         nowMillis: Long,
     ): Set<String> {
+        val parentBySessionId = sessions.values.mapNotNull { s -> s.parentID?.let { s.id to it } }.toMap()
         val root = rootSessionId(selectedSessionId, parentBySessionId)
         val strictFamily = knownFamilySessionIdsForRoot(root, parentBySessionId)
 
