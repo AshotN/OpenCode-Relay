@@ -33,9 +33,7 @@
 
         <action
             id="com.ashotn.opencode.companion.actions.NewSessionAction"
-            class="com.ashotn.opencode.companion.actions.NewSessionAction"
-            text="New Session"
-            description="Create a new OpenCode session and switch the TUI to it">
+            class="com.ashotn.opencode.companion.actions.NewSessionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift F12"/>
         </action>
 
