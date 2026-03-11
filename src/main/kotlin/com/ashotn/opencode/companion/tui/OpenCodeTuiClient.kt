@@ -84,7 +84,7 @@ class OpenCodeTuiClient(private val project: Project) {
      *
      * If the newest known session has no messages, no tracked files, and is not busy,
      * we reuse it instead of creating a new one — there is no point in accumulating
-     * blank sessions. The [onResult] callback receives [reused]=true in that case.
+     * blank sessions. The [onResult] callback receives reused=true in that case.
      *
      * Runs all work on a pooled thread and invokes [onResult] from that thread.
      */

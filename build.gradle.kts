@@ -22,6 +22,10 @@ dependencies {
     }
 
     testImplementation(kotlin("test"))
+    testImplementation("junit:junit:4.13.2")
+    intellijPlatform {
+        testFramework(org.jetbrains.intellij.platform.gradle.TestFrameworkType.Platform)
+    }
 }
 
 intellijPlatform {

@@ -30,6 +30,12 @@ import javax.swing.JPanel
  *
  * The terminal is started lazily on the first call to [startIfNeeded] and lives
  * for as long as this panel's parent [Disposable] is alive.
+ *
+ * **Testability note:** unlike [ClassicTuiPanel], this panel cannot be unit-tested
+ * with a stub process. It delegates process cleanup entirely to the platform's
+ * [Content] disposal chain — there is no explicit kill path to inject into or
+ * assert against. [TerminalToolWindowTabsManager] also requires a fully initialised
+ * IDE frontend that is not available in a headless test environment.
  */
 class ReworkedTuiPanel(
     private val project: Project,
@@ -56,6 +62,7 @@ class ReworkedTuiPanel(
      */
     override fun startIfNeeded() {
         if (terminalView != null) return
+
         if (!BuildUtils.isEmbeddedTerminalSupported) return
 
         try {

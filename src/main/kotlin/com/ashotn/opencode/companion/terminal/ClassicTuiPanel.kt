@@ -6,31 +6,30 @@ import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.ui.ComponentContainer
 import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.ui.TerminalWidget
 import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
+import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
+import java.lang.reflect.Proxy
 import javax.swing.JPanel
 
 /**
- * Hosts an embedded **classic** terminal (backed by [LocalTerminalDirectRunner] /
- * [org.jetbrains.plugins.terminal.ShellTerminalWidget]) running
- * `opencode attach <server-url>`.
+ * Hosts an embedded classic terminal running `opencode attach <server-url>`.
  *
- * This engine works on all IntelliJ versions supported by the plugin (since 233)
- * without any version-gated API.  It is wired up via [LocalTerminalDirectRunner]
- * with an explicit [ShellStartupOptions.shellCommand] override so it runs our
- * specific command instead of the user's default shell.
- *
- * The terminal is started lazily on the first call to [startIfNeeded] and lives
- * for as long as this panel's parent [Disposable] is alive.
+ * Backed by [LocalTerminalDirectRunner] with a [ShellStartupOptions.shellCommand] override.
+ * The terminal is started lazily on the first call to [startIfNeeded] and lives for as long
+ * as this panel's parent [Disposable] is alive.
  */
 class ClassicTuiPanel(
     private val project: Project,
     parentDisposable: Disposable,
     /** Invoked on the EDT when the shell process terminates. */
     private val onTerminated: (() -> Unit)? = null,
+    /** Injected process used in tests to verify the kill path without live terminal infrastructure. */
+    internal val processOverride: Process? = null,
 ) : JPanel(BorderLayout()), TuiPanel, Disposable {
 
     private var terminalWidget: TerminalWidget? = null
@@ -49,6 +48,12 @@ class ClassicTuiPanel(
      */
     override fun startIfNeeded() {
         if (terminalWidget != null) return
+
+        //For test
+        if (processOverride != null) {
+            terminalWidget = noOpTerminalWidget()
+            return
+        }
 
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
@@ -109,9 +114,11 @@ class ClassicTuiPanel(
         remove(widget.component)
         revalidate()
         repaint()
-        // Disposing the widget will trigger the termination callback if the process
-        // is still alive, but since we've already cleared terminalWidget the guard
-        // (terminalWidget === widget) inside the callback will short-circuit it.
+        val process: Process? = processOverride
+            ?: widget.ttyConnectorAccessor.ttyConnector
+                ?.let { ShellTerminalWidget.getProcessTtyConnector(it)?.process }
+        val handle = process?.let { ProcessHandle.of(it.pid()).orElse(null) }
+        killProcessTree(handle)
         Disposer.dispose(widget)
     }
 
@@ -119,5 +126,17 @@ class ClassicTuiPanel(
 
     companion object {
         private val logger = Logger.getInstance(ClassicTuiPanel::class.java)
+
+        private fun noOpTerminalWidget(): TerminalWidget =
+            Proxy.newProxyInstance(
+                TerminalWidget::class.java.classLoader,
+                arrayOf(TerminalWidget::class.java, ComponentContainer::class.java, Disposable::class.java),
+            ) { _, method, _ ->
+                when (method.name) {
+                    "getComponent", "getPreferredFocusableComponent" -> JPanel()
+                    "dispose" -> Unit
+                    else -> if (method.returnType == Boolean::class.javaPrimitiveType) false else null
+                }
+            } as TerminalWidget
     }
 }
