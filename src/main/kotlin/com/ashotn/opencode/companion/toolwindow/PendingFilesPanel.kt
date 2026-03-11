@@ -166,12 +166,6 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         border = MatteBorder(1, 0, 0, 0, JBColor.border())
 
-        val headerLabel = JBLabel("Session changes").apply {
-            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
-            foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            border = JBUI.Borders.empty(6, 8, 4, 8)
-        }
-
         val sessionActionsGroup = DefaultActionGroup().apply {
             add(NewSessionAction(project))
             add(ClearSelectedSessionAction(project))
@@ -181,9 +175,15 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 targetComponent = this@PendingFilesPanel
             }
 
-        val header = JPanel(BorderLayout()).apply {
+        val sessionHeaderLabel = JBLabel("Sessions").apply {
+            font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+            foreground = JBUI.CurrentTheme.Label.disabledForeground()
+            border = JBUI.Borders.empty(4, 8, 2, 4)
+        }
+
+        val sessionHeader = JPanel(BorderLayout()).apply {
             isOpaque = false
-            add(headerLabel, BorderLayout.WEST)
+            add(sessionHeaderLabel, BorderLayout.WEST)
             add(sessionActionsToolbar.component, BorderLayout.EAST)
         }
 
@@ -201,6 +201,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         val sessionSection = JPanel(BorderLayout()).apply {
             border = JBUI.Borders.emptyRight(4)
+            add(sessionHeader, BorderLayout.NORTH)
             add(sessionScrollPane, BorderLayout.CENTER)
             minimumSize = JBUI.size(200, 60)
         }
@@ -208,7 +209,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         val filesHeader = JBLabel("Files").apply {
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            border = JBUI.Borders.empty(0, 8, 2, 8)
+            border = JBUI.Borders.empty(4, 8, 2, 8)
         }
 
         fileList.addMouseListener(object : MouseAdapter() {
@@ -266,16 +267,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             OpenCodeToolWindowPanel.applyThemedDivider(this)
         }
 
-        val contentCenter = JPanel(BorderLayout()).apply {
-            add(splitPane, BorderLayout.CENTER)
-        }
-
-        val body = JPanel(BorderLayout()).apply {
-            add(contentCenter, BorderLayout.CENTER)
-        }
-
-        add(header, BorderLayout.NORTH)
-        add(body, BorderLayout.CENTER)
+        add(splitPane, BorderLayout.CENTER)
         add(permissionPanel, BorderLayout.SOUTH)
 
         // Esc clears the selected session when the panel (or any child) has focus.

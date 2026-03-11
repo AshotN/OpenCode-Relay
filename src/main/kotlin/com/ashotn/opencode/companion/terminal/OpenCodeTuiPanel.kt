@@ -90,7 +90,7 @@ class OpenCodeTuiPanel(
             // Watch sessionState flow: when Terminated the shell has exited.
             view.coroutineScope.launch {
                 view.sessionState.collect { state ->
-                    logger.debug("Terminal session state",state)
+                    logger.debug("Terminal session state $state")
                     if (state is TerminalViewSessionState.Terminated) {
                         ApplicationManager.getApplication().invokeLater {
                             if (terminalView === view) {
