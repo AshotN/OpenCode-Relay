@@ -10,6 +10,13 @@ import com.intellij.openapi.project.Project
 )
 class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
+    enum class TerminalEngine {
+        /** JBTerminalWidget (classic terminal plugin, works on all supported IDE versions). */
+        CLASSIC,
+        /** TerminalToolWindowTabsManager (reworked terminal, requires IntelliJ 2025.3+). */
+        REWORKED,
+    }
+
     data class State(
         var serverPort: Int = 4096,
         var executablePath: String = "",
@@ -17,6 +24,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var diffTraceEnabled: Boolean = false,
         var diffTraceHistoryEnabled: Boolean = false,
         var inlineTerminalEnabled: Boolean = true,
+        var terminalEngine: TerminalEngine = TerminalEngine.CLASSIC,
     )
 
     private var state = State()
@@ -50,6 +58,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     var inlineTerminalEnabled: Boolean
         get() = state.inlineTerminalEnabled
         set(value) { state.inlineTerminalEnabled = value }
+
+    var terminalEngine: TerminalEngine
+        get() = state.terminalEngine
+        set(value) { state.terminalEngine = value }
 
     companion object {
         fun getInstance(project: Project): OpenCodeSettings =

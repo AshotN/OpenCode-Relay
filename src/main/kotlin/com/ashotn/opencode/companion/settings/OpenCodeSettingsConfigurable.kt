@@ -2,6 +2,7 @@ package com.ashotn.opencode.companion.settings
 
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.diff.EditorDiffRenderer
+import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowPanel
 import com.ashotn.opencode.companion.util.BuildUtils
 import com.intellij.openapi.options.BoundConfigurable
@@ -46,25 +47,31 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindSelected(settings::inlineDiffEnabled)
                         .comment(
                             "Renders green/red inline diff highlights in the editor " +
-                            "for AI-modified files. Changes take effect immediately."
+                                    "for AI-modified files. Changes take effect immediately."
                         )
                 }
             }
             group("Terminal") {
-                val terminalSupported = BuildUtils.isEmbeddedTerminalSupported
+                val reworkedSupported = BuildUtils.isEmbeddedTerminalSupported
                 row {
                     checkBox("Show inline terminal")
                         .bindSelected(settings::inlineTerminalEnabled)
-                        .enabled(terminalSupported)
-                        .comment(
-                            if (terminalSupported) {
-                                "Embeds the OpenCode TUI directly inside the tool window panel when the " +
-                                "server is running."
-                            } else {
-                                "Requires IntelliJ IDEA 2025.3 or later."
-                            }
-                        )
+                        .comment("Embeds the OpenCode TUI directly inside the tool window panel when the server is running.")
                 }
+                buttonsGroup("Terminal engine:") {
+                    row {
+                        radioButton("Classic (Recomended)", TerminalEngine.CLASSIC)
+                            .comment("Legacy JediTerm widget. Works on all supported IDE versions.")
+                    }
+                    row {
+                        radioButton("Reworked", TerminalEngine.REWORKED)
+                            .enabled(reworkedSupported)
+                            .comment(
+                                if (reworkedSupported) "New terminal engine (IntelliJ 2025.3+)."
+                                else "Requires IntelliJ 2025.3 or later."
+                            )
+                    }
+                }.bind(settings::terminalEngine)
             }
             group("Diagnostics") {
                 row {
@@ -72,8 +79,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindSelected(settings::diffTraceEnabled)
                         .comment(
                             "Writes a JSONL trace file to the system temp directory " +
-                            "(opencode-diff-traces/) for debugging diff pipeline events. " +
-                            "Takes effect after restarting the IDE."
+                                    "(opencode-diff-traces/) for debugging diff pipeline events. " +
+                                    "Takes effect after restarting the IDE."
                         )
                         .enabled(!running)
                 }
@@ -82,8 +89,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindSelected(settings::diffTraceHistoryEnabled)
                         .comment(
                             "Also records events from historical (loaded-on-demand) session diffs " +
-                            "in the trace. Only relevant when diff trace logging is enabled. " +
-                            "Takes effect after restarting the IDE."
+                                    "in the trace. Only relevant when diff trace logging is enabled. " +
+                                    "Takes effect after restarting the IDE."
                         )
                         .enabled(!running)
                 }
@@ -99,7 +106,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
     private fun refreshToolWindowPanel() {
         SwingUtilities.invokeLater {
-            val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("OpenCode Companion") ?: return@invokeLater
+            val toolWindow =
+                ToolWindowManager.getInstance(project).getToolWindow("OpenCode Companion") ?: return@invokeLater
             val content = toolWindow.contentManager.getContent(0) ?: return@invokeLater
             (content.component as? OpenCodeToolWindowPanel)?.refresh()
         }

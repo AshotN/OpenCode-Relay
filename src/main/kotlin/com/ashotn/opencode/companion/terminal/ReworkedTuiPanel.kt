@@ -24,19 +24,19 @@ import javax.swing.JPanel
  *
  * Uses the official [TerminalToolWindowTabsManager] API (available since 2025.3)
  * to create a terminal session that is never shown in the Terminal tool window —
- * [shouldAddToToolWindow(false)] keeps it fully detached so it lives only inside
+ * `shouldAddToToolWindow(false)` keeps it fully detached so it lives only inside
  * this panel. The [TerminalView.component] is embedded directly in the panel's
  * [BorderLayout.CENTER].
  *
  * The terminal is started lazily on the first call to [startIfNeeded] and lives
  * for as long as this panel's parent [Disposable] is alive.
  */
-class OpenCodeTuiPanel(
+class ReworkedTuiPanel(
     private val project: Project,
     parentDisposable: Disposable,
     /** Invoked on the EDT when the shell process terminates. */
     private val onTerminated: (() -> Unit)? = null,
-) : JPanel(BorderLayout()), Disposable {
+) : JPanel(BorderLayout()), TuiPanel, Disposable {
 
     private var terminalTab: TerminalToolWindowTab? = null
     private var terminalContent: Content? = null
@@ -46,13 +46,15 @@ class OpenCodeTuiPanel(
         Disposer.register(parentDisposable, this)
     }
 
+    override val component: JPanel get() = this
+
     /**
      * Creates and embeds the terminal (once). Safe to call multiple times —
      * subsequent calls are no-ops while a session is alive.
      *
      * Must be called on the EDT.
      */
-    fun startIfNeeded() {
+    override fun startIfNeeded() {
         if (terminalView != null) return
         if (!BuildUtils.isEmbeddedTerminalSupported) return
 
@@ -111,25 +113,25 @@ class OpenCodeTuiPanel(
             revalidate()
             repaint()
 
-        } catch (_: NoClassDefFoundError) {
-            // Terminal plugin not available — panel stays empty.
-        } catch (_: Exception) {
-            // Any other failure — panel stays empty.
+        } catch (e: NoClassDefFoundError) {
+            logger.warn("Reworked terminal classes unavailable", e)
+            // Panel stays empty.
+        } catch (e: Exception) {
+            logger.warn("Failed to start classic terminal", e)
+            // Panel stays empty.
         }
     }
 
-
-
-    fun focusTerminal() {
+    override fun focusTerminal() {
         val view = terminalView ?: return
         view.preferredFocusableComponent.requestFocusInWindow()
     }
 
     /** True while a terminal session is live. */
-    val isStarted: Boolean get() = terminalView != null
+    override val isStarted: Boolean get() = terminalView != null
 
     /** Tears down the running session. The next [startIfNeeded] will create a fresh one. */
-    fun stop() = tearDown()
+    override fun stop() = tearDown()
 
     private fun tearDown() {
         val view = terminalView ?: return
@@ -157,6 +159,6 @@ class OpenCodeTuiPanel(
     }
 
     companion object {
-        private val logger = Logger.getInstance(OpenCodeTuiPanel::class.java)
+        private val logger = Logger.getInstance(ReworkedTuiPanel::class.java)
     }
 }

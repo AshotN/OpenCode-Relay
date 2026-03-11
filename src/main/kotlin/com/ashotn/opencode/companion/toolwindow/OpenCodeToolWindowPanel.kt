@@ -10,7 +10,11 @@ import com.ashotn.opencode.companion.diff.SessionStateChangedListener
 import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
-import com.ashotn.opencode.companion.terminal.OpenCodeTuiPanel
+import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
+import com.ashotn.opencode.companion.terminal.ClassicTuiPanel
+import com.ashotn.opencode.companion.terminal.ReworkedTuiPanel
+import com.ashotn.opencode.companion.terminal.TuiPanel
+import com.ashotn.opencode.companion.util.BuildUtils
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -52,14 +56,15 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardLayout = CardLayout()
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project, this)
-    private val tuiPanel = OpenCodeTuiPanel(project, this, onTerminated = { requestSyncCard() })
+    private var tuiPanel: TuiPanel = createTuiPanel()
+    private var activeTuiEngine: TerminalEngine = OpenCodeSettings.getInstance(project).terminalEngine
     private val syncScheduled = AtomicBoolean(false)
     private val plugin = OpenCodePlugin.getInstance(project)
     private val serverStateListener = ServerStateListener { requestSyncCard() }
 
     // Split pane that stacks content (top) and TUI (bottom).
     // The TUI half is hidden until the server is READY.
-    private val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, outerCardPanel, tuiPanel.apply {
+    private val splitPane = JSplitPane(JSplitPane.VERTICAL_SPLIT, outerCardPanel, tuiPanel.component.apply {
         minimumSize = JBUI.size(0, 120)
     }).apply {
         // resizeWeight = 0.0: all resize delta goes to the bottom (terminal) panel.
@@ -158,11 +163,39 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     fun refresh() {
+        swapTuiPanelIfEngineChanged()
         // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
         Disposer.dispose(slotDisposable)
         slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
         Disposer.register(this, slotDisposable)
         buildContent()
+    }
+
+    /**
+     * If the user changed the terminal engine in settings, tears down the current
+     * [tuiPanel], swaps in a fresh instance backed by the new engine, and re-wires
+     * it into the split pane — all without requiring an IDE restart.
+     */
+    private fun swapTuiPanelIfEngineChanged() {
+        val requestedEngine = OpenCodeSettings.getInstance(project).terminalEngine
+        val effectiveEngine = if (requestedEngine == TerminalEngine.REWORKED && !BuildUtils.isEmbeddedTerminalSupported) {
+            TerminalEngine.CLASSIC
+        } else {
+            requestedEngine
+        }
+        if (effectiveEngine == activeTuiEngine) return
+
+        // Stop and dispose the old panel.
+        if (tuiPanel.isStarted) tuiPanel.stop()
+        Disposer.dispose(tuiPanel)
+        splitPane.bottomComponent = null
+
+        // Create and wire up the new panel.
+        val newPanel = createTuiPanel()
+        newPanel.component.minimumSize = JBUI.size(0, 120)
+        splitPane.bottomComponent = newPanel.component
+        tuiPanel = newPanel
+        activeTuiEngine = effectiveEngine
     }
 
     private fun buildContent() {
@@ -181,6 +214,21 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
                 revalidate()
                 repaint()
             }
+        }
+    }
+
+    /**
+     * Creates the appropriate [TuiPanel] implementation for the currently configured
+     * [OpenCodeSettings.terminalEngine].  Falls back to [ClassicTuiPanel] when the
+     * reworked engine is requested but the IDE version does not support it.
+     */
+    private fun createTuiPanel(): TuiPanel {
+        val settings = OpenCodeSettings.getInstance(project)
+        val engine = settings.terminalEngine
+        return if (engine == TerminalEngine.REWORKED && BuildUtils.isEmbeddedTerminalSupported) {
+            ReworkedTuiPanel(project, this, onTerminated = { requestSyncCard() })
+        } else {
+            ClassicTuiPanel(project, this, onTerminated = { requestSyncCard() })
         }
     }
 
