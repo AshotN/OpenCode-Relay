@@ -2,6 +2,7 @@
 
 package com.ashotn.opencode.companion.terminal
 
+import com.ashotn.opencode.companion.actions.NewSessionAction
 import com.intellij.terminal.frontend.view.TerminalAllowedActionsProvider
 
 // The terminal's "Override IDE shortcuts" feature blocks global IDE actions from firing when the
@@ -11,6 +12,6 @@ import com.intellij.terminal.frontend.view.TerminalAllowedActionsProvider
 // terminal is focused.
 class NewSessionTerminalAllowedActionsProvider : TerminalAllowedActionsProvider {
     override fun getActionIds(): List<String> {
-        return listOf("com.ashotn.opencode.companion.actions.NewSessionAction")
+        return listOf(NewSessionAction::class.java.name)
     }
 }

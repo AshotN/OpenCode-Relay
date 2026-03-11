@@ -1,7 +1,9 @@
 package com.ashotn.opencode.companion.toolwindow
 
 import com.ashotn.opencode.companion.actions.ClearSelectedSessionAction
+import com.ashotn.opencode.companion.actions.DeleteSessionAction
 import com.ashotn.opencode.companion.actions.NewSessionAction
+import com.ashotn.opencode.companion.actions.RenameSessionAction
 import com.ashotn.opencode.companion.core.DiffHighlightKind
 import com.ashotn.opencode.companion.core.DiffHighlightStyles
 import com.ashotn.opencode.companion.core.DiffHunksChangedListener
@@ -15,6 +17,8 @@ import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.ipc.PermissionReply
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.intellij.openapi.actionSystem.ActionManager
+import com.intellij.openapi.actionSystem.ActionPlaces
+import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.diff.DiffContentFactory
 import com.intellij.diff.editor.DiffEditorTabFilesManager
@@ -59,8 +63,6 @@ import javax.swing.JList
 import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.KeyStroke
-import javax.swing.JMenuItem
-import javax.swing.JPopupMenu
 import javax.swing.ListSelectionModel
 import javax.swing.Timer
 import javax.swing.border.MatteBorder
@@ -164,13 +166,29 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         border = MatteBorder(1, 0, 0, 0, JBColor.border())
 
+        val renameSessionAction = RenameSessionAction(project) {
+            sessionList.selectedValue?.let { it.sessionId to it.title }
+        }
+        val deleteSessionAction = DeleteSessionAction(project) {
+            sessionList.selectedValue?.sessionId
+        }
+
         val sessionActionsGroup = DefaultActionGroup().apply {
-            add(NewSessionAction(project))
-            add(ClearSelectedSessionAction(project))
+            add(
+                ActionManager.getInstance().getAction(NewSessionAction::class.java.name)
+                    ?: NewSessionAction(project)
+            )
+            add(
+                ActionManager.getInstance()
+                    .getAction(ClearSelectedSessionAction::class.java.name)
+                    ?: ClearSelectedSessionAction(project)
+            )
+            add(renameSessionAction)
+            add(deleteSessionAction)
         }
         val sessionActionsToolbar = ActionManager.getInstance()
             .createActionToolbar("OpenCode.SessionListHeader", sessionActionsGroup, true).apply {
-                targetComponent = this@PendingFilesPanel
+                targetComponent = sessionList
             }
 
         val sessionHeaderLabel = JBLabel("Sessions").apply {
@@ -203,27 +221,14 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
             private fun maybeShowPopup(e: MouseEvent) {
                 if (!e.isPopupTrigger) return
-
                 val index = sessionList.locationToIndex(e.point)
                 if (index >= 0) sessionList.selectedIndex = index
 
-                val row = sessionList.selectedValue ?: return
-
-                val popup = JPopupMenu()
-
-                val renameItem = JMenuItem("Rename")
-                renameItem.addActionListener {
-                    showRenameDialog(row)
-                }
-                popup.add(renameItem)
-
-                val deleteItem = JMenuItem("Delete")
-                deleteItem.addActionListener {
-                    deleteSession(row.sessionId)
-                }
-                popup.add(deleteItem)
-
-                popup.show(sessionList, e.x, e.y)
+                val group = DefaultActionGroup(renameSessionAction, deleteSessionAction)
+                val popupMenu = ActionManager.getInstance()
+                    .createActionPopupMenu(ActionPlaces.POPUP, group)
+                popupMenu.setTargetComponent(sessionList)
+                popupMenu.component.show(sessionList, e.x, e.y)
             }
         })
 
@@ -234,10 +239,50 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             minimumSize = JBUI.size(200, 60)
         }
 
-        val filesHeader = JBLabel("Files").apply {
+        val filesHeaderLabel = JBLabel("Files").apply {
             font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
             foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            border = JBUI.Borders.empty(4, 8, 2, 8)
+            border = JBUI.Borders.empty(4, 8, 2, 4)
+        }
+
+        val jumpToSourceAction = object : AnAction("Jump to Source") {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false
+            }
+            override fun actionPerformed(e: AnActionEvent) {
+                val row = fileList.selectedValue ?: return
+                if (row.isDeleted) return
+                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return
+                OpenFileDescriptor(project, vFile).navigate(true)
+            }
+        }
+
+        val openDiffAction = object : AnAction("Open Diff") {
+            override fun getActionUpdateThread() = ActionUpdateThread.EDT
+            override fun update(e: AnActionEvent) {
+                e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false
+            }
+            override fun actionPerformed(e: AnActionEvent) {
+                val row = fileList.selectedValue ?: return
+                if (row.isDeleted) return
+                openBuiltInDiff(row)
+            }
+        }
+
+        val filesActionsGroup = DefaultActionGroup().apply {
+            add(jumpToSourceAction)
+            add(openDiffAction)
+        }
+        val filesActionsToolbar = ActionManager.getInstance()
+            .createActionToolbar("OpenCode.FileListHeader", filesActionsGroup, true).apply {
+                targetComponent = fileList
+            }
+
+        val filesHeader = JPanel(BorderLayout()).apply {
+            isOpaque = false
+            add(filesHeaderLabel, BorderLayout.WEST)
+            add(filesActionsToolbar.component, BorderLayout.EAST)
         }
 
         fileList.addMouseListener(object : MouseAdapter() {
@@ -248,37 +293,20 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 openBuiltInDiff(row)
             }
 
-            //For right click
             override fun mousePressed(e: MouseEvent) = maybeShowPopup(e)
             override fun mouseReleased(e: MouseEvent) = maybeShowPopup(e)
 
             private fun maybeShowPopup(e: MouseEvent) {
                 if (!e.isPopupTrigger) return
-
-                // Select the row under the cursor so menu actions operate on the right item.
                 val index = fileList.locationToIndex(e.point)
                 if (index >= 0) fileList.selectedIndex = index
+                if (fileList.selectedValue == null) return
 
-                val row = fileList.selectedValue ?: return
-
-                val popup = JPopupMenu()
-
-                val jumpItem = JMenuItem("Jump to Source")
-                jumpItem.isEnabled = !row.isDeleted
-                jumpItem.addActionListener {
-                    val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return@addActionListener
-                    OpenFileDescriptor(project, vFile).navigate(true)
-                }
-                popup.add(jumpItem)
-
-                val diffItem = JMenuItem("Open Diff")
-                diffItem.isEnabled = !row.isDeleted
-                diffItem.addActionListener {
-                    openBuiltInDiff(row)
-                }
-                popup.add(diffItem)
-
-                popup.show(fileList, e.x, e.y)
+                val group = DefaultActionGroup(jumpToSourceAction, openDiffAction)
+                val popupMenu = ActionManager.getInstance()
+                    .createActionPopupMenu(ActionPlaces.POPUP, group)
+                popupMenu.setTargetComponent(fileList)
+                popupMenu.component.show(fileList, e.x, e.y)
             }
         })
 
@@ -308,17 +336,12 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             .put(KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), "clearSession")
         actionMap.put("clearSession", escAction)
 
-        // "Jump to Source" — registered as an IDE AnAction so it participates in the IDE's
-        // action dispatch and respects user keymap remappings (CommonShortcuts.getEditSource()
-        // is the live shortcut set for EditSourceAction, typically F4).
-        object : AnAction() {
-            override fun actionPerformed(e: AnActionEvent) {
-                val row = fileList.selectedValue ?: return
-                if (row.isDeleted) return
-                val vFile = LocalFileSystem.getInstance().findFileByPath(row.path) ?: return
-                OpenFileDescriptor(project, vFile).navigate(true)
-            }
-        }.registerCustomShortcutSet(CommonShortcuts.getEditSource(), fileList)
+        // Register shortcuts — honours the user's keymap bindings.
+        // getEditSource() (typically F4) on the file list; shown in toolbar tooltip and context menu.
+        jumpToSourceAction.registerCustomShortcutSet(CommonShortcuts.getEditSource(), fileList)
+        // Delete/Rename on the session list.
+        deleteSessionAction.registerCustomShortcutSet(CommonShortcuts.getDelete(), sessionList)
+        renameSessionAction.registerCustomShortcutSet(CommonShortcuts.getRename(), sessionList)
 
         Disposer.register(parentDisposable, this)
 
@@ -397,48 +420,6 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         repaint()
     }
 
-    private fun deleteSession(sessionId: String) {
-        val tuiClient = OpenCodeTuiClient.getInstance(project)
-        tuiClient.deleteSession(sessionId) { success, error ->
-            if (!success) {
-                ApplicationManager.getApplication().invokeLater {
-                    com.intellij.openapi.ui.Messages.showMessageDialog(
-                        project,
-                        "Failed to delete session: $error",
-                        "Error",
-                        com.intellij.openapi.ui.Messages.getErrorIcon(),
-                    )
-                }
-            }
-        }
-    }
-
-    private fun showRenameDialog(row: SessionRow) {
-        val inputDialog = com.intellij.openapi.ui.Messages.showInputDialog(
-            project,
-            "Enter new session name:",
-            "Rename Session",
-            null,
-            row.title,
-            null,
-        )
-        if (!inputDialog.isNullOrBlank() && inputDialog != row.title) {
-            val tuiClient = OpenCodeTuiClient.getInstance(project)
-            tuiClient.renameSession(row.sessionId, inputDialog) { success, error ->
-                if (!success) {
-                    ApplicationManager.getApplication().invokeLater {
-                        com.intellij.openapi.ui.Messages.showMessageDialog(
-                            project,
-                            "Failed to rename session: $error",
-                            "Error",
-                            com.intellij.openapi.ui.Messages.getErrorIcon(),
-                        )
-                    }
-                }
-            }
-        }
-    }
-
     private fun updateSessionList(
         sessions: List<SessionInfo>,
         selectedSessionId: String?,
@@ -483,6 +464,8 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 sessionScrollPane.viewport.viewPosition = Point(0, 0)
                 sessionList.ensureIndexIsVisible(0)
             }
+        } else if (selectedIndex != null) {
+            sessionList.ensureIndexIsVisible(selectedIndex)
         }
     }
 

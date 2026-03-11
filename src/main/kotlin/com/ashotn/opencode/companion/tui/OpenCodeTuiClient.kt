@@ -154,6 +154,7 @@ class OpenCodeTuiClient(private val project: Project) {
 
     /**
      * Deletes a session via DELETE /session/{sessionId}.
+     * On success, removes the session from local state so the UI updates immediately.
      */
     fun deleteSession(sessionId: String, onResult: (success: Boolean, error: String?) -> Unit) {
         val currentPort = port
@@ -163,10 +164,15 @@ class OpenCodeTuiClient(private val project: Project) {
         }
 
         ApplicationManager.getApplication().executeOnPooledThread {
+            val coreService = OpenCodeCoreService.getInstance(project)
             when (val result = sessionApiClient.deleteSession(currentPort, sessionId)) {
-                is ApiResult.Success -> onResult(true, null)
+                is ApiResult.Success -> {
+                    coreService.removeSession(sessionId)
+                    onResult(true, null)
+                }
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
+            coreService.refreshSessionHierarchy()
         }
     }
 
@@ -181,14 +187,15 @@ class OpenCodeTuiClient(private val project: Project) {
         }
 
         ApplicationManager.getApplication().executeOnPooledThread {
+            val coreService = OpenCodeCoreService.getInstance(project)
             when (val result = sessionApiClient.updateSession(currentPort, sessionId, newTitle)) {
                 is ApiResult.Success -> {
-                    OpenCodeCoreService.getInstance(project).updateSessionState(result.value)
+                    coreService.updateSessionState(result.value)
                     onResult(true, null)
                 }
-
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
+            coreService.refreshSessionHierarchy()
         }
     }
 

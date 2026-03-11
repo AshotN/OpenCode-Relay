@@ -72,4 +72,16 @@ enum class ActionStrings(
         description = "View and toggle MCP server connections",
         disabledDescription = "OpenCode must be running to manage MCP servers",
     ),
+    DELETE_SESSION(
+        text = "Delete Session",
+        disabledText = "Delete Session (no session selected)",
+        description = "Delete the selected session",
+        disabledDescription = "Select a session to delete it",
+    ),
+    RENAME_SESSION(
+        text = "Rename Session",
+        disabledText = "Rename Session (no session selected)",
+        description = "Rename the selected session",
+        disabledDescription = "Select a session to rename it",
+    ),
 }

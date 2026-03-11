@@ -108,7 +108,7 @@ class OpenCodeHttpTransportTest {
             val result = transport.get(
                 port = port,
                 path = "/slow",
-                timeouts = OpenCodeHttpTransport.Timeouts(connectTimeoutMs = 75, readTimeoutMs = 75),
+                timeouts = OpenCodeHttpTransport.Timeouts(readTimeoutMs = 75),
             )
 
             val failure = assertIs<ApiResult.Failure>(result)

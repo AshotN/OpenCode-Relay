@@ -3,19 +3,21 @@ package com.ashotn.opencode.companion.api.transport
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
-import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.SocketTimeoutException
 import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
+import java.time.Duration
 
 class OpenCodeHttpTransport(
-    private val defaultConnectTimeoutMs: Int = 3_000,
+    defaultConnectTimeoutMs: Int = 3_000,
     private val defaultReadTimeoutMs: Int = 5_000,
 ) {
-    data class Timeouts(
-        val connectTimeoutMs: Int,
-        val readTimeoutMs: Int,
-    )
+    data class Timeouts(val readTimeoutMs: Int)
+
+    private val httpClient = HttpClient.newBuilder()
+        .connectTimeout(Duration.ofMillis(defaultConnectTimeoutMs.toLong()))
+        .build()
 
     fun get(
         port: Int,
@@ -115,57 +117,43 @@ class OpenCodeHttpTransport(
         accept: String,
         timeouts: Timeouts?,
     ): ApiResult<String?> {
-        val resolvedTimeouts = timeouts ?: Timeouts(defaultConnectTimeoutMs, defaultReadTimeoutMs)
+        val resolvedTimeouts = timeouts ?: Timeouts(defaultReadTimeoutMs)
+        val normalizedPath = if (path.startsWith('/')) path else "/$path"
 
-        val connection = try {
-            openConnection(port, path)
+        val uri = try {
+            URI("http://localhost:$port$normalizedPath")
         } catch (e: IllegalArgumentException) {
             return ApiResult.Failure(ApiError.NetworkError("Invalid request URL", e))
-        } catch (e: IOException) {
-            return ApiResult.Failure(ApiError.NetworkError(e.message ?: "Network I/O error", e))
         }
 
-        return try {
-            connection.requestMethod = method
-            connection.connectTimeout = resolvedTimeouts.connectTimeoutMs
-            connection.readTimeout = resolvedTimeouts.readTimeoutMs
-            connection.setRequestProperty("Accept", accept)
+        val bodyPublisher = if (payload != null)
+            HttpRequest.BodyPublishers.ofString(payload, Charsets.UTF_8)
+        else
+            HttpRequest.BodyPublishers.noBody()
 
-            if (payload != null) {
-                connection.doOutput = true
-                if (contentType != null) {
-                    connection.setRequestProperty("Content-Type", contentType)
-                }
-                connection.outputStream.use { out ->
-                    out.write(payload.toByteArray(Charsets.UTF_8))
-                }
+        val request = HttpRequest.newBuilder(uri)
+            .method(method, bodyPublisher)
+            .apply {
+                header("Accept", accept)
+                if (payload != null && contentType != null) header("Content-Type", contentType)
+                timeout(Duration.ofMillis(resolvedTimeouts.readTimeoutMs.toLong()))
             }
+            .build()
 
-            val statusCode = connection.responseCode
-            val body = readBody(connection, statusCode)
+        return try {
+            val response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(Charsets.UTF_8))
+            val statusCode = response.statusCode()
+            val body = response.body().takeIf { it.isNotEmpty() }
             if (statusCode in 200..299) {
                 ApiResult.Success(body)
             } else {
                 ApiResult.Failure(ApiError.HttpError(statusCode, body))
             }
-        } catch (e: SocketTimeoutException) {
+        } catch (e: java.net.http.HttpTimeoutException) {
             ApiResult.Failure(ApiError.NetworkError("Request timed out", e))
-        } catch (e: IOException) {
+        } catch (e: java.io.IOException) {
             ApiResult.Failure(ApiError.NetworkError(e.message ?: "Network I/O error", e))
-        } finally {
-            connection.disconnect()
         }
-    }
-
-    private fun openConnection(port: Int, path: String): HttpURLConnection {
-        val normalizedPath = if (path.startsWith('/')) path else "/$path"
-        val url = URI("http://localhost:$port$normalizedPath").toURL()
-        return url.openConnection() as HttpURLConnection
-    }
-
-    private fun readBody(connection: HttpURLConnection, statusCode: Int): String? {
-        val stream = if (statusCode in 200..299) connection.inputStream else connection.errorStream
-        return stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
     }
 
     companion object {

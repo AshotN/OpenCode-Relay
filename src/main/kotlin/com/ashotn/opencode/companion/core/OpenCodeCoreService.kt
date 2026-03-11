@@ -539,9 +539,48 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
     fun updateSessionState(session: Session) {
         synchronized(stateLock) {
             sessionById[session.id] = session
+            // Bump the local timestamp so the session sorts to the top immediately,
+            // before the next hierarchy refresh arrives with the server's timestamp.
+            stateStore.updatedAtBySession[session.id] = System.currentTimeMillis()
         }
         publishService.publishSessionStateChanged()
     }
+
+    /**
+     * Removes a session from all local state (metadata, diff state, busy flags, etc.)
+     * and publishes a state change so the UI list updates immediately.
+     *
+     * If the deleted session was selected, clears the selection.
+     */
+    fun removeSession(sessionId: String) {
+        val previousVisibleFiles = synchronized(stateLock) {
+            val visible = visibleFilesLocked()
+
+            sessionById.remove(sessionId)
+            stateStore.busyBySession.remove(sessionId)
+            stateStore.updatedAtBySession.remove(sessionId)
+            stateStore.hunksBySessionAndFile.remove(sessionId)
+            stateStore.liveHunksBySessionAndFile.remove(sessionId)
+            stateStore.deletedBySession.remove(sessionId)
+            stateStore.addedBySession.remove(sessionId)
+            stateStore.baselineBeforeBySessionAndFile.remove(sessionId)
+            stateStore.lastAfterBySessionAndFile.remove(sessionId)
+            stateStore.serverAfterBySessionAndFile.remove(sessionId)
+            stateStore.pendingTurnFilesBySession.remove(sessionId)
+            historicalDiffLoadedSessions.remove(sessionId)
+
+            if (stateStore.selectedSessionId == sessionId) {
+                stateStore.selectedSessionId = null
+            }
+
+            visible
+        }
+
+        previousVisibleFiles.forEach { publishService.publishChanged(it) }
+        publishService.publishSessionStateChanged()
+    }
+
+    fun refreshSessionHierarchy() = refreshSessionHierarchyAsync()
 
     fun listSessions(): List<SessionInfo> = synchronized(stateLock) {
         queryService.listSessions(
