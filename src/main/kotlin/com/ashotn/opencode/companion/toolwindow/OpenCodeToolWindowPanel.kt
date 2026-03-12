@@ -1,6 +1,7 @@
 package com.ashotn.opencode.companion.toolwindow
 
 import com.ashotn.opencode.companion.OpenCodeChecker
+import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
@@ -12,6 +13,7 @@ import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.terminal.ClassicTuiPanel
+import com.ashotn.opencode.companion.terminal.PendingTuiPanel
 import com.ashotn.opencode.companion.terminal.ReworkedTuiPanel
 import com.ashotn.opencode.companion.terminal.TuiPanel
 import com.ashotn.opencode.companion.util.BuildUtils
@@ -56,6 +58,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardLayout = CardLayout()
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project, this)
+    private var executableInfo: OpenCodeInfo? = null
     private var tuiPanel: TuiPanel = createTuiPanel()
     private var activeTuiEngine: TerminalEngine = effectiveEngine(OpenCodeSettings.getInstance(project).terminalEngine)
     private val syncScheduled = AtomicBoolean(false)
@@ -179,7 +182,10 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private fun swapTuiPanelIfEngineChanged() {
         val effectiveEngine = effectiveEngine(OpenCodeSettings.getInstance(project).terminalEngine)
         if (effectiveEngine == activeTuiEngine) return
+        swapTuiPanel()
+    }
 
+    private fun swapTuiPanel() {
         // Stop and dispose the old panel.
         if (tuiPanel.isStarted) tuiPanel.stop()
         Disposer.dispose(tuiPanel)
@@ -190,7 +196,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         newPanel.component.minimumSize = JBUI.size(0, 120)
         splitPane.bottomComponent = newPanel.component
         tuiPanel = newPanel
-        activeTuiEngine = effectiveEngine
+        activeTuiEngine = effectiveEngine(OpenCodeSettings.getInstance(project).terminalEngine)
     }
 
     private fun buildContent() {
@@ -198,12 +204,16 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         // findExecutable() performs filesystem I/O (PATH scan, File.isFile, File.canExecute,
         // process spawn for --version). Run it on a pooled thread to avoid blocking the EDT.
         ApplicationManager.getApplication().executeOnPooledThread {
-            val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
+            val found = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
             ApplicationManager.getApplication().invokeLater {
-                val screen = if (executableInfo != null) InstalledPanel(
+                executableInfo = found
+                // Rebuild the TUI panel now that the real executable path is known,
+                // so it uses openCodeInfo.path rather than the blank placeholder.
+                swapTuiPanel()
+                val screen = if (found != null) InstalledPanel(
                     project,
                     slotDisposable,
-                    executableInfo
+                    found
                 ) else NotInstalledPanel()
                 // Replace the content card with the new screen
                 val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
@@ -223,11 +233,12 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
      */
     private fun createTuiPanel(): TuiPanel {
         val settings = OpenCodeSettings.getInstance(project)
-        return if (effectiveEngine(settings.terminalEngine) == TerminalEngine.REWORKED) {
-            ReworkedTuiPanel(project, this, onTerminated = { requestSyncCard() })
-        } else {
-            ClassicTuiPanel(project, this, onTerminated = { requestSyncCard() })
+        val info = executableInfo ?: return PendingTuiPanel()
+
+        if (effectiveEngine(settings.terminalEngine) == TerminalEngine.REWORKED) {
+            return ReworkedTuiPanel(project, this, info, onTerminated = { requestSyncCard() })
         }
+        return ClassicTuiPanel(project, this, info, onTerminated = { requestSyncCard() })
     }
 
     /**

@@ -2,6 +2,7 @@
 
 package com.ashotn.opencode.companion.terminal
 
+import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.util.BuildUtils
 import com.ashotn.opencode.companion.util.serverUrl
@@ -40,6 +41,7 @@ import javax.swing.JPanel
 class ReworkedTuiPanel(
     private val project: Project,
     parentDisposable: Disposable,
+    private val openCodeInfo: OpenCodeInfo,
     /** Invoked on the EDT when the shell process terminates. */
     private val onTerminated: (() -> Unit)? = null,
 ) : JPanel(BorderLayout()), TuiPanel, Disposable {
@@ -68,7 +70,7 @@ class ReworkedTuiPanel(
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val command = listOf(
-                "opencode",
+                openCodeInfo.path,
                 "attach",
                 serverUrl(OpenCodeSettings.getInstance(project).serverPort),
             )

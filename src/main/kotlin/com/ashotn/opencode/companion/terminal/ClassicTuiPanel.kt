@@ -1,5 +1,6 @@
 package com.ashotn.opencode.companion.terminal
 
+import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.util.serverUrl
 import com.intellij.openapi.Disposable
@@ -26,6 +27,7 @@ import javax.swing.JPanel
 class ClassicTuiPanel(
     private val project: Project,
     parentDisposable: Disposable,
+    private val openCodeInfo: OpenCodeInfo = OpenCodeInfo("", ""),
     /** Invoked on the EDT when the shell process terminates. */
     private val onTerminated: (() -> Unit)? = null,
     /** Injected process used in tests to verify the kill path without live terminal infrastructure. */
@@ -58,7 +60,7 @@ class ClassicTuiPanel(
         try {
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val command = listOf(
-                "opencode",
+                openCodeInfo.path,
                 "attach",
                 serverUrl(OpenCodeSettings.getInstance(project).serverPort),
             )

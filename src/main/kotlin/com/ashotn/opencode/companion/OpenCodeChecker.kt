@@ -43,7 +43,7 @@ object OpenCodeChecker {
     }
 
     private fun autoResolve(): OpenCodeInfo? {
-        val executableNames = if (SystemInfo.isWindows) listOf("opencode.exe", "opencode.cmd") else listOf("opencode")
+        val executableNames = if (SystemInfo.isWindows) listOf("opencode.exe") else listOf("opencode")
 
         val pathEnv = System.getenv("PATH") ?: ""
         for (dir in pathEnv.split(File.pathSeparator)) {
@@ -59,12 +59,12 @@ object OpenCodeChecker {
         val home = System.getProperty("user.home")
         val extraLocations = if (SystemInfo.isWindows) {
             listOf(
-                "${System.getenv("APPDATA") ?: ""}\\npm\\opencode.cmd",
                 "${System.getenv("LOCALAPPDATA") ?: ""}\\Programs\\opencode\\opencode.exe",
             )
         } else {
             listOf(
-                "/usr/local/bin/opencode",
+                "/usr/local/bin/opencode",        // Homebrew (Intel Mac)
+                "/opt/homebrew/bin/opencode",     // Homebrew (Apple Silicon)
                 "/usr/bin/opencode",
                 "$home/.local/bin/opencode",
                 "$home/.bun/bin/opencode",
