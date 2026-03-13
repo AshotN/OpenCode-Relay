@@ -46,29 +46,49 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     // --- Resolved executable info ---
 
     @Volatile
-    private var executableResolutionCompleted: Boolean = false
+    var executableResolutionState: OpenCodeExecutableResolutionState = OpenCodeExecutableResolutionState.Resolving
+        private set
 
-    @Volatile
-    var openCodeInfo: OpenCodeInfo? = null
-        set(value) {
-            field = value
-            executableResolutionCompleted = true
-        }
-
-    val isExecutableResolutionCompleted: Boolean
-        get() = executableResolutionCompleted
+    val openCodeInfo: OpenCodeInfo?
+        get() = (executableResolutionState as? OpenCodeExecutableResolutionState.Resolved)?.info
 
     /**
      * Runs [OpenCodeChecker.findExecutable] using the current settings path,
-     * stores the result in [openCodeInfo], and publishes the change on the
+     * stores the result in [executableResolutionState], and publishes the change on the
      * project message bus via [OpenCodeInfoChangedListener.TOPIC].
      *
-     * Safe to call from any thread; the topic is published on the EDT.
+     * Safe to call from any thread; expensive resolution work is moved off the EDT,
+     * while topic publication still happens on the EDT.
      */
     fun resolveExecutable() {
+        val application = ApplicationManager.getApplication()
+        if (application.isDispatchThread) {
+            application.executeOnPooledThread {
+                if (project.isDisposed) return@executeOnPooledThread
+                publishExecutableResolution(resolveExecutableState())
+            }
+            return
+        }
+
+        if (project.isDisposed) return
+        publishExecutableResolution(resolveExecutableState())
+    }
+
+    fun setExecutableResolutionState(state: OpenCodeExecutableResolutionState) {
+        publishExecutableResolution(state)
+    }
+
+    private fun resolveExecutableState(): OpenCodeExecutableResolutionState {
         val userPath = OpenCodeSettings.getInstance(project).executablePath.takeIf { it.isNotBlank() }
         val info = OpenCodeChecker.findExecutable(userPath)
-        openCodeInfo = info
+        return info?.let(OpenCodeExecutableResolutionState::Resolved) ?: OpenCodeExecutableResolutionState.NotFound
+    }
+
+    private fun publishExecutableResolution(state: OpenCodeExecutableResolutionState) {
+        if (state == executableResolutionState) return
+
+        executableResolutionState = state
+        val info = (state as? OpenCodeExecutableResolutionState.Resolved)?.info
         ApplicationManager.getApplication().invokeLater {
             if (!project.isDisposed) {
                 project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
@@ -89,12 +109,12 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     fun checkPort(port: Int) = serverManager.checkPort(port)
 
     fun startServer(port: Int) {
-        val info = openCodeInfo
-        if (info == null) {
-            log.warn("startServer() called but openCodeInfo is null")
+        val resolvedExecutableInfo = openCodeInfo
+        if (resolvedExecutableInfo == null) {
+            log.warn("startServer() called but executable resolution is not in the resolved state")
             return
         }
-        serverManager.startServer(port, info.path)
+        serverManager.startServer(port, resolvedExecutableInfo.path)
     }
 
     fun stopServer() = serverManager.stopServer()

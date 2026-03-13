@@ -12,6 +12,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
+import java.io.File
 
 class OpenTerminalAction(private val project: Project) : AnAction() {
 
@@ -50,9 +51,6 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
             SystemInfo.isWindows -> listOf(
                 "cmd",
                 "/c",
-                "start",
-                "cmd",
-                "/k",
                 buildWindowsAttachCommand(executablePath, url),
             )
 
@@ -91,7 +89,7 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
     }
 
     private fun buildWindowsAttachCommand(executablePath: String, url: String): String =
-        "\"$executablePath\" attach \"$url\""
+        "start \"\" \"$executablePath\" attach \"$url\""
 
     private fun buildPosixAttachCommand(executablePath: String, url: String): String =
         "${shellQuote(executablePath)} attach ${shellQuote(url)}"
@@ -128,8 +126,8 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
 
     private fun isOnPath(executable: String): Boolean {
         val pathEnv = System.getenv("PATH") ?: return false
-        return pathEnv.split(java.io.File.pathSeparator).any { dir ->
-            java.io.File(dir, executable).let { it.isFile && it.canExecute() }
+        return pathEnv.split(File.pathSeparator).any { dir ->
+            File(dir, executable).let { it.isFile && it.canExecute() }
         }
     }
 }

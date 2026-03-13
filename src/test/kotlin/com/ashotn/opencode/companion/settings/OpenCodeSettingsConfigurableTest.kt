@@ -1,5 +1,6 @@
 package com.ashotn.opencode.companion.settings
 
+import com.ashotn.opencode.companion.OpenCodeExecutableResolutionState
 import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.intellij.openapi.application.ApplicationManager
@@ -17,7 +18,9 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
     fun testApplyAllowsSavingWhenPathIsBlankAndResolutionFails() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.executablePath = "C:/Users/VM/AppData/Roaming/npm/opencode.cmd"
-        OpenCodePlugin.getInstance(project).openCodeInfo = OpenCodeInfo(settings.executablePath, "1.2.3")
+        OpenCodePlugin.getInstance(project).setExecutableResolutionState(
+            OpenCodeExecutableResolutionState.Resolved(OpenCodeInfo(settings.executablePath, "1.2.3"))
+        )
 
         val configurable = OpenCodeSettingsConfigurable(project).apply {
             executableResolver = { null }
@@ -62,10 +65,10 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         }
     }
 
-    fun testApplyAttemptsAutoResolveWhenPathBlankAndInfoMissing() {
+    fun testApplyAttemptsAutoResolveWhenPathBlankAndResolutionStillPending() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.executablePath = ""
-        OpenCodePlugin.getInstance(project).openCodeInfo = null
+        OpenCodePlugin.getInstance(project).setExecutableResolutionState(OpenCodeExecutableResolutionState.Resolving)
 
         val resolveCalls = AtomicInteger(0)
         val configurable = OpenCodeSettingsConfigurable(project).apply {
@@ -81,15 +84,49 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
             assertEquals(1, resolveCalls.get())
             assertEquals("", settings.executablePath)
+            assertEquals(
+                OpenCodeExecutableResolutionState.NotFound,
+                OpenCodePlugin.getInstance(project).executableResolutionState,
+            )
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
     }
 
-    fun testApplySkipsResolveWhenNoSettingsChangeAndInfoAlreadyResolved() {
+    fun testApplySkipsResolveWhenPathBlankAndNotFoundAlreadyResolved() {
+        val settings = OpenCodeSettings.getInstance(project)
+        settings.executablePath = ""
+        OpenCodePlugin.getInstance(project).setExecutableResolutionState(OpenCodeExecutableResolutionState.NotFound)
+
+        val resolveCalls = AtomicInteger(0)
+        val configurable = OpenCodeSettingsConfigurable(project).apply {
+            executableResolver = {
+                resolveCalls.incrementAndGet()
+                null
+            }
+        }
+
+        try {
+            getOnEdt { configurable.createComponent() }
+            runOnEdt { configurable.apply() }
+
+            assertEquals(0, resolveCalls.get())
+            assertEquals("", settings.executablePath)
+            assertEquals(
+                OpenCodeExecutableResolutionState.NotFound,
+                OpenCodePlugin.getInstance(project).executableResolutionState,
+            )
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplySkipsResolveWhenNoSettingsChangeAndResolutionAlreadyResolved() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.executablePath = "C:/existing/opencode"
-        OpenCodePlugin.getInstance(project).openCodeInfo = OpenCodeInfo(settings.executablePath, "1.2.3")
+        OpenCodePlugin.getInstance(project).setExecutableResolutionState(
+            OpenCodeExecutableResolutionState.Resolved(OpenCodeInfo(settings.executablePath, "1.2.3"))
+        )
 
         val resolveCalls = AtomicInteger(0)
         val configurable = OpenCodeSettingsConfigurable(project).apply {

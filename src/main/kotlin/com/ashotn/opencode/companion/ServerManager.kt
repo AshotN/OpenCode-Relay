@@ -256,6 +256,19 @@ class ServerManager(
         }
     }
 
+    private fun buildWindowsCommand(executablePath: String, vararg args: String): String =
+        buildString {
+            append("\"")
+            append(executablePath)
+            append("\"")
+            args.forEach {
+                append(' ')
+                append("\"")
+                append(it)
+                append("\"")
+            }
+        }
+
     fun startServer(port: Int, executablePath: String) {
         val executable = File(executablePath)
         val isLaunchable = if (SystemInfo.isWindows) {
@@ -263,7 +276,6 @@ class ServerManager(
         } else {
             executable.isFile && executable.canExecute()
         }
-
         if (!isLaunchable) {
             project.showNotification(
                 "Failed to start OpenCode Companion",
@@ -284,7 +296,13 @@ class ServerManager(
             }
 
             try {
-                val process = ProcessBuilder(executablePath, "serve", "--port", port.toString())
+                val command =
+                    if (SystemInfo.isWindows) {
+                        listOf("cmd", "/c", buildWindowsCommand(executablePath, "serve", "--port", port.toString()))
+                    } else {
+                        listOf(executablePath, "serve", "--port", port.toString())
+                    }
+                val process = ProcessBuilder(command)
                     .inheritIO()
                     .apply {
                         val basePath = project.basePath

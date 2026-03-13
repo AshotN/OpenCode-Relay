@@ -33,7 +33,6 @@ object OpenCodeChecker {
                     appData?.let {
                         add("$it\\npm\\opencode")
                         add("$it\\npm\\opencode.cmd")
-                        add("$it\\npm\\opencode.ps1")
                     }
                 }
             }
@@ -85,7 +84,7 @@ object OpenCodeChecker {
         val file = File(normalizedUserProvidedPath)
         if (!isCandidateFile(file)) {
             log.warn(
-                "OpenCode executable at user-provided path is not runnable: $normalizedUserProvidedPath " +
+                "OpenCode executable at user-provided path is invalid: $normalizedUserProvidedPath " +
                         "(exists=${file.exists()}, isFile=${file.isFile}, canExecute=${file.canExecute()}, os=${SystemInfo.OS_NAME})"
             )
             return null
@@ -101,7 +100,7 @@ object OpenCodeChecker {
     private fun autoResolve(): OpenCodeInfo? {
         val executableNames =
             if (SystemInfo.isWindows) {
-                listOf("opencode", "opencode.cmd", "opencode.ps1", "opencode-cli.exe")
+                listOf("opencode", "opencode.cmd", "opencode-cli.exe")
             } else {
                 listOf("opencode")
             }

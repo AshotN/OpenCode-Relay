@@ -1,5 +1,6 @@
 package com.ashotn.opencode.companion.toolwindow
 
+import com.ashotn.opencode.companion.OpenCodeExecutableResolutionState
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
@@ -210,11 +211,10 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun buildContent() {
-        val executableInfo = plugin.openCodeInfo
-        val screen = when {
-            executableInfo != null -> InstalledPanel(project, slotDisposable, executableInfo)
-            plugin.isExecutableResolutionCompleted -> NotInstalledPanel()
-            else -> ResolvingExecutablePanel()
+        val screen = when (val state = plugin.executableResolutionState) {
+            OpenCodeExecutableResolutionState.Resolving -> ResolvingExecutablePanel()
+            OpenCodeExecutableResolutionState.NotFound -> NotInstalledPanel()
+            is OpenCodeExecutableResolutionState.Resolved -> InstalledPanel(project, slotDisposable, state.info)
         }
 
         // Replace the content card with the new screen

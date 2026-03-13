@@ -1,8 +1,8 @@
 package com.ashotn.opencode.companion.settings
 
 import com.ashotn.opencode.companion.OpenCodeChecker
+import com.ashotn.opencode.companion.OpenCodeExecutableResolutionState
 import com.ashotn.opencode.companion.OpenCodeInfo
-import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.core.EditorDiffRenderer
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
@@ -136,7 +136,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settings = OpenCodeSettings.getInstance(project)
         val plugin = OpenCodePlugin.getInstance(project)
         val oldSettings = snapshot(settings.state)
-        val oldOpenCodeInfo = plugin.openCodeInfo
+        val oldResolutionState = plugin.executableResolutionState
 
         super.apply() // Pushes UI values into pendingState.
 
@@ -146,21 +146,25 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val newPath = newSettings.executablePath
         val portChanged = newPort != oldSettings.serverPort
         val pathChanged = newPath != oldSettings.executablePath
-        val shouldResolveInfo = pathChanged || (newPath.isBlank() && oldOpenCodeInfo == null)
-        if (!settingsChanged && !shouldResolveInfo) return
+        val shouldUpdateExecutableResolution =
+            pathChanged || (newPath.isBlank() && oldResolutionState == OpenCodeExecutableResolutionState.Resolving)
+        if (!settingsChanged && !shouldUpdateExecutableResolution) return
 
         val mustConfirmStop = plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged)
         val mustReattach = plugin.isRunning && !plugin.ownsProcess && portChanged
 
-        var resolvedInfo = oldOpenCodeInfo
-        if (shouldResolveInfo) {
+        var resolvedState = oldResolutionState
+        if (shouldUpdateExecutableResolution) {
             val userProvidedPath = newPath.takeIf { it.isNotBlank() }
-            resolvedInfo = resolveExecutableInfo(userProvidedPath)
-            if (userProvidedPath != null && resolvedInfo == null) {
+            val detectedExecutableInfo = detectExecutableInfo(userProvidedPath)
+            if (userProvidedPath != null && detectedExecutableInfo == null) {
                 throw ConfigurationException(
                     "Could not find a valid OpenCode executable. Check the path and try again.",
                 )
             }
+            resolvedState =
+                detectedExecutableInfo?.let(OpenCodeExecutableResolutionState::Resolved)
+                    ?: OpenCodeExecutableResolutionState.NotFound
         }
 
         if (mustConfirmStop && !confirmStopServerRestart()) {
@@ -175,10 +179,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             mustReattach -> plugin.reattach(newPort)
         }
 
-        if (shouldResolveInfo && resolvedInfo != oldOpenCodeInfo) {
-            plugin.openCodeInfo = resolvedInfo
-            project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
-                .onOpenCodeInfoChanged(resolvedInfo)
+        if (shouldUpdateExecutableResolution && resolvedState != oldResolutionState) {
+            plugin.setExecutableResolutionState(resolvedState)
         }
 
         if (settingsChanged) {
@@ -189,17 +191,17 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         EditorDiffRenderer.getInstance(project).onSettingsChanged()
     }
 
-    private fun resolveExecutableInfo(userProvidedPath: String?): OpenCodeInfo? {
-        val resolvedRef = AtomicReference<OpenCodeInfo?>()
+    private fun detectExecutableInfo(userProvidedPath: String?): OpenCodeInfo? {
+        val detectedInfoRef = AtomicReference<OpenCodeInfo?>()
         ProgressManager.getInstance().runProcessWithProgressSynchronously(
             {
-                resolvedRef.set(executableResolver(userProvidedPath))
+                detectedInfoRef.set(executableResolver(userProvidedPath))
             },
             "Resolving OpenCode...",
             false,
             project,
         )
-        return resolvedRef.get()
+        return detectedInfoRef.get()
     }
 
     private fun confirmStopServerRestart(): Boolean =
