@@ -2,6 +2,7 @@ package com.ashotn.opencode.companion.toolwindow
 
 import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
+import com.ashotn.opencode.companion.ResolvedInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
@@ -16,12 +17,11 @@ import java.awt.BorderLayout
 import java.awt.CardLayout
 import java.awt.GridBagConstraints
 import java.awt.GridBagLayout
-import java.awt.Insets
 import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 
-class InstalledPanel(project: Project, parentDisposable: Disposable, private val resolvedExecutableInfo: OpenCodeInfo) :
+class InstalledPanel(private val project: Project, parentDisposable: Disposable, private var resolvedExecutableInfo: OpenCodeInfo) :
     JPanel(BorderLayout()), Disposable, ServerStateListener {
 
     companion object {
@@ -30,6 +30,8 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
     }
 
     private val portStatusLabel = JBLabel("Checking…", SwingConstants.CENTER)
+    private val subtitleLabel = JBLabel("", SwingConstants.CENTER)
+    private val pathLabel = JBLabel("", SwingConstants.CENTER)
     private val startButton = JButton("Start OpenCode", AllIcons.Actions.Execute)
     private val stopButton = JButton("Stop OpenCode", AllIcons.Actions.Suspend)
     private val buttonCardLayout = CardLayout()
@@ -69,15 +71,15 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
                 insets = JBUI.insets(JBUI.scale(4), pad, JBUI.scale(4), pad)
             }
 
-            val versionSuffix = if (resolvedExecutableInfo.version.isNotBlank()) "(${resolvedExecutableInfo.version})" else ""
-            val subtitleLabel = JBLabel("OpenCode$versionSuffix is installed and ready to use.", SwingConstants.CENTER).apply {
+            subtitleLabel.apply {
                 font = base.deriveFont(base.size * 1.1f)
                 foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
-            val pathLabel = JBLabel(resolvedExecutableInfo.path, SwingConstants.CENTER).apply {
+            pathLabel.apply {
                 font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
                 foreground = JBUI.CurrentTheme.Label.disabledForeground()
             }
+            updateInfoLabels()
 
             gbc.gridy = 0; add(subtitleLabel, gbc)
             gbc.gridy = 1; gbc.insets = JBUI.insets(JBUI.scale(2), pad, JBUI.scale(16), pad)
@@ -98,7 +100,7 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
             stopButton.isEnabled = true
             portStatusLabel.text = "Starting…"
             portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
-            plugin.startServer(settings.serverPort, resolvedExecutableInfo.path)
+            plugin.startServer(settings.serverPort)
         }
         stopButton.addActionListener {
             stopButton.isEnabled = false
@@ -112,7 +114,23 @@ class InstalledPanel(project: Project, parentDisposable: Disposable, private val
         plugin.checkPort(settings.serverPort)
         plugin.startPolling(settings.serverPort)
 
+        project.messageBus.connect(this).subscribe(
+            ResolvedInfoChangedListener.TOPIC,
+            ResolvedInfoChangedListener { info ->
+                if (info != null) {
+                    resolvedExecutableInfo = info
+                    updateInfoLabels()
+                }
+            }
+        )
+
         Disposer.register(parentDisposable, this)
+    }
+
+    private fun updateInfoLabels() {
+        val versionSuffix = if (resolvedExecutableInfo.version.isNotBlank()) "(${resolvedExecutableInfo.version})" else ""
+        subtitleLabel.text = "OpenCode$versionSuffix is installed and ready to use."
+        pathLabel.text = resolvedExecutableInfo.path
     }
 
     override fun onStateChanged(state: ServerState) {

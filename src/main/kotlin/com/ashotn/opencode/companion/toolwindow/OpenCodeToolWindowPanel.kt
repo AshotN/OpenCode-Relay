@@ -1,7 +1,8 @@
 package com.ashotn.opencode.companion.toolwindow
 
-import com.ashotn.opencode.companion.OpenCodeChecker
+import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
+import com.ashotn.opencode.companion.ResolvedInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
 import com.ashotn.opencode.companion.core.DiffHunksChangedListener
@@ -105,6 +106,18 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
         plugin.addListener(serverStateListener)
 
+        project.messageBus.connect(this).subscribe(
+            ResolvedInfoChangedListener.TOPIC,
+            ResolvedInfoChangedListener { _ ->
+                swapTuiPanelIfEngineChanged()
+                // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
+                Disposer.dispose(slotDisposable)
+                slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
+                Disposer.register(this, slotDisposable)
+                buildContent()
+            }
+        )
+
         buildContent()
     }
 
@@ -162,15 +175,6 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         tuiPanel.focusTerminal()
     }
 
-    fun refresh() {
-        swapTuiPanelIfEngineChanged()
-        // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
-        Disposer.dispose(slotDisposable)
-        slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
-        Disposer.register(this, slotDisposable)
-        buildContent()
-    }
-
     /**
      * If the user changed the terminal engine in settings, tears down the current
      * [tuiPanel], swaps in a fresh instance backed by the new engine, and re-wires
@@ -194,26 +198,19 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun buildContent() {
-        val userProvidedPath = OpenCodeSettings.getInstance(project).executablePath
-        // findExecutable() performs filesystem I/O (PATH scan, File.isFile, File.canExecute,
-        // process spawn for --version). Run it on a pooled thread to avoid blocking the EDT.
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
-            ApplicationManager.getApplication().invokeLater {
-                val screen = if (executableInfo != null) InstalledPanel(
-                    project,
-                    slotDisposable,
-                    executableInfo
-                ) else NotInstalledPanel()
-                // Replace the content card with the new screen
-                val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
-                if (existingContent != null) outerCardPanel.remove(existingContent)
-                outerCardPanel.add(screen, CARD_CONTENT)
-                syncCard()
-                revalidate()
-                repaint()
-            }
-        }
+        val executableInfo = plugin.resolvedInfo
+        val screen = if (executableInfo != null) InstalledPanel(
+            project,
+            slotDisposable,
+            executableInfo
+        ) else NotInstalledPanel()
+        // Replace the content card with the new screen
+        val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
+        if (existingContent != null) outerCardPanel.remove(existingContent)
+        outerCardPanel.add(screen, CARD_CONTENT)
+        syncCard()
+        revalidate()
+        repaint()
     }
 
     /**
