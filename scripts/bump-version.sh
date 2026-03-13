@@ -62,7 +62,13 @@ fi
 echo "Bumping $CURRENT_VERSION → $NEW_VERSION"
 
 # Update gradle.properties
-sed -i "s/^pluginVersion=.*/pluginVersion=${NEW_VERSION}/" "$PROPS_FILE"
+if sed --version >/dev/null 2>&1; then
+  # GNU sed (Linux)
+  sed -i "s/^pluginVersion=.*/pluginVersion=${NEW_VERSION}/" "$PROPS_FILE"
+else
+  # BSD sed (macOS)
+  sed -i '' "s/^pluginVersion=.*/pluginVersion=${NEW_VERSION}/" "$PROPS_FILE"
+fi
 
 git add "$PROPS_FILE"
 git commit -m "chore: bump version to ${NEW_VERSION}"
