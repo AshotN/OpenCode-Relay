@@ -26,6 +26,7 @@
             key="configurable.opencode.displayName"
         />
         <notificationGroup id="OpenCode Companion" displayType="BALLOON" key="notification.group.opencode"/>
+        <backgroundPostStartupActivity implementation="com.ashotn.opencode.companion.OpenCodeStartupActivity"/>
     </extensions>
 
     <actions>

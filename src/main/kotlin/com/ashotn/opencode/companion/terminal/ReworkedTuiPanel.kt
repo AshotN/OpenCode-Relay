@@ -2,6 +2,7 @@
 
 package com.ashotn.opencode.companion.terminal
 
+import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.util.BuildUtils
 import com.ashotn.opencode.companion.util.serverUrl
@@ -66,9 +67,15 @@ class ReworkedTuiPanel(
         if (!BuildUtils.isEmbeddedTerminalSupported) return
 
         try {
+            val executablePath = OpenCodePlugin.getInstance(project).openCodeInfo?.path
+            if (executablePath.isNullOrBlank()) {
+                logger.warn("Skipping reworked terminal start because OpenCode executable is unresolved")
+                return
+            }
+
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val command = listOf(
-                "opencode",
+                executablePath,
                 "attach",
                 serverUrl(OpenCodeSettings.getInstance(project).serverPort),
             )

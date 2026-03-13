@@ -6,6 +6,7 @@ import com.ashotn.opencode.companion.util.showNotification
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -255,9 +256,27 @@ class ServerManager(
         }
     }
 
+    private fun buildWindowsCommand(executablePath: String, vararg args: String): String =
+        buildString {
+            append("\"")
+            append(executablePath)
+            append("\"")
+            args.forEach {
+                append(' ')
+                append("\"")
+                append(it)
+                append("\"")
+            }
+        }
+
     fun startServer(port: Int, executablePath: String) {
         val executable = File(executablePath)
-        if (!executable.isFile || !executable.canExecute()) {
+        val isLaunchable = if (SystemInfo.isWindows) {
+            executable.exists() && executable.isFile
+        } else {
+            executable.isFile && executable.canExecute()
+        }
+        if (!isLaunchable) {
             project.showNotification(
                 "Failed to start OpenCode Companion",
                 "OpenCode Companion executable is not valid or executable: $executablePath",
@@ -277,7 +296,13 @@ class ServerManager(
             }
 
             try {
-                val process = ProcessBuilder(executablePath, "serve", "--port", port.toString())
+                val command =
+                    if (SystemInfo.isWindows) {
+                        listOf("cmd", "/c", buildWindowsCommand(executablePath, "serve", "--port", port.toString()))
+                    } else {
+                        listOf(executablePath, "serve", "--port", port.toString())
+                    }
+                val process = ProcessBuilder(command)
                     .inheritIO()
                     .apply {
                         val basePath = project.basePath

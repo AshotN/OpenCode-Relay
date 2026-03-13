@@ -1,7 +1,8 @@
 package com.ashotn.opencode.companion.toolwindow
 
-import com.ashotn.opencode.companion.OpenCodeChecker
+import com.ashotn.opencode.companion.OpenCodeExecutableResolutionState
 import com.ashotn.opencode.companion.OpenCodePlugin
+import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
 import com.ashotn.opencode.companion.core.DiffHunksChangedListener
@@ -11,6 +12,7 @@ import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
+import com.ashotn.opencode.companion.settings.OpenCodeSettingsChangedListener
 import com.ashotn.opencode.companion.terminal.ClassicTuiPanel
 import com.ashotn.opencode.companion.terminal.ReworkedTuiPanel
 import com.ashotn.opencode.companion.terminal.TuiPanel
@@ -105,6 +107,25 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
         plugin.addListener(serverStateListener)
 
+        project.messageBus.connect(this).subscribe(
+            OpenCodeSettingsChangedListener.TOPIC,
+            OpenCodeSettingsChangedListener { _, _ ->
+                swapTuiPanelIfEngineChanged()
+                requestSyncCard()
+            }
+        )
+
+        project.messageBus.connect(this).subscribe(
+            OpenCodeInfoChangedListener.TOPIC,
+            OpenCodeInfoChangedListener { _ ->
+                // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
+                Disposer.dispose(slotDisposable)
+                slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
+                Disposer.register(this, slotDisposable)
+                buildContent()
+            }
+        )
+
         buildContent()
     }
 
@@ -123,16 +144,21 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         val inlineTerminal = serverReady && OpenCodeSettings.getInstance(project).inlineTerminalEnabled
         if (inlineTerminal) {
             tuiPanel.startIfNeeded()
-            // Restore the split whenever the divider is hidden (e.g. after a reset).
-            // Run after layout so the panel has a real height.
-            if (splitPane.dividerSize == 0) {
-                ApplicationManager.getApplication().invokeLater {
-                    val total = splitPane.height
-                    if (total > 0) {
-                        splitPane.dividerSize = JBUI.scale(2)
-                        splitPane.dividerLocation = (total * 0.25).toInt()
+            if (tuiPanel.isStarted) {
+                // Restore the split whenever the divider is hidden (e.g. after a reset).
+                // Run after layout so the panel has a real height.
+                if (splitPane.dividerSize == 0) {
+                    ApplicationManager.getApplication().invokeLater {
+                        val total = splitPane.height
+                        if (total > 0) {
+                            splitPane.dividerSize = JBUI.scale(2)
+                            splitPane.dividerLocation = (total * 0.25).toInt()
+                        }
                     }
                 }
+            } else {
+                splitPane.dividerSize = 0
+                splitPane.dividerLocation = Int.MAX_VALUE
             }
         } else {
             // Inline terminal disabled or server not running – stop any running widget
@@ -162,15 +188,6 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         tuiPanel.focusTerminal()
     }
 
-    fun refresh() {
-        swapTuiPanelIfEngineChanged()
-        // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
-        Disposer.dispose(slotDisposable)
-        slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
-        Disposer.register(this, slotDisposable)
-        buildContent()
-    }
-
     /**
      * If the user changed the terminal engine in settings, tears down the current
      * [tuiPanel], swaps in a fresh instance backed by the new engine, and re-wires
@@ -194,26 +211,19 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun buildContent() {
-        val userProvidedPath = OpenCodeSettings.getInstance(project).executablePath
-        // findExecutable() performs filesystem I/O (PATH scan, File.isFile, File.canExecute,
-        // process spawn for --version). Run it on a pooled thread to avoid blocking the EDT.
-        ApplicationManager.getApplication().executeOnPooledThread {
-            val executableInfo = OpenCodeChecker.findExecutable(userProvidedPath.takeIf { it.isNotBlank() })
-            ApplicationManager.getApplication().invokeLater {
-                val screen = if (executableInfo != null) InstalledPanel(
-                    project,
-                    slotDisposable,
-                    executableInfo
-                ) else NotInstalledPanel()
-                // Replace the content card with the new screen
-                val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
-                if (existingContent != null) outerCardPanel.remove(existingContent)
-                outerCardPanel.add(screen, CARD_CONTENT)
-                syncCard()
-                revalidate()
-                repaint()
-            }
+        val screen = when (val state = plugin.executableResolutionState) {
+            OpenCodeExecutableResolutionState.Resolving -> ResolvingExecutablePanel()
+            OpenCodeExecutableResolutionState.NotFound -> NotInstalledPanel()
+            is OpenCodeExecutableResolutionState.Resolved -> InstalledPanel(project, slotDisposable, state.info)
         }
+
+        // Replace the content card with the new screen
+        val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
+        if (existingContent != null) outerCardPanel.remove(existingContent)
+        outerCardPanel.add(screen, CARD_CONTENT)
+        syncCard()
+        revalidate()
+        repaint()
     }
 
     /**
