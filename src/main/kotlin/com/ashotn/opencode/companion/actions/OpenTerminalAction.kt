@@ -18,9 +18,11 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val running = OpenCodePlugin.getInstance(project).isRunning
+        val plugin = OpenCodePlugin.getInstance(project)
+        val running = plugin.isRunning
+        val hasExecutable = !plugin.openCodeInfo?.path.isNullOrBlank()
         e.presentation.icon = AllIcons.Debugger.Console
-        e.applyStrings(ActionStrings.OPEN_TERMINAL, running)
+        e.applyStrings(ActionStrings.OPEN_TERMINAL, running && hasExecutable)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
