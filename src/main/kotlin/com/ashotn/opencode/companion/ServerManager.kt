@@ -6,6 +6,7 @@ import com.ashotn.opencode.companion.util.showNotification
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.util.SystemInfo
 import java.io.File
 import java.net.InetAddress
 import java.net.InetSocketAddress
@@ -257,7 +258,13 @@ class ServerManager(
 
     fun startServer(port: Int, executablePath: String) {
         val executable = File(executablePath)
-        if (!executable.isFile || !executable.canExecute()) {
+        val isLaunchable = if (SystemInfo.isWindows) {
+            executable.exists() && executable.isFile
+        } else {
+            executable.isFile && executable.canExecute()
+        }
+
+        if (!isLaunchable) {
             project.showNotification(
                 "Failed to start OpenCode Companion",
                 "OpenCode Companion executable is not valid or executable: $executablePath",

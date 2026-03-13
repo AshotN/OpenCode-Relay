@@ -24,13 +24,17 @@ object OpenCodeChecker {
     private val osSpecificInstallLocations: List<String>
         get() = when {
             SystemInfo.isWindows -> {
-                val localAppData = System.getenv("LOCALAPPDATA")
-                if (localAppData.isNullOrBlank()) {
-                    emptyList()
-                } else {
-                    listOf(
-                        "$localAppData\\OpenCode\\opencode-cli.exe",
-                    )
+                val localAppData = System.getenv("LOCALAPPDATA")?.takeIf { it.isNotBlank() }
+                val appData = System.getenv("APPDATA")?.takeIf { it.isNotBlank() }
+                buildList {
+                    localAppData?.let {
+                        add("$it\\OpenCode\\opencode-cli.exe")
+                    }
+                    appData?.let {
+                        add("$it\\npm\\opencode")
+                        add("$it\\npm\\opencode.cmd")
+                        add("$it\\npm\\opencode.ps1")
+                    }
                 }
             }
 
@@ -95,14 +99,25 @@ object OpenCodeChecker {
     }
 
     private fun autoResolve(): OpenCodeInfo? {
-        val executableName = if (SystemInfo.isWindows) "opencode-cli.exe" else "opencode"
+        val executableNames =
+            if (SystemInfo.isWindows) {
+                listOf("opencode", "opencode.cmd", "opencode.ps1", "opencode-cli.exe")
+            } else {
+                listOf("opencode")
+            }
 
-        val pathEnv = System.getenv("PATH") ?: ""
-        for (dir in pathEnv.split(File.pathSeparator)) {
-            if (dir.isBlank()) continue
-            val candidate = File(dir, executableName)
-            if (isCandidateFile(candidate)) {
-                validateCandidate(candidate.absolutePath)?.let { return it }
+        val pathEnv = System.getenv("PATH")
+        if (pathEnv.isNullOrBlank()) {
+            log.debug("PATH environment variable is empty; skipping PATH scan")
+        } else {
+            for (dir in pathEnv.split(File.pathSeparator)) {
+                if (dir.isBlank()) continue
+                for (executableName in executableNames) {
+                    val candidate = File(dir, executableName)
+                    if (isCandidateFile(candidate)) {
+                        validateCandidate(candidate.absolutePath)?.let { return it }
+                    }
+                }
             }
         }
 

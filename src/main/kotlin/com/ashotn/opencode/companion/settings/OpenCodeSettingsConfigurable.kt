@@ -2,8 +2,8 @@ package com.ashotn.opencode.companion.settings
 
 import com.ashotn.opencode.companion.OpenCodeChecker
 import com.ashotn.opencode.companion.OpenCodeInfo
-import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
+import com.ashotn.opencode.companion.OpenCodePlugin
 import com.ashotn.opencode.companion.core.EditorDiffRenderer
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.util.BuildUtils
@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicReference
 
 class OpenCodeSettingsConfigurable(private val project: Project) :
     BoundConfigurable("OpenCode Companion") {
+
+    internal var executableResolver: (String?) -> OpenCodeInfo? = { path -> OpenCodeChecker.findExecutable(path) }
 
     override fun createPanel(): DialogPanel {
         val settings = OpenCodeSettings.getInstance(project)
@@ -126,6 +128,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settings = OpenCodeSettings.getInstance(project)
         val plugin = OpenCodePlugin.getInstance(project)
         val oldSettings = snapshot(settings)
+        val oldOpenCodeInfo = plugin.openCodeInfo
 
         super.apply()
 
@@ -134,36 +137,37 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val newPath = newSettings.executablePath
         val portChanged = newPort != oldSettings.serverPort
         val pathChanged = newPath != oldSettings.executablePath
+        val shouldResolveInfo = pathChanged || (newPath.isBlank() && oldOpenCodeInfo == null)
         val portOrPathChanged = portChanged || pathChanged
         val serverRunning = plugin.isRunning
         val owned = plugin.ownsProcess
         val mustConfirmStop = serverRunning && owned && portOrPathChanged
         val mustReattach = serverRunning && !owned && portChanged
 
+        var resolvedInfo: OpenCodeInfo? = oldOpenCodeInfo
+        var openCodeInfoResolved = false
 
-        if (pathChanged) {
+        if (shouldResolveInfo) {
             val userProvidedPath = newPath.takeIf { it.isNotBlank() }
             val resolvedRef = AtomicReference<OpenCodeInfo?>()
             ProgressManager.getInstance().runProcessWithProgressSynchronously(
                 {
-                    resolvedRef.set(OpenCodeChecker.findExecutable(userProvidedPath))
+                    resolvedRef.set(executableResolver(userProvidedPath))
                 },
                 "Resolving OpenCode\u2026",
                 false,
                 project
             )
 
-            val info = resolvedRef.get()
-            if (info == null && userProvidedPath != null) {
+            resolvedInfo = resolvedRef.get()
+            if (isExecutableResolutionFailureBlocking(userProvidedPath, resolvedInfo)) {
                 restore(settings, oldSettings)
                 throw ConfigurationException(
                     "Could not find a valid OpenCode executable. Check the path and try again."
                 )
             }
 
-            plugin.openCodeInfo = info
-            project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
-                .onOpenCodeInfoChanged(info)
+            openCodeInfoResolved = true
         }
 
         if (mustConfirmStop) {
@@ -178,8 +182,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             ) == Messages.YES
 
             if (!confirmed) {
-                settings.serverPort = oldSettings.serverPort
-                settings.executablePath = oldSettings.executablePath
+                restore(settings, oldSettings)
                 reset()
                 return
             }
@@ -188,6 +191,12 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
         } else if (mustReattach) {
             plugin.reattach(newPort)
+        }
+
+        if (openCodeInfoResolved && resolvedInfo != oldOpenCodeInfo) {
+            plugin.openCodeInfo = resolvedInfo
+            project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
+                .onOpenCodeInfoChanged(resolvedInfo)
         }
 
         val finalSettings = snapshot(settings)
@@ -219,3 +228,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         terminalEngine = settings.terminalEngine,
     )
 }
+
+internal fun isExecutableResolutionFailureBlocking(userProvidedPath: String?, resolvedInfo: OpenCodeInfo?): Boolean =
+    userProvidedPath != null && resolvedInfo == null
