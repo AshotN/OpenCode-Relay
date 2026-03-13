@@ -12,8 +12,8 @@ object OpenCodeChecker {
 
     private val log = logger<OpenCodeChecker>()
     private val requiredHelpCommands = listOf("opencode serve", "opencode attach")
-    private const val commandTimeoutSeconds = 10L
-    private const val outputJoinTimeoutMillis = 1_000L
+    private const val COMMAND_TIMEOUT_SECONDS = 10L
+    private const val OUTPUT_JOIN_TIMEOUT_MILLIS = 1_000L
 
     private data class CommandResult(
         val exitCode: Int?,
@@ -76,10 +76,7 @@ object OpenCodeChecker {
      * candidate that passes all validation gates is returned.
      */
     fun findExecutable(userProvidedPath: String? = null): OpenCodeInfo? {
-        val normalizedUserProvidedPath = normalizeUserProvidedPath(userProvidedPath)
-        if (normalizedUserProvidedPath == null) {
-            return autoResolve()
-        }
+        val normalizedUserProvidedPath = normalizeUserProvidedPath(userProvidedPath) ?: return autoResolve()
 
         val file = File(normalizedUserProvidedPath)
         if (!isCandidateFile(file)) {
@@ -208,16 +205,16 @@ object OpenCodeChecker {
                 output = process.inputStream.bufferedReader().use { it.readText() }
             }
 
-            val completed = process.waitFor(commandTimeoutSeconds, TimeUnit.SECONDS)
+            val completed = process.waitFor(COMMAND_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             if (!completed) {
                 process.destroyForcibly()
                 process.waitFor(1, TimeUnit.SECONDS)
                 runCatching { process.inputStream.close() }
-                readerThread.join(outputJoinTimeoutMillis)
+                readerThread.join(OUTPUT_JOIN_TIMEOUT_MILLIS)
                 return CommandResult(exitCode = null, output = output.trim(), timedOut = true)
             }
 
-            readerThread.join(outputJoinTimeoutMillis)
+            readerThread.join(OUTPUT_JOIN_TIMEOUT_MILLIS)
             if (readerThread.isAlive) {
                 log.warn("OpenCode command output reader did not finish for: $path $arg")
             }
