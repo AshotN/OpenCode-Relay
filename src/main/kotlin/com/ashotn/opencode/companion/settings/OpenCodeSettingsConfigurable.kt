@@ -3,7 +3,7 @@ package com.ashotn.opencode.companion.settings
 import com.ashotn.opencode.companion.OpenCodeChecker
 import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
-import com.ashotn.opencode.companion.ResolvedInfoChangedListener
+import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.core.EditorDiffRenderer
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.util.BuildUtils
@@ -94,54 +94,58 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     override fun apply() {
         val settings = OpenCodeSettings.getInstance(project)
         val plugin = OpenCodePlugin.getInstance(project)
+        val oldSettings = snapshot(settings)
 
-        // 1. Snapshot old values before the UI writes them.
-        val oldPort = settings.serverPort
-        val oldPath = settings.executablePath
-
-        // Write the UI values to settings so we can read the new values.
         super.apply()
 
-        val newPort = settings.serverPort
-        val newPath = settings.executablePath
-
-        // 2. Re-resolve the executable with a modal spinner (~3 s max).
-        val resolvedRef = AtomicReference<OpenCodeInfo?>()
-        ProgressManager.getInstance().runProcessWithProgressSynchronously(
-            {
-                resolvedRef.set(
-                    OpenCodeChecker.findExecutable(newPath.takeIf { it.isNotBlank() })
-                )
-            },
-            "Resolving OpenCode\u2026",
-            false,
-            project
-        )
-
-        val info = resolvedRef.get()
-
-        // 3. If resolution failed, show error. Settings are already written but
-        //    the UI will show NotInstalledPanel via the topic.
-        if (info == null) {
-            Messages.showErrorDialog(
-                project,
-                "Could not find a valid OpenCode executable. Check the path and try again.",
-                "OpenCode Resolution Failed"
-            )
-            // Publish null so the tool window transitions to NotInstalledPanel.
-            plugin.resolvedInfo = null
-            project.messageBus.syncPublisher(ResolvedInfoChangedListener.TOPIC)
-                .onResolvedInfoChanged(null)
-            EditorDiffRenderer.getInstance(project).onSettingsChanged()
-            return
-        }
-
-        // 4. If we own the process and port/path changed, warn the user.
-        val portOrPathChanged = newPort != oldPort || newPath != oldPath
+        val newSettings = snapshot(settings)
+        val newPort = newSettings.serverPort
+        val newPath = newSettings.executablePath
+        val portChanged = newPort != oldSettings.serverPort
+        val pathChanged = newPath != oldSettings.executablePath
+        val portOrPathChanged = portChanged || pathChanged
         val serverRunning = plugin.isRunning
         val owned = plugin.ownsProcess
+        val mustConfirmStop = serverRunning && owned && portOrPathChanged
+        val mustReattach = serverRunning && !owned && portChanged
 
-        if (serverRunning && owned && portOrPathChanged) {
+
+        if (pathChanged) {
+            val resolvedRef = AtomicReference<OpenCodeInfo?>()
+            ProgressManager.getInstance().runProcessWithProgressSynchronously(
+                {
+                    resolvedRef.set(
+                        OpenCodeChecker.findExecutable(newPath.takeIf { it.isNotBlank() })
+                    )
+                },
+                "Resolving OpenCode\u2026",
+                false,
+                project
+            )
+
+            val info = resolvedRef.get()
+            if (info == null) {
+                Messages.showErrorDialog(
+                    project,
+                    "Could not find a valid OpenCode executable. Check the path and try again.",
+                    "OpenCode Resolution Failed"
+                )
+                plugin.openCodeInfo = null
+                project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
+                    .onOpenCodeInfoChanged(null)
+                if (newSettings != oldSettings) {
+                    project.messageBus.syncPublisher(OpenCodeSettingsChangedListener.TOPIC)
+                        .onSettingsChanged(oldSettings, newSettings)
+                }
+                EditorDiffRenderer.getInstance(project).onSettingsChanged()
+                return
+            }
+            plugin.openCodeInfo = info
+            project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
+                .onOpenCodeInfoChanged(info)
+        }
+
+        if (mustConfirmStop) {
             val confirmed = Messages.showYesNoDialog(
                 project,
                 "The OpenCode server is currently running. Applying these changes will stop it. " +
@@ -153,29 +157,34 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             ) == Messages.YES
 
             if (!confirmed) {
-                // Revert settings to old values and re-resolve.
-                settings.serverPort = oldPort
-                settings.executablePath = oldPath
+                settings.serverPort = oldSettings.serverPort
+                settings.executablePath = oldSettings.executablePath
                 reset()
                 return
             }
-        }
 
-        // 6. Publish the freshly resolved info to the topic.
-        plugin.resolvedInfo = info
-        project.messageBus.syncPublisher(ResolvedInfoChangedListener.TOPIC)
-            .onResolvedInfoChanged(info)
-
-        // 7. If we owned the process and user confirmed stop → stop the server.
-        if (serverRunning && owned && portOrPathChanged) {
             plugin.stopServer()
+
+        } else if (mustReattach) {
+            plugin.reattach(newPort)
         }
 
-        // 8. If we don't own the process → re-attach to the new port.
-        if (serverRunning && !owned && newPort != oldPort) {
-            plugin.reattach(newPort)
+        val finalSettings = snapshot(settings)
+        if (finalSettings != oldSettings) {
+            project.messageBus.syncPublisher(OpenCodeSettingsChangedListener.TOPIC)
+                .onSettingsChanged(oldSettings, finalSettings)
         }
 
         EditorDiffRenderer.getInstance(project).onSettingsChanged()
     }
+
+    private fun snapshot(settings: OpenCodeSettings): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
+        serverPort = settings.serverPort,
+        executablePath = settings.executablePath,
+        inlineDiffEnabled = settings.inlineDiffEnabled,
+        diffTraceEnabled = settings.diffTraceEnabled,
+        diffTraceHistoryEnabled = settings.diffTraceHistoryEnabled,
+        inlineTerminalEnabled = settings.inlineTerminalEnabled,
+        terminalEngine = settings.terminalEngine,
+    )
 }

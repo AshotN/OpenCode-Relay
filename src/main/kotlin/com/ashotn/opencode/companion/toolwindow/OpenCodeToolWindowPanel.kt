@@ -1,8 +1,7 @@
 package com.ashotn.opencode.companion.toolwindow
 
-import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
-import com.ashotn.opencode.companion.ResolvedInfoChangedListener
+import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
 import com.ashotn.opencode.companion.core.DiffHunksChangedListener
@@ -12,6 +11,7 @@ import com.ashotn.opencode.companion.ipc.PermissionChangedListener
 import com.ashotn.opencode.companion.permission.OpenCodePermissionService
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
+import com.ashotn.opencode.companion.settings.OpenCodeSettingsChangedListener
 import com.ashotn.opencode.companion.terminal.ClassicTuiPanel
 import com.ashotn.opencode.companion.terminal.ReworkedTuiPanel
 import com.ashotn.opencode.companion.terminal.TuiPanel
@@ -107,9 +107,16 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         plugin.addListener(serverStateListener)
 
         project.messageBus.connect(this).subscribe(
-            ResolvedInfoChangedListener.TOPIC,
-            ResolvedInfoChangedListener { _ ->
+            OpenCodeSettingsChangedListener.TOPIC,
+            OpenCodeSettingsChangedListener { _, _ ->
                 swapTuiPanelIfEngineChanged()
+                requestSyncCard()
+            }
+        )
+
+        project.messageBus.connect(this).subscribe(
+            OpenCodeInfoChangedListener.TOPIC,
+            OpenCodeInfoChangedListener { _ ->
                 // Dispose and recreate the slot so the old InstalledPanel is eagerly cleaned up.
                 Disposer.dispose(slotDisposable)
                 slotDisposable = Disposer.newDisposable("OpenCodeToolWindowPanel.slot")
@@ -198,7 +205,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun buildContent() {
-        val executableInfo = plugin.resolvedInfo
+        val executableInfo = plugin.openCodeInfo
         val screen = if (executableInfo != null) InstalledPanel(
             project,
             slotDisposable,

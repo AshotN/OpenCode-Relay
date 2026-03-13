@@ -2,10 +2,11 @@ package com.ashotn.opencode.companion.toolwindow
 
 import com.ashotn.opencode.companion.OpenCodeInfo
 import com.ashotn.opencode.companion.OpenCodePlugin
-import com.ashotn.opencode.companion.ResolvedInfoChangedListener
+import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.ServerState
 import com.ashotn.opencode.companion.ServerStateListener
 import com.ashotn.opencode.companion.settings.OpenCodeSettings
+import com.ashotn.opencode.companion.settings.OpenCodeSettingsChangedListener
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.project.Project
@@ -21,7 +22,11 @@ import javax.swing.JButton
 import javax.swing.JPanel
 import javax.swing.SwingConstants
 
-class InstalledPanel(private val project: Project, parentDisposable: Disposable, private var resolvedExecutableInfo: OpenCodeInfo) :
+class InstalledPanel(
+    project: Project,
+    parentDisposable: Disposable,
+    private var openCodeInfo: OpenCodeInfo
+) :
     JPanel(BorderLayout()), Disposable, ServerStateListener {
 
     companion object {
@@ -115,12 +120,23 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
         plugin.startPolling(settings.serverPort)
 
         project.messageBus.connect(this).subscribe(
-            ResolvedInfoChangedListener.TOPIC,
-            ResolvedInfoChangedListener { info ->
+            OpenCodeInfoChangedListener.TOPIC,
+            OpenCodeInfoChangedListener { info ->
                 if (info != null) {
-                    resolvedExecutableInfo = info
+                    openCodeInfo = info
                     updateInfoLabels()
                 }
+            }
+        )
+
+        project.messageBus.connect(this).subscribe(
+            OpenCodeSettingsChangedListener.TOPIC,
+            OpenCodeSettingsChangedListener { oldSettings, newSettings ->
+                if (oldSettings.serverPort != newSettings.serverPort) {
+                    plugin.startPolling(newSettings.serverPort)
+                    plugin.checkPort(newSettings.serverPort)
+                }
+                onStateChanged(plugin.serverState)
             }
         )
 
@@ -128,9 +144,10 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
     }
 
     private fun updateInfoLabels() {
-        val versionSuffix = if (resolvedExecutableInfo.version.isNotBlank()) "(${resolvedExecutableInfo.version})" else ""
+        val versionSuffix =
+            if (openCodeInfo.version.isNotBlank()) "(${openCodeInfo.version})" else ""
         subtitleLabel.text = "OpenCode$versionSuffix is installed and ready to use."
-        pathLabel.text = resolvedExecutableInfo.path
+        pathLabel.text = openCodeInfo.path
     }
 
     override fun onStateChanged(state: ServerState) {
@@ -141,6 +158,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 buttonPanel.isVisible = false
             }
+
             ServerState.STARTING -> {
                 portStatusLabel.text = "Starting on port $port…"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
@@ -148,6 +166,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
                 buttonCardLayout.show(buttonPanel, CARD_STOP)
                 buttonPanel.isVisible = true
             }
+
             ServerState.READY -> {
                 portStatusLabel.text = "OpenCode is running on port $port"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.foreground()
@@ -158,6 +177,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
                 }
                 buttonPanel.isVisible = owned
             }
+
             ServerState.STOPPING -> {
                 portStatusLabel.text = "Stopping OpenCode on port $port..."
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
@@ -165,6 +185,7 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
                 buttonCardLayout.show(buttonPanel, CARD_STOP)
                 buttonPanel.isVisible = true
             }
+
             ServerState.STOPPED -> {
                 portStatusLabel.text = "OpenCode is not running on port $port"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
@@ -172,11 +193,13 @@ class InstalledPanel(private val project: Project, parentDisposable: Disposable,
                 buttonCardLayout.show(buttonPanel, CARD_START)
                 buttonPanel.isVisible = true
             }
+
             ServerState.PORT_CONFLICT -> {
                 portStatusLabel.text = "Port $port is in use by another process"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
                 buttonPanel.isVisible = false
             }
+
             ServerState.RESETTING -> {
                 portStatusLabel.text = "Resetting OpenCode Companion…"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()

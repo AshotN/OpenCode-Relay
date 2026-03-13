@@ -46,23 +46,23 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     // --- Resolved executable info ---
 
     @Volatile
-    var resolvedInfo: OpenCodeInfo? = null
+    var openCodeInfo: OpenCodeInfo? = null
 
     /**
      * Runs [OpenCodeChecker.findExecutable] using the current settings path,
-     * stores the result in [resolvedInfo], and publishes the change on the
-     * project message bus via [ResolvedInfoChangedListener.TOPIC].
+     * stores the result in [openCodeInfo], and publishes the change on the
+     * project message bus via [OpenCodeInfoChangedListener.TOPIC].
      *
      * Safe to call from any thread; the topic is published on the EDT.
      */
     fun resolveExecutable() {
         val userPath = OpenCodeSettings.getInstance(project).executablePath.takeIf { it.isNotBlank() }
         val info = OpenCodeChecker.findExecutable(userPath)
-        resolvedInfo = info
+        openCodeInfo = info
         ApplicationManager.getApplication().invokeLater {
             if (!project.isDisposed) {
-                project.messageBus.syncPublisher(ResolvedInfoChangedListener.TOPIC)
-                    .onResolvedInfoChanged(info)
+                project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
+                    .onOpenCodeInfoChanged(info)
             }
         }
     }
@@ -79,9 +79,9 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     fun checkPort(port: Int) = serverManager.checkPort(port)
 
     fun startServer(port: Int) {
-        val info = resolvedInfo
+        val info = openCodeInfo
         if (info == null) {
-            log.warn("startServer() called but resolvedInfo is null")
+            log.warn("startServer() called but openCodeInfo is null")
             return
         }
         serverManager.startServer(port, info.path)
