@@ -46,7 +46,17 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     // --- Resolved executable info ---
 
     @Volatile
+    private var executableResolutionCompleted: Boolean = false
+
+    @Volatile
     var openCodeInfo: OpenCodeInfo? = null
+        set(value) {
+            field = value
+            executableResolutionCompleted = true
+        }
+
+    val isExecutableResolutionCompleted: Boolean
+        get() = executableResolutionCompleted
 
     /**
      * Runs [OpenCodeChecker.findExecutable] using the current settings path,

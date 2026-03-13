@@ -143,16 +143,21 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         val inlineTerminal = serverReady && OpenCodeSettings.getInstance(project).inlineTerminalEnabled
         if (inlineTerminal) {
             tuiPanel.startIfNeeded()
-            // Restore the split whenever the divider is hidden (e.g. after a reset).
-            // Run after layout so the panel has a real height.
-            if (splitPane.dividerSize == 0) {
-                ApplicationManager.getApplication().invokeLater {
-                    val total = splitPane.height
-                    if (total > 0) {
-                        splitPane.dividerSize = JBUI.scale(2)
-                        splitPane.dividerLocation = (total * 0.25).toInt()
+            if (tuiPanel.isStarted) {
+                // Restore the split whenever the divider is hidden (e.g. after a reset).
+                // Run after layout so the panel has a real height.
+                if (splitPane.dividerSize == 0) {
+                    ApplicationManager.getApplication().invokeLater {
+                        val total = splitPane.height
+                        if (total > 0) {
+                            splitPane.dividerSize = JBUI.scale(2)
+                            splitPane.dividerLocation = (total * 0.25).toInt()
+                        }
                     }
                 }
+            } else {
+                splitPane.dividerSize = 0
+                splitPane.dividerLocation = Int.MAX_VALUE
             }
         } else {
             // Inline terminal disabled or server not running – stop any running widget
@@ -206,11 +211,12 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
     private fun buildContent() {
         val executableInfo = plugin.openCodeInfo
-        val screen = if (executableInfo != null) InstalledPanel(
-            project,
-            slotDisposable,
-            executableInfo
-        ) else NotInstalledPanel()
+        val screen = when {
+            executableInfo != null -> InstalledPanel(project, slotDisposable, executableInfo)
+            plugin.isExecutableResolutionCompleted -> NotInstalledPanel()
+            else -> ResolvingExecutablePanel()
+        }
+
         // Replace the content card with the new screen
         val existingContent = outerCardPanel.components.firstOrNull { it != pendingFilesPanel }
         if (existingContent != null) outerCardPanel.remove(existingContent)

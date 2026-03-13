@@ -7,11 +7,16 @@ import com.ashotn.opencode.companion.OpenCodeInfoChangedListener
 import com.ashotn.opencode.companion.core.EditorDiffRenderer
 import com.ashotn.opencode.companion.settings.OpenCodeSettings.TerminalEngine
 import com.ashotn.opencode.companion.util.BuildUtils
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundConfigurable
+import com.intellij.openapi.options.ConfigurationException
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.Messages
+import com.intellij.openapi.ui.TextFieldWithBrowseButton
+import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
 import java.util.concurrent.atomic.AtomicReference
 
@@ -22,8 +27,34 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settings = OpenCodeSettings.getInstance(project)
         return panel {
             group("Executable") {
+                val executablePathField = TextFieldWithBrowseButton().apply {
+                    addBrowseFolderListener(
+                        project,
+                        FileChooserDescriptorFactory.createSingleFileNoJarsDescriptor()
+                            .withTitle("Select OpenCode Executable")
+                            .withDescription("Choose the opencode executable file.")
+                    )
+                }
+                run {
+                    val executableTextField = executablePathField.textField as? JBTextField ?: return@run
+                    val resolvedPath = OpenCodePlugin.getInstance(project).openCodeInfo?.path
+                    if (!resolvedPath.isNullOrBlank()) {
+                        executableTextField.emptyText.text = resolvedPath
+                        return@run
+                    }
+
+                    ApplicationManager.getApplication().executeOnPooledThread {
+                        val autoResolvedPath = OpenCodeChecker.findExecutable()?.path ?: return@executeOnPooledThread
+                        ApplicationManager.getApplication().invokeLater {
+                            if (project.isDisposed) return@invokeLater
+                            if (executablePathField.text.isBlank()) {
+                                executableTextField.emptyText.text = autoResolvedPath
+                            }
+                        }
+                    }
+                }
                 row("OpenCode Path:") {
-                    textField()
+                    cell(executablePathField)
                         .bindText(settings::executablePath)
                         .comment("Path to the opencode executable. Leave blank to auto-detect.")
                         .align(AlignX.FILL)
@@ -111,12 +142,11 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
 
         if (pathChanged) {
+            val userProvidedPath = newPath.takeIf { it.isNotBlank() }
             val resolvedRef = AtomicReference<OpenCodeInfo?>()
             ProgressManager.getInstance().runProcessWithProgressSynchronously(
                 {
-                    resolvedRef.set(
-                        OpenCodeChecker.findExecutable(newPath.takeIf { it.isNotBlank() })
-                    )
+                    resolvedRef.set(OpenCodeChecker.findExecutable(userProvidedPath))
                 },
                 "Resolving OpenCode\u2026",
                 false,
@@ -124,22 +154,13 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             )
 
             val info = resolvedRef.get()
-            if (info == null) {
-                Messages.showErrorDialog(
-                    project,
-                    "Could not find a valid OpenCode executable. Check the path and try again.",
-                    "OpenCode Resolution Failed"
+            if (info == null && userProvidedPath != null) {
+                restore(settings, oldSettings)
+                throw ConfigurationException(
+                    "Could not find a valid OpenCode executable. Check the path and try again."
                 )
-                plugin.openCodeInfo = null
-                project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
-                    .onOpenCodeInfoChanged(null)
-                if (newSettings != oldSettings) {
-                    project.messageBus.syncPublisher(OpenCodeSettingsChangedListener.TOPIC)
-                        .onSettingsChanged(oldSettings, newSettings)
-                }
-                EditorDiffRenderer.getInstance(project).onSettingsChanged()
-                return
             }
+
             plugin.openCodeInfo = info
             project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
                 .onOpenCodeInfoChanged(info)
@@ -176,6 +197,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         }
 
         EditorDiffRenderer.getInstance(project).onSettingsChanged()
+    }
+
+    private fun restore(settings: OpenCodeSettings, snapshot: OpenCodeSettingsSnapshot) {
+        settings.serverPort = snapshot.serverPort
+        settings.executablePath = snapshot.executablePath
+        settings.inlineDiffEnabled = snapshot.inlineDiffEnabled
+        settings.diffTraceEnabled = snapshot.diffTraceEnabled
+        settings.diffTraceHistoryEnabled = snapshot.diffTraceHistoryEnabled
+        settings.inlineTerminalEnabled = snapshot.inlineTerminalEnabled
+        settings.terminalEngine = snapshot.terminalEngine
     }
 
     private fun snapshot(settings: OpenCodeSettings): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
