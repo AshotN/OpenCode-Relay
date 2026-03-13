@@ -8,6 +8,7 @@ import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
 import java.awt.Component
 import java.awt.Container
+import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.test.assertFailsWith
 
@@ -31,6 +32,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             runOnEdt { configurable.apply() }
 
             assertEquals("", settings.executablePath)
+            assertNull(OpenCodePlugin.getInstance(project).openCodeInfo)
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
@@ -38,7 +40,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
     fun testApplyBlocksSavingWhenExplicitPathFailsResolution() {
         val settings = OpenCodeSettings.getInstance(project)
-        settings.executablePath = ""
+        settings.executablePath = "C:/existing/opencode"
 
         val configurable = OpenCodeSettingsConfigurable(project).apply {
             executableResolver = { null }
@@ -54,7 +56,55 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             assertFailsWith<ConfigurationException> {
                 runOnEdt { configurable.apply() }
             }
+            assertEquals("C:/existing/opencode", settings.executablePath)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyAttemptsAutoResolveWhenPathBlankAndInfoMissing() {
+        val settings = OpenCodeSettings.getInstance(project)
+        settings.executablePath = ""
+        OpenCodePlugin.getInstance(project).openCodeInfo = null
+
+        val resolveCalls = AtomicInteger(0)
+        val configurable = OpenCodeSettingsConfigurable(project).apply {
+            executableResolver = {
+                resolveCalls.incrementAndGet()
+                null
+            }
+        }
+
+        try {
+            getOnEdt { configurable.createComponent() }
+            runOnEdt { configurable.apply() }
+
+            assertEquals(1, resolveCalls.get())
             assertEquals("", settings.executablePath)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplySkipsResolveWhenNoSettingsChangeAndInfoAlreadyResolved() {
+        val settings = OpenCodeSettings.getInstance(project)
+        settings.executablePath = "C:/existing/opencode"
+        OpenCodePlugin.getInstance(project).openCodeInfo = OpenCodeInfo(settings.executablePath, "1.2.3")
+
+        val resolveCalls = AtomicInteger(0)
+        val configurable = OpenCodeSettingsConfigurable(project).apply {
+            executableResolver = {
+                resolveCalls.incrementAndGet()
+                OpenCodeInfo("C:/resolved/opencode", "1.2.3")
+            }
+        }
+
+        try {
+            getOnEdt { configurable.createComponent() }
+            runOnEdt { configurable.apply() }
+
+            assertEquals(0, resolveCalls.get())
+            assertEquals("C:/existing/opencode", settings.executablePath)
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
