@@ -4,19 +4,19 @@
 
 All HTTP and SSE transport code must live under:
 
-- `src/main/kotlin/com/ashotn/opencode/companion/api/**`
+- `src/main/kotlin/com/ashotn/opencode/relay/api/**`
 
 Code outside this package must call typed API clients instead of opening connections directly.
 
 ## Guardrail
 
-`src/test/kotlin/com/ashotn/opencode/companion/api/TransportGuardrailTest.kt` fails if non-api production code contains:
+`src/test/kotlin/com/ashotn/opencode/relay/api/TransportGuardrailTest.kt` fails if non-api production code contains:
 
 - `HttpURLConnection`
 - `.openConnection(`
 - `requestMethod =`
 
-`src/test/kotlin/com/ashotn/opencode/companion/api/EndpointGuardrailTest.kt` fails if any domain endpoint factory file (`*Endpoints.kt`) is placed under `api/transport`.
+`src/test/kotlin/com/ashotn/opencode/relay/api/EndpointGuardrailTest.kt` fails if any domain endpoint factory file (`*Endpoints.kt`) is placed under `api/transport`.
 
 These guardrails keep transport logic centralized while ensuring endpoint ownership stays with each API client domain.
 

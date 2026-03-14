@@ -1,4 +1,4 @@
-# OpenCode Companion for JetBrains IDEs
+# OpenCode Relay for JetBrains IDEs
 
 Integrates the [OpenCode](https://opencode.ai) AI coding assistant into IntelliJ-based IDEs.
 <table>

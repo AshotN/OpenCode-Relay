@@ -1,1 +1,1 @@
-rootProject.name = "OpenCode-Companion"
+rootProject.name = "OpenCode-Relay"

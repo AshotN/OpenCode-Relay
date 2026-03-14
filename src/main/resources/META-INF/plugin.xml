@@ -1,11 +1,11 @@
 <idea-plugin>
-    <id>com.ashotn.opencode-companion</id>
-    <name>OpenCode Companion</name>
+    <id>com.ashotn.opencode-relay</id>
+    <name>OpenCode Relay</name>
     <vendor>Ashot Nazaryan</vendor>
     <resource-bundle>messages.OpenCodeBundle</resource-bundle>
 
     <description><![CDATA[
-        OpenCode Companion — AI coding assistant integration for IntelliJ IDEA.
+        OpenCode Relay — AI coding assistant integration for IntelliJ IDEA.
         Brings the power of OpenCode directly into your IDE.
     ]]></description>
 
@@ -14,55 +14,55 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
-            id="OpenCode Companion"
+            id="OpenCode Relay"
             anchor="right"
-            factoryClass="com.ashotn.opencode.companion.toolwindow.OpenCodeToolWindowFactory"
+            factoryClass="com.ashotn.opencode.relay.toolwindow.OpenCodeToolWindowFactory"
             icon="/icons/opencode.svg"
         />
         <projectConfigurable
             parentId="tools"
-            instance="com.ashotn.opencode.companion.settings.OpenCodeSettingsConfigurable"
-            id="com.ashotn.opencode.companion.settings"
+            instance="com.ashotn.opencode.relay.settings.OpenCodeSettingsConfigurable"
+            id="com.ashotn.opencode.relay.settings"
             key="configurable.opencode.displayName"
         />
-        <notificationGroup id="OpenCode Companion" displayType="BALLOON" key="notification.group.opencode"/>
-        <backgroundPostStartupActivity implementation="com.ashotn.opencode.companion.OpenCodeStartupActivity"/>
+        <notificationGroup id="OpenCode Relay" displayType="BALLOON" key="notification.group.opencode"/>
+        <backgroundPostStartupActivity implementation="com.ashotn.opencode.relay.OpenCodeStartupActivity"/>
     </extensions>
 
     <actions>
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
 
         <action
-            id="com.ashotn.opencode.companion.actions.NewSessionAction"
-            class="com.ashotn.opencode.companion.actions.NewSessionAction">
+            id="com.ashotn.opencode.relay.actions.NewSessionAction"
+            class="com.ashotn.opencode.relay.actions.NewSessionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift F12"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction"
-            class="com.ashotn.opencode.companion.actions.ClearSelectedSessionAction">
+            id="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction"
+            class="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction">
             <!-- Global shortcut when panel is not focused -->
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.companion.actions.SendSelectionAction"
-            class="com.ashotn.opencode.companion.actions.SendSelectionAction">
+            id="com.ashotn.opencode.relay.actions.SendSelectionAction"
+            class="com.ashotn.opencode.relay.actions.SendSelectionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="alt X"/>
             <mouse-shortcut keymap="$default" keystroke="shift button2"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.companion.actions.SendFileAction"
-            class="com.ashotn.opencode.companion.actions.SendFileAction">
+            id="com.ashotn.opencode.relay.actions.SendFileAction"
+            class="com.ashotn.opencode.relay.actions.SendFileAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.companion.actions.SendFolderAction"
-            class="com.ashotn.opencode.companion.actions.SendFolderAction">
+            id="com.ashotn.opencode.relay.actions.SendFolderAction"
+            class="com.ashotn.opencode.relay.actions.SendFolderAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
     </actions>
