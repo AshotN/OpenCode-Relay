@@ -92,10 +92,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         radioButton("Classic (Recommended)", TerminalEngine.CLASSIC)
                             .comment("Legacy JediTerm widget.")
                     }
-                    row {
-                        radioButton("Reworked", TerminalEngine.REWORKED)
-                            .comment("New terminal engine.")
-                    }
                 }.bind(pendingState::terminalEngine)
             }
             group("Diagnostics") {
@@ -216,7 +212,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.diffTraceEnabled = settings.diffTraceEnabled
         pendingState.diffTraceHistoryEnabled = settings.diffTraceHistoryEnabled
         pendingState.inlineTerminalEnabled = settings.inlineTerminalEnabled
-        pendingState.terminalEngine = settings.terminalEngine
+        pendingState.terminalEngine =
+            if (settings.terminalEngine == TerminalEngine.REWORKED) TerminalEngine.CLASSIC else settings.terminalEngine
     }
 
     private fun persistPendingToSettings(settings: OpenCodeSettings) {

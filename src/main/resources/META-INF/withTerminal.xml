@@ -1,7 +1,3 @@
 <idea-plugin>
-    <!-- Extensions that are only active when the Terminal plugin is present -->
-    <extensions defaultExtensionNs="org.jetbrains.plugins.terminal">
-        <allowedActionsProvider
-            implementation="com.ashotn.opencode.relay.terminal.NewSessionTerminalAllowedActionsProvider"/>
-    </extensions>
+    <!-- Reworked terminal integrations are parked for now. Restore provider registration here when re-enabling. -->
 </idea-plugin>

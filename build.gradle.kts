@@ -16,7 +16,7 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdea("2025.3.3")
+        intellijIdea("2024.3.7")
         pluginVerifier()
         bundledPlugin("org.jetbrains.plugins.terminal")
     }
@@ -39,14 +39,14 @@ intellijPlatform {
         }
 
         ideaVersion {
-            sinceBuild = "253"
+            sinceBuild = "243"
             untilBuild = provider { null }
         }
     }
 
     pluginVerification {
         ides {
-            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2025.3.3")
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2024.3.7")
         }
     }
 
@@ -71,4 +71,9 @@ tasks {
 
 kotlin {
     jvmToolchain(21)
+
+    sourceSets.named("main") {
+        kotlin.exclude("com/ashotn/opencode/relay/terminal/ReworkedTuiPanel.kt")
+        kotlin.exclude("com/ashotn/opencode/relay/terminal/NewSessionTerminalAllowedActionsProvider.kt")
+    }
 }
