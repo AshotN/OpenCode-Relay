@@ -4,7 +4,6 @@ package com.ashotn.opencode.relay.terminal
 
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
-import com.ashotn.opencode.relay.util.BuildUtils
 import com.ashotn.opencode.relay.util.serverUrl
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -63,8 +62,6 @@ class ReworkedTuiPanel(
      */
     override fun startIfNeeded() {
         if (terminalView != null) return
-
-        if (!BuildUtils.isEmbeddedTerminalSupported) return
 
         try {
             val executablePath = OpenCodePlugin.getInstance(project).openCodeInfo?.path

@@ -39,8 +39,14 @@ intellijPlatform {
         }
 
         ideaVersion {
-            sinceBuild = "233"
+            sinceBuild = "253"
             untilBuild = provider { null }
+        }
+    }
+
+    pluginVerification {
+        ides {
+            create(org.jetbrains.intellij.platform.gradle.IntelliJPlatformType.IntellijIdea, "2025.3.3")
         }
     }
 

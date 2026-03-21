@@ -6,7 +6,6 @@ import com.ashotn.opencode.relay.OpenCodeInfo
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.core.EditorDiffRenderer
 import com.ashotn.opencode.relay.settings.OpenCodeSettings.TerminalEngine
-import com.ashotn.opencode.relay.util.BuildUtils
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundConfigurable
@@ -83,7 +82,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 }
             }
             group("Terminal") {
-                val reworkedSupported = BuildUtils.isEmbeddedTerminalSupported
                 row {
                     checkBox("Show inline terminal")
                         .bindSelected(pendingState::inlineTerminalEnabled)
@@ -92,15 +90,11 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 buttonsGroup("Terminal engine:") {
                     row {
                         radioButton("Classic (Recommended)", TerminalEngine.CLASSIC)
-                            .comment("Legacy JediTerm widget. Works on all supported IDE versions.")
+                            .comment("Legacy JediTerm widget.")
                     }
                     row {
                         radioButton("Reworked", TerminalEngine.REWORKED)
-                            .enabled(reworkedSupported)
-                            .comment(
-                                if (reworkedSupported) "New terminal engine (IntelliJ 2025.3+)."
-                                else "Requires IntelliJ 2025.3 or later.",
-                            )
+                            .comment("New terminal engine.")
                     }
                 }.bind(pendingState::terminalEngine)
             }
