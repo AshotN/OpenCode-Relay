@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
@@ -32,12 +33,12 @@ class SendSelectionAction : AnAction() {
     override fun update(e: AnActionEvent) {
         val project = e.project
         val editor = e.getData(CommonDataKeys.EDITOR)
-        val running = project != null && OpenCodePlugin.getInstance(project).isRunning
+        val ready = project != null && OpenCodePlugin.getInstance(project).serverState == ServerState.READY
 
         // Hide entirely when invoked outside an editor context (e.g. tool window, global shortcut)
         e.presentation.isVisible = editor != null
         e.presentation.icon = AllIcons.Actions.Upload
-        e.applyStrings(ActionStrings.SEND_SELECTION, running)
+        e.applyStrings(ActionStrings.SEND_SELECTION, ready)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

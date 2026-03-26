@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.toolwindow.OpenCodeToolWindowPanel
 import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.ashotn.opencode.relay.util.applyStrings
@@ -31,8 +32,8 @@ class NewSessionAction(private val project: Project? = null) : AnAction() {
             e.applyStrings(ActionStrings.NEW_SESSION, false)
             return
         }
-        val running = OpenCodePlugin.getInstance(proj).isRunning
-        e.applyStrings(ActionStrings.NEW_SESSION, running)
+        val ready = OpenCodePlugin.getInstance(proj).serverState == ServerState.READY
+        e.applyStrings(ActionStrings.NEW_SESSION, ready)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

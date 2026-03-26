@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.util.applyStrings
 import com.intellij.icons.AllIcons
@@ -17,9 +18,9 @@ class McpServersAction(private val project: Project) : AnAction() {
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        val running = OpenCodePlugin.getInstance(project).isRunning
+        val ready = OpenCodePlugin.getInstance(project).serverState == ServerState.READY
         e.presentation.icon = AllIcons.Nodes.Plugin
-        e.applyStrings(ActionStrings.MCP_SERVERS, running)
+        e.applyStrings(ActionStrings.MCP_SERVERS, ready)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

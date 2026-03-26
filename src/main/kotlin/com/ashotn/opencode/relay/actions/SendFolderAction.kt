@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
@@ -29,14 +30,14 @@ class SendFolderAction : AnAction() {
 
     override fun update(e: AnActionEvent) {
         val project = e.project
-        val running = project != null && OpenCodePlugin.getInstance(project).isRunning
+        val ready = project != null && OpenCodePlugin.getInstance(project).serverState == ServerState.READY
         val folders = resolveFolders(e)
         // Only show this action when there is at least one directory selected and we are
         // NOT in an editor (editor sends files, not folders)
         val inEditor = e.getData(CommonDataKeys.EDITOR) != null
         e.presentation.isVisible = !inEditor && folders.isNotEmpty()
         e.presentation.icon = AllIcons.Nodes.Folder
-        e.applyStrings(ActionStrings.SEND_FOLDER, running && folders.isNotEmpty())
+        e.applyStrings(ActionStrings.SEND_FOLDER, ready && folders.isNotEmpty())
     }
 
     override fun actionPerformed(e: AnActionEvent) {

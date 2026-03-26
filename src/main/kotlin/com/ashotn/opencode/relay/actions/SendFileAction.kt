@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
@@ -30,11 +31,11 @@ class SendFileAction : AnAction() {
 
     override fun update(e: AnActionEvent) {
         val project = e.project
-        val running = project != null && OpenCodePlugin.getInstance(project).isRunning
+        val ready = project != null && OpenCodePlugin.getInstance(project).serverState == ServerState.READY
         val hasFile = resolveFiles(e).isNotEmpty()
         e.presentation.isVisible = hasFile
         e.presentation.icon = AllIcons.FileTypes.Any_type
-        e.applyStrings(ActionStrings.SEND_FILE, running && hasFile)
+        e.applyStrings(ActionStrings.SEND_FILE, ready && hasFile)
     }
 
     override fun actionPerformed(e: AnActionEvent) {

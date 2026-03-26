@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
@@ -20,10 +21,10 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
 
     override fun update(e: AnActionEvent) {
         val plugin = OpenCodePlugin.getInstance(project)
-        val running = plugin.isRunning
+        val ready = plugin.serverState == ServerState.READY
         val hasExecutable = !plugin.openCodeInfo?.path.isNullOrBlank()
         e.presentation.icon = AllIcons.Debugger.Console
-        e.applyStrings(ActionStrings.OPEN_TERMINAL, running && hasExecutable)
+        e.applyStrings(ActionStrings.OPEN_TERMINAL, ready && hasExecutable)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
