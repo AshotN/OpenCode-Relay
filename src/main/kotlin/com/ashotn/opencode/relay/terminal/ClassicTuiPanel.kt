@@ -15,6 +15,8 @@ import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
+import java.awt.event.KeyEvent
+import java.awt.event.KeyListener
 import java.lang.reflect.Proxy
 import javax.swing.JPanel
 
@@ -98,6 +100,20 @@ class ClassicTuiPanel(
             }, this)
 
             add(widget.component, BorderLayout.CENTER)
+
+            // Consume ESC key to prevent IDE from stealing focus from the inline terminal.
+            widget.component.addKeyListener(object : KeyListener {
+                override fun keyPressed(e: KeyEvent) {
+                    if (e.keyCode == KeyEvent.VK_ESCAPE) {
+                        e.consume()
+                    }
+                }
+
+                override fun keyTyped(e: KeyEvent) {}
+
+                override fun keyReleased(e: KeyEvent) {}
+            })
+
             revalidate()
             repaint()
 
