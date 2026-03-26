@@ -305,6 +305,7 @@ class ServerManager(
                 val process = ProcessBuilder(command)
                     .inheritIO()
                     .apply {
+                        OpenCodeProcessEnvironment.configure(this, executablePath)
                         val basePath = project.basePath
                         if (basePath != null) directory(File(basePath))
                     }

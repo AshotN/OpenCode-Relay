@@ -43,9 +43,16 @@ object OpenCodeChecker {
                     add("/usr/local/bin/opencode")    // Homebrew (Intel Mac)
                     add("/opt/homebrew/bin/opencode") // Homebrew (Apple Silicon)
                     home?.let {
+                        addAll(nvmInstallLocations("$it/.nvm"))
                         add("$it/.local/bin/opencode")
                         add("$it/.bun/bin/opencode")
                         add("$it/.npm-global/bin/opencode")
+                    }
+                    System.getenv("NVM_BIN")?.takeIf { it.isNotBlank() }?.let {
+                        add(File(it, "opencode").path)
+                    }
+                    System.getenv("NVM_DIR")?.takeIf { it.isNotBlank() }?.let {
+                        addAll(nvmInstallLocations(it))
                     }
                 }
             }
@@ -55,10 +62,17 @@ object OpenCodeChecker {
                 buildList {
                     add("/usr/bin/opencode")
                     home?.let {
+                        addAll(nvmInstallLocations("$it/.nvm"))
                         add("$it/.opencode/bin/opencode")
                         add("$it/.local/bin/opencode")
                         add("$it/.bun/bin/opencode")
                         add("$it/.npm-global/bin/opencode")
+                    }
+                    System.getenv("NVM_BIN")?.takeIf { it.isNotBlank() }?.let {
+                        add(File(it, "opencode").path)
+                    }
+                    System.getenv("NVM_DIR")?.takeIf { it.isNotBlank() }?.let {
+                        addAll(nvmInstallLocations(it))
                     }
                 }
             }
@@ -95,6 +109,22 @@ object OpenCodeChecker {
             log.warn("OpenCode executable at user-provided path failed validation: $absolutePath")
             null
         }
+    }
+
+    // NVM keeps packages under each installed Node version, so scan versions/node/*/bin/opencode.
+    private fun nvmInstallLocations(rootPath: String): List<String> {
+        val root = File(rootPath)
+        val versionsRoot = File(root, "versions/node")
+        if (!versionsRoot.isDirectory) return emptyList()
+
+        return versionsRoot.listFiles()
+            .orEmpty()
+            .asSequence()
+            .filter { it.isDirectory }
+            .sortedByDescending { it.name }
+            .map { versionDir -> File(versionDir, "bin/opencode").path }
+            .distinct()
+            .toList()
     }
 
     private fun autoResolve(): OpenCodeInfo? {
@@ -212,6 +242,7 @@ object OpenCodeChecker {
         return try {
             val process = ProcessBuilder(path, arg)
                 .redirectErrorStream(true)
+                .apply { OpenCodeProcessEnvironment.configure(this, path) }
                 .start()
 
             var output = ""

@@ -3,6 +3,7 @@
 package com.ashotn.opencode.relay.terminal
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.util.serverUrl
 import com.intellij.openapi.Disposable
@@ -71,10 +72,12 @@ class ReworkedTuiPanel(
             }
 
             val workingDir = project.basePath ?: System.getProperty("user.home")
-            val command = listOf(
-                executablePath,
-                "attach",
-                serverUrl(OpenCodeSettings.getInstance(project).serverPort),
+            val command = OpenCodeProcessEnvironment.terminalCommand(
+                listOf(
+                    executablePath,
+                    "attach",
+                    serverUrl(OpenCodeSettings.getInstance(project).serverPort),
+                )
             )
             val manager = TerminalToolWindowTabsManager.getInstance(project)
 
