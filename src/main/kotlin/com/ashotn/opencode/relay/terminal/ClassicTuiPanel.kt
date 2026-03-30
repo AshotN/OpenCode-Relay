@@ -4,19 +4,21 @@ import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.util.serverUrl
+import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
+import com.intellij.openapi.actionSystem.CustomizedDataContext
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComponentContainer
 import com.intellij.openapi.util.Disposer
+import com.intellij.terminal.JBTerminalPanel
 import com.intellij.terminal.ui.TerminalWidget
 import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
-import java.awt.event.KeyEvent
-import java.awt.event.KeyListener
 import java.lang.reflect.Proxy
 import javax.swing.JPanel
 
@@ -37,6 +39,7 @@ class ClassicTuiPanel(
 ) : JPanel(BorderLayout()), TuiPanel, Disposable {
 
     private var terminalWidget: TerminalWidget? = null
+    private var terminalPanel: JBTerminalPanel? = null
 
     init {
         Disposer.register(parentDisposable, this)
@@ -84,12 +87,16 @@ class ClassicTuiPanel(
             val widget = runner.startShellTerminalWidget(this, startupOptions, true)
             terminalWidget = widget
             Disposer.register(this, widget)
+            terminalPanel = ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also { panel ->
+                installEmbeddedTerminalDataProvider(panel)
+            }
 
             // When the shell process exits, clean up and notify the owner.
             widget.addTerminationCallback({
                 ApplicationManager.getApplication().invokeLater {
                     logger.debug("Classic terminal process terminated")
                     if (terminalWidget === widget) {
+                        uninstallEmbeddedTerminalDataProvider()
                         terminalWidget = null
                         remove(widget.component)
                         revalidate()
@@ -100,19 +107,6 @@ class ClassicTuiPanel(
             }, this)
 
             add(widget.component, BorderLayout.CENTER)
-
-            // Consume ESC key to prevent IDE from stealing focus from the inline terminal.
-            widget.component.addKeyListener(object : KeyListener {
-                override fun keyPressed(e: KeyEvent) {
-                    if (e.keyCode == KeyEvent.VK_ESCAPE) {
-                        e.consume()
-                    }
-                }
-
-                override fun keyTyped(e: KeyEvent) {}
-
-                override fun keyReleased(e: KeyEvent) {}
-            })
 
             revalidate()
             repaint()
@@ -127,7 +121,7 @@ class ClassicTuiPanel(
     }
 
     override fun focusTerminal() {
-        terminalWidget?.component?.requestFocusInWindow()
+        terminalWidget?.preferredFocusableComponent?.requestFocusInWindow()
     }
 
     override val isStarted: Boolean get() = terminalWidget != null
@@ -136,6 +130,7 @@ class ClassicTuiPanel(
 
     private fun tearDown() {
         val widget = terminalWidget ?: return
+        uninstallEmbeddedTerminalDataProvider()
         terminalWidget = null
         remove(widget.component)
         revalidate()
@@ -149,6 +144,24 @@ class ClassicTuiPanel(
     }
 
     override fun dispose() = tearDown()
+
+    private fun installEmbeddedTerminalDataProvider(panel: JBTerminalPanel) {
+        // JBTerminalPanel's internal TerminalEscapeKeyListener moves focus back to the editor
+        // whenever the terminal reports a ToolWindow in its data context. Our terminal is embedded
+        // inside a custom tool window, so return an explicit null for TOOL_WINDOW to keep ESC inside
+        // the TUI while still allowing the key event to reach the terminal process.
+        DataManager.registerDataProvider(panel) { dataId ->
+            when {
+                PlatformDataKeys.TOOL_WINDOW.`is`(dataId) -> CustomizedDataContext.EXPLICIT_NULL
+                else -> null
+            }
+        }
+    }
+
+    private fun uninstallEmbeddedTerminalDataProvider() {
+        terminalPanel?.let(DataManager::removeDataProvider)
+        terminalPanel = null
+    }
 
     companion object {
         private val logger = Logger.getInstance(ClassicTuiPanel::class.java)
