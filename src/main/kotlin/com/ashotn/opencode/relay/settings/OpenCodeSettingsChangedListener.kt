@@ -9,6 +9,7 @@ data class OpenCodeSettingsSnapshot(
     val diffTraceEnabled: Boolean,
     val diffTraceHistoryEnabled: Boolean,
     val inlineTerminalEnabled: Boolean,
+    val sessionsSectionVisible: Boolean,
     val terminalEngine: OpenCodeSettings.TerminalEngine,
 )
 

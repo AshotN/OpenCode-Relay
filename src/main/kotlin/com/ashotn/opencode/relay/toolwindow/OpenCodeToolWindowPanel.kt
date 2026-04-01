@@ -57,10 +57,12 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     private val outerCardPanel = JPanel(outerCardLayout)
     private val pendingFilesPanel = PendingFilesPanel(project, this)
     private var tuiPanel: TuiPanel = createTuiPanel()
-    private var activeTuiEngine: TerminalEngine = effectiveTerminalEngine(OpenCodeSettings.getInstance(project).terminalEngine)
+    private var activeTuiEngine: TerminalEngine =
+        effectiveTerminalEngine(OpenCodeSettings.getInstance(project).terminalEngine)
     private val syncScheduled = AtomicBoolean(false)
     private val plugin = OpenCodePlugin.getInstance(project)
     private val serverStateListener = ServerStateListener { requestSyncCard() }
+    private var expandedDividerLocation: Int? = null
 
     // Split pane that stacks content (top) and TUI (bottom).
     // The TUI half is hidden until the server is READY.
@@ -136,34 +138,29 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     private fun syncCard() {
+        val settings = OpenCodeSettings.getInstance(project)
         val serverReady = plugin.serverState == ServerState.READY
+        val inlineTerminal = serverReady && settings.inlineTerminalEnabled
 
-        // Show / hide TUI panel based on server state and inline terminal setting.
-        val inlineTerminal = serverReady && OpenCodeSettings.getInstance(project).inlineTerminalEnabled
         if (inlineTerminal) {
             tuiPanel.startIfNeeded()
             if (tuiPanel.isStarted) {
-                // Restore the split whenever the divider is hidden (e.g. after a reset).
-                // Run after layout so the panel has a real height.
-                if (splitPane.dividerSize == 0) {
-                    ApplicationManager.getApplication().invokeLater {
-                        val total = splitPane.height
-                        if (total > 0) {
-                            splitPane.dividerSize = JBUI.scale(2)
-                            splitPane.dividerLocation = (total * 0.25).toInt()
-                        }
+                if (!settings.sessionsSectionVisible) {
+                    if (splitPane.dividerSize > 0) {
+                        expandedDividerLocation = splitPane.dividerLocation
                     }
+                    collapseSplit(showTopSection = false, dividerLocation = 0)
+                } else {
+                    restoreSplitView()
                 }
             } else {
-                splitPane.dividerSize = 0
-                splitPane.dividerLocation = Int.MAX_VALUE
+                collapseSplit(showTopSection = true)
             }
         } else {
             // Inline terminal disabled or server not running – stop any running widget
             // so it doesn't linger in the background, then collapse the divider.
             if (tuiPanel.isStarted) tuiPanel.stop()
-            splitPane.dividerSize = 0
-            splitPane.dividerLocation = Int.MAX_VALUE
+            collapseSplit(showTopSection = true)
         }
 
         val showPending = when (plugin.serverState) {
@@ -180,6 +177,26 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         }
 
         outerCardLayout.show(outerCardPanel, if (showPending) CARD_PENDING else CARD_CONTENT)
+    }
+
+    private fun collapseSplit(showTopSection: Boolean, dividerLocation: Int = Int.MAX_VALUE) {
+        outerCardPanel.isVisible = showTopSection
+        splitPane.dividerSize = 0
+        splitPane.dividerLocation = dividerLocation
+    }
+
+    private fun restoreSplitView() {
+        outerCardPanel.isVisible = true
+        if (splitPane.dividerSize == 0) {
+            ApplicationManager.getApplication().invokeLater {
+                val splitPaneHeight = splitPane.height
+                if (splitPaneHeight > 1 && !project.isDisposed) {
+                    splitPane.dividerSize = JBUI.scale(2)
+                    splitPane.dividerLocation = (expandedDividerLocation ?: (splitPaneHeight * 0.25).toInt())
+                        .coerceIn(1, splitPaneHeight - 1)
+                }
+            }
+        }
     }
 
     fun focusTerminal() {

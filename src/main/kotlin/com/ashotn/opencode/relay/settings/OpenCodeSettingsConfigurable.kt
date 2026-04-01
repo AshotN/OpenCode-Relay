@@ -212,6 +212,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.diffTraceEnabled = settings.diffTraceEnabled
         pendingState.diffTraceHistoryEnabled = settings.diffTraceHistoryEnabled
         pendingState.inlineTerminalEnabled = settings.inlineTerminalEnabled
+        pendingState.sessionsSectionVisible = settings.sessionsSectionVisible
         pendingState.terminalEngine =
             if (settings.terminalEngine == TerminalEngine.REWORKED) TerminalEngine.CLASSIC else settings.terminalEngine
     }
@@ -227,6 +228,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         diffTraceEnabled = state.diffTraceEnabled,
         diffTraceHistoryEnabled = state.diffTraceHistoryEnabled,
         inlineTerminalEnabled = state.inlineTerminalEnabled,
+        sessionsSectionVisible = state.sessionsSectionVisible,
         terminalEngine = state.terminalEngine,
     )
 }

@@ -24,6 +24,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var diffTraceEnabled: Boolean = false,
         var diffTraceHistoryEnabled: Boolean = false,
         var inlineTerminalEnabled: Boolean = true,
+        var sessionsSectionVisible: Boolean = true,
         var terminalEngine: TerminalEngine = TerminalEngine.CLASSIC,
     )
 
@@ -59,6 +60,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         get() = state.inlineTerminalEnabled
         set(value) { state.inlineTerminalEnabled = value }
 
+    var sessionsSectionVisible: Boolean
+        get() = state.sessionsSectionVisible
+        set(value) { state.sessionsSectionVisible = value }
+
     var terminalEngine: TerminalEngine
         get() = state.terminalEngine
         set(value) { state.terminalEngine = value }
@@ -68,3 +73,14 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             project.getService(OpenCodeSettings::class.java)
     }
 }
+
+fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
+    serverPort = serverPort,
+    executablePath = executablePath,
+    inlineDiffEnabled = inlineDiffEnabled,
+    diffTraceEnabled = diffTraceEnabled,
+    diffTraceHistoryEnabled = diffTraceHistoryEnabled,
+    inlineTerminalEnabled = inlineTerminalEnabled,
+    sessionsSectionVisible = sessionsSectionVisible,
+    terminalEngine = terminalEngine,
+)
