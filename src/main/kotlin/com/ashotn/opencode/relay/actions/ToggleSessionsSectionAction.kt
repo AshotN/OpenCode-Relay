@@ -33,19 +33,17 @@ class ToggleSessionsSectionAction(private val project: Project) :
     override fun isSelected(e: AnActionEvent): Boolean = OpenCodeSettings.getInstance(project).sessionsSectionVisible
 
     override fun setSelected(e: AnActionEvent, state: Boolean) {
-        updateSessionsSectionVisibility(project, state)
+        updateSessionsSectionVisibility(state)
     }
 
-    companion object {
-        fun updateSessionsSectionVisibility(project: Project, visible: Boolean) {
-            val settings = OpenCodeSettings.getInstance(project)
-            if (settings.sessionsSectionVisible == visible) return
+    private fun updateSessionsSectionVisibility(visible: Boolean) {
+        val settings = OpenCodeSettings.getInstance(project)
+        if (settings.sessionsSectionVisible == visible) return
 
-            val oldSettings = settings.snapshot()
-            settings.sessionsSectionVisible = visible
-            val newSettings = settings.snapshot()
-            project.messageBus.syncPublisher(OpenCodeSettingsChangedListener.TOPIC)
-                .onSettingsChanged(oldSettings, newSettings)
-        }
+        val oldSettings = settings.snapshot()
+        settings.sessionsSectionVisible = visible
+        val newSettings = settings.snapshot()
+        project.messageBus.syncPublisher(OpenCodeSettingsChangedListener.TOPIC)
+            .onSettingsChanged(oldSettings, newSettings)
     }
 }
