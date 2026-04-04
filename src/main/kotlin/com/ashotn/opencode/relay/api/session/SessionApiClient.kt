@@ -24,7 +24,7 @@ class SessionApiClient(
 
     data class FileDiffPreview(
         val before: String,
-        val after: String?,
+        val after: String,
     )
 
     fun createSession(port: Int): ApiResult<CreatedSession> {

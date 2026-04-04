@@ -317,42 +317,6 @@ class SessionDiffPipelineTest {
     //   4. The "After AI" panel must be empty.
     //      If it still shows the joke from turn 1, this invariant is violated.
     // -------------------------------------------------------------------------
-    @Test
-    fun `After AI panel must be empty when AI empties a file`() {
-        val file = "note.md"
-        val originalContent = "# Notes\n\nSome original text.\n"
-        val withJoke = originalContent + "\nWhy do Java developers wear glasses? Because they can't C#.\n"
-
-        // Turn 1: AI adds a joke — server sends non-empty after
-        h.disk[h.abs(file)] = withJoke
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(
-            files = listOf(file to SessionDiffStatus.MODIFIED),
-            serverAfterByFile = mapOf(h.abs(file) to withJoke),
-        )
-        assertEquals(
-            withJoke, h.serverAfter(file),
-            "after turn 1: serverAfter should hold the joke content"
-        )
-
-        // Turn 2: AI empties the file — server sends empty string as after
-        h.disk[h.abs(file)] = ""
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(
-            files = listOf(file to SessionDiffStatus.MODIFIED),
-            serverAfterByFile = mapOf(h.abs(file) to ""),
-        )
-
-        // The "After AI" content shown in the diff viewer must be empty string,
-        // not the stale joke content from turn 1.
-        assertEquals(
-            "",
-            h.serverAfter(file),
-            "After AI panel must show empty string when AI emptied the file, " +
-                    "but serverAfter still holds stale content: '${h.serverAfter(file)}'",
-        )
-    }
-
     // -------------------------------------------------------------------------
     // A file the AI modified must still appear in the session's file count even
     // when the diff computation throws an unexpected error. If hunk computation
@@ -382,7 +346,6 @@ class SessionDiffPipelineTest {
         zeroHunkHarness.commitTurnPatch(listOf(file))
         zeroHunkHarness.applySessionDiff(
             files = listOf(file to SessionDiffStatus.MODIFIED),
-            serverAfterByFile = mapOf(zeroHunkHarness.abs(file) to "line1\n"),
         )
 
         // The file was reported as MODIFIED — it must still be counted.
@@ -421,7 +384,6 @@ class SessionDiffPipelineTest {
         h.commitTurnPatch(listOf(file))
         h.applySessionDiff(
             files = listOf(file to SessionDiffStatus.MODIFIED),
-            serverAfterByFile = mapOf(h.abs(file) to aiContent),
         )
         assertEquals(1, h.trackedFileCount(), "file should be tracked after AI wrote to it")
 

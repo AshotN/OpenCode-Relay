@@ -565,7 +565,6 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
             stateStore.addedBySession.remove(sessionId)
             stateStore.baselineBeforeBySessionAndFile.remove(sessionId)
             stateStore.lastAfterBySessionAndFile.remove(sessionId)
-            stateStore.serverAfterBySessionAndFile.remove(sessionId)
             stateStore.pendingTurnFilesBySession.remove(sessionId)
             historicalDiffLoadedSessions.remove(sessionId)
 
@@ -656,7 +655,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
     fun allTrackedFiles(): Set<String> = synchronized(stateLock) { visibleFilesLocked() }
 
     fun getFileDiffPreview(filePath: String, onResult: (FileDiffPreview?) -> Unit) {
-        val (sessionId, currentPort, storedServerAfter) = synchronized(stateLock) {
+        val (sessionId, currentPort) = synchronized(stateLock) {
             val candidateSessionIds = queryService.previewCandidateSessionIds(
                 familySessionIds = { familySessionIdsLocked() },
                 updatedAtBySession = stateStore.updatedAtBySession,
@@ -664,8 +663,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
             val sid = candidateSessionIds.firstOrNull { sessionId ->
                 stateStore.baselineBeforeBySessionAndFile[sessionId]?.containsKey(filePath) == true
             } ?: return onResult(null)
-            val serverAfter = stateStore.serverAfterBySessionAndFile[sid]?.get(filePath)
-            Triple(sid, port, serverAfter)
+            sid to port
         }
 
         if (currentPort <= 0) return onResult(null)
@@ -687,16 +685,12 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                         onResult(null)
                         return@executeOnPooledThread
                     }
-
-                    // Prefer the in-memory server-reported AI after (captured at SSE event time);
-                    // fall back to the REST snapshot's after field.
-                    val aiAfter = storedServerAfter ?: preview.after ?: documentSyncService.readCurrentContent(filePath)
                     onResult(
                         FileDiffPreview(
                             filePath = filePath,
                             sessionId = sessionId,
                             before = preview.before,
-                            aiAfter = aiAfter,
+                            aiAfter = preview.after,
                         )
                     )
                 }

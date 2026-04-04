@@ -10,7 +10,6 @@ internal class StateStore {
         val newDeleted: Set<String>,
         val newAdded: Set<String>,
         val newBaselineByFile: Map<String, String>,
-        val newServerAfterByFile: Map<String, String>,
     )
 
     data class SessionDiffCommitResult(
@@ -30,9 +29,6 @@ internal class StateStore {
     val addedBySession = ConcurrentHashMap<String, Set<String>>()
     val baselineBeforeBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
     val lastAfterBySessionAndFile = ConcurrentHashMap<String, MutableMap<String, String>>()
-
-    /** The server's intended "after AI" content per file per session, sourced from SessionDiffFile.after. */
-    val serverAfterBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
     val pendingTurnFilesBySession = ConcurrentHashMap<String, Set<String>>()
 
     private val diffApplyRevisionBySession = ConcurrentHashMap<String, Long>()
@@ -202,16 +198,6 @@ internal class StateStore {
         }
 
         lastAfterBySessionAndFile[sessionId] = computedState.nextAfterByFile
-
-        // Merge server-intended "after AI" content — kept for diff viewer display.
-        val previousServerAfter = serverAfterBySessionAndFile[sessionId] ?: emptyMap()
-        serverAfterBySessionAndFile[sessionId] = mergeMapByProcessedPaths(
-            previous = previousServerAfter,
-            processedPaths = computedState.processedPaths,
-            next = computedState.newServerAfterByFile,
-            replaceAll = fromHistory,
-        )
-
         val previousState = SessionStateSnapshot(
             hunks = hunksBySessionAndFile[sessionId] ?: emptyMap(),
             liveHunks = liveHunksBySessionAndFile[sessionId] ?: emptyMap(),
@@ -332,7 +318,6 @@ internal class StateStore {
         addedBySession.clear()
         baselineBeforeBySessionAndFile.clear()
         lastAfterBySessionAndFile.clear()
-        serverAfterBySessionAndFile.clear()
         pendingTurnFilesBySession.clear()
         diffApplyRevisionBySession.clear()
         selectedSessionId = null
