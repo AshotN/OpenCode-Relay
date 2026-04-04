@@ -21,6 +21,7 @@ import com.intellij.openapi.actionSystem.ActionPlaces
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.DefaultActionGroup
 import com.intellij.diff.DiffContentFactory
+import com.intellij.icons.AllIcons
 import com.intellij.diff.editor.DiffEditorTabFilesManager
 import com.intellij.diff.editor.SimpleDiffVirtualFile
 import com.intellij.diff.requests.SimpleDiffRequest
@@ -246,6 +247,10 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         }
 
         val jumpToSourceAction = object : AnAction("Jump to Source") {
+            init {
+                templatePresentation.icon = AllIcons.Actions.EditSource
+            }
+
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun update(e: AnActionEvent) {
                 e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false
@@ -259,6 +264,10 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         }
 
         val openDiffAction = object : AnAction("Open Diff") {
+            init {
+                templatePresentation.icon = AllIcons.Actions.Diff
+            }
+
             override fun getActionUpdateThread() = ActionUpdateThread.EDT
             override fun update(e: AnActionEvent) {
                 e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false

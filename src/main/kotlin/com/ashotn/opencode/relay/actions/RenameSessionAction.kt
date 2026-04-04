@@ -34,7 +34,7 @@ class RenameSessionAction(
             e.presentation.text = "Renaming…"
             return
         }
-        e.presentation.icon = AllIcons.Actions.Edit
+        e.presentation.icon = AllIcons.Actions.InlayRenameInNoCodeFiles
         e.applyStrings(ActionStrings.RENAME_SESSION, selectedSession() != null)
     }
 

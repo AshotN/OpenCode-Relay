@@ -3,17 +3,20 @@ package com.ashotn.opencode.relay.actions
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.settings.OpenCodeSettingsChangedListener
 import com.ashotn.opencode.relay.settings.snapshot
+import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.project.Project
 
-class ToggleSessionsSectionAction(private val project: Project) : ToggleAction("Sessions", "Show or hide the sessions section above the inline terminal", null) {
+class ToggleSessionsSectionAction(private val project: Project) :
+    ToggleAction("Sessions", "Show or hide the sessions section above the inline terminal", null) {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
         super.update(e)
+        e.presentation.icon = AllIcons.Actions.Preview
         val settings = OpenCodeSettings.getInstance(project)
         e.presentation.isEnabled = settings.inlineTerminalEnabled
         e.presentation.description = if (settings.inlineTerminalEnabled) {
