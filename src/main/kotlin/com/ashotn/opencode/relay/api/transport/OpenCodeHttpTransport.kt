@@ -17,6 +17,8 @@ class OpenCodeHttpTransport(
 
     private val httpClient = HttpClient.newBuilder()
         .connectTimeout(Duration.ofMillis(defaultConnectTimeoutMs.toLong()))
+        // OpenCode 1.4 closes cleartext HTTP/2 upgrade attempts before sending headers.
+        .version(HttpClient.Version.HTTP_1_1)
         .build()
 
     fun get(
