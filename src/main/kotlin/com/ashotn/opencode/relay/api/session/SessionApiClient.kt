@@ -10,6 +10,7 @@ import com.ashotn.opencode.relay.api.transport.withParseContext
 import com.ashotn.opencode.relay.util.toAbsolutePath
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
+import com.ashotn.opencode.relay.ipc.SnapshotDiffTextParser
 import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
@@ -55,16 +56,15 @@ class SessionApiClient(
                             val obj = element.asJsonObject
 
                             val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-                            val before = obj.getStringOrNull("before") ?: ""
-                            val after = obj.getStringOrNull("after") ?: ""
+                            val diffText = SnapshotDiffTextParser.parse(obj)
                             val additions = obj.getIntOrNull("additions") ?: 0
                             val deletions = obj.getIntOrNull("deletions") ?: 0
                             val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
 
                             OpenCodeEvent.SessionDiffFile(
                                 file = file,
-                                before = before,
-                                after = after,
+                                before = diffText.before,
+                                after = diffText.after,
                                 additions = additions,
                                 deletions = deletions,
                                 status = status,
@@ -147,10 +147,11 @@ class SessionApiClient(
                 if (!diffElement.isJsonObject) return@mapNotNull null
                 val diffObj = diffElement.asJsonObject
                 val file = diffObj.getStringOrNull("file") ?: return@mapNotNull null
+                val diffText = SnapshotDiffTextParser.parse(diffObj)
                 FileDiff(
                     file = file,
-                    before = diffObj.getStringOrNull("before") ?: "",
-                    after = diffObj.getStringOrNull("after") ?: "",
+                    before = diffText.before,
+                    after = diffText.after,
                     additions = diffObj.getIntOrNull("additions") ?: 0,
                     deletions = diffObj.getIntOrNull("deletions") ?: 0,
                 )

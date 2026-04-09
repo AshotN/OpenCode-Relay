@@ -109,6 +109,47 @@ class SessionApiClientTest {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // When the user opens the 3-panel diff viewer for a file the AI changed,
+    // the "Before AI" and "After AI" panels must show the AI's actual change
+    // even when OpenCode returns snapshot diffs in the 1.4.0 patch-only format.
+    // Blank side panels hide what the AI changed and make the diff viewer useless.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Ask the AI to modify an existing file.
+    //   2. In the OpenCode tool window, double-click that file.
+    //   3. The "Before AI" and "After AI" panels must both show content.
+    //      If both panels are blank while the middle panel shows the live file,
+    //      this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `fetchFileDiffPreview reconstructs preview from patch-only snapshot diff`() {
+        withTestServer { server, port ->
+            server.createContext("/session/ses_1/diff") { exchange ->
+                val body = """
+                    [
+                      {
+                        "file": "a.txt",
+                        "patch": "Index: a.txt\n===================================================================\n--- a.txt\t\n+++ a.txt\t\n@@ -1 +1 @@\n-old\n+new\n",
+                        "additions": 1,
+                        "deletions": 1,
+                        "status": "modified"
+                      }
+                    ]
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+
+            val client = SessionApiClient()
+            val result = client.fetchFileDiffPreview(port, "ses_1", "/repo", "/repo/a.txt")
+
+            val success = assertIs<ApiResult.Success<SessionApiClient.FileDiffPreview?>>(result)
+            assertEquals("old\n", success.value?.before)
+            assertEquals("new\n", success.value?.after)
+        }
+    }
+
     @Test
     fun `fetchFileDiffPreview returns matching diff preview`() {
         withTestServer { server, port ->

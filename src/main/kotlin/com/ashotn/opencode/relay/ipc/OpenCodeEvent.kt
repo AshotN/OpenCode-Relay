@@ -41,8 +41,8 @@ sealed class OpenCodeEvent {
 
     /**
      * session.diff — fired after every tool execution with the cumulative diff
-     * for the session. Each entry carries before/after content and a typed
-     * [SessionDiffStatus].
+     * for the session. OpenCode 1.4.x sends patch-based entries; the plugin
+     * reconstructs before/after snapshot text and stores a typed [SessionDiffStatus].
      */
     data class SessionDiff(
         val sessionId: String,

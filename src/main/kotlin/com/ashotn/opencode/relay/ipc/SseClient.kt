@@ -180,8 +180,7 @@ class SseClient(
             val obj = elem.asJsonObject
 
             val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-            val before = obj.getStringOrNull("before") ?: ""
-            val after = obj.getStringOrNull("after") ?: ""
+            val diffText = SnapshotDiffTextParser.parse(obj)
             val additions = obj.getIntOrNull("additions") ?: 0
             val deletions = obj.getIntOrNull("deletions") ?: 0
             val statusRaw = obj.getStringOrNull("status") ?: "modified"
@@ -190,7 +189,7 @@ class SseClient(
                 log.warn("SseClient: unknown session.diff status '$statusRaw' for file=$file")
             }
 
-            OpenCodeEvent.SessionDiffFile(file, before, after, additions, deletions, status)
+            OpenCodeEvent.SessionDiffFile(file, diffText.before, diffText.after, additions, deletions, status)
         }
 
         log.debug("SseClient: parsed session.diff session=$sessionId fileCount=${files.size}")
