@@ -14,16 +14,16 @@
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow
-            id="OpenCode Relay"
-            anchor="right"
-            factoryClass="com.ashotn.opencode.relay.toolwindow.OpenCodeToolWindowFactory"
-            icon="/icons/opencode.svg"
+                id="OpenCode Relay"
+                anchor="right"
+                factoryClass="com.ashotn.opencode.relay.toolwindow.OpenCodeToolWindowFactory"
+                icon="/icons/opencode.svg"
         />
         <projectConfigurable
-            parentId="tools"
-            instance="com.ashotn.opencode.relay.settings.OpenCodeSettingsConfigurable"
-            id="com.ashotn.opencode.relay.settings"
-            key="configurable.opencode.displayName"
+                parentId="tools"
+                instance="com.ashotn.opencode.relay.settings.OpenCodeSettingsConfigurable"
+                id="com.ashotn.opencode.relay.settings"
+                key="configurable.opencode.displayName"
         />
         <notificationGroup id="OpenCode Relay" displayType="BALLOON" key="notification.group.opencode"/>
         <backgroundPostStartupActivity implementation="com.ashotn.opencode.relay.OpenCodeStartupActivity"/>
@@ -33,36 +33,36 @@
         <!-- Actions registered programmatically via toolWindow.setTitleActions() -->
 
         <action
-            id="com.ashotn.opencode.relay.actions.NewSessionAction"
-            class="com.ashotn.opencode.relay.actions.NewSessionAction">
+                id="com.ashotn.opencode.relay.actions.NewSessionAction"
+                class="com.ashotn.opencode.relay.actions.NewSessionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="shift F12"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction"
-            class="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction">
+                id="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction"
+                class="com.ashotn.opencode.relay.actions.ClearSelectedSessionAction">
             <!-- Global shortcut when panel is not focused -->
             <keyboard-shortcut keymap="$default" first-keystroke="alt shift ESCAPE"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.relay.actions.SendSelectionAction"
-            class="com.ashotn.opencode.relay.actions.SendSelectionAction">
+                id="com.ashotn.opencode.relay.actions.SendSelectionAction"
+                class="com.ashotn.opencode.relay.actions.SendSelectionAction">
             <keyboard-shortcut keymap="$default" first-keystroke="alt X"/>
             <mouse-shortcut keymap="$default" keystroke="shift button2"/>
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.relay.actions.SendFileAction"
-            class="com.ashotn.opencode.relay.actions.SendFileAction">
+                id="com.ashotn.opencode.relay.actions.SendFileAction"
+                class="com.ashotn.opencode.relay.actions.SendFileAction">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
 
         <action
-            id="com.ashotn.opencode.relay.actions.SendFolderAction"
-            class="com.ashotn.opencode.relay.actions.SendFolderAction">
+                id="com.ashotn.opencode.relay.actions.SendFolderAction"
+                class="com.ashotn.opencode.relay.actions.SendFolderAction">
             <add-to-group group-id="ProjectViewPopupMenu" anchor="last"/>
         </action>
     </actions>

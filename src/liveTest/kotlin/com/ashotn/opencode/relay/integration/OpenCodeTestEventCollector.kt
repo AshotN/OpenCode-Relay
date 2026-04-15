@@ -59,6 +59,7 @@ class OpenCodeTestEventCollector(
                     val files = event.files.joinToString(",") { it.file.substringAfterLast('/') }
                     "session.diff(sessionId=${event.sessionId}, files=$files)"
                 }
+
                 else -> event::class.simpleName ?: "UnknownEvent"
             }
         }

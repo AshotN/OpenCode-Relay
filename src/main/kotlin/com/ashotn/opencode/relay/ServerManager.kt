@@ -20,16 +20,22 @@ import javax.swing.SwingUtilities
 enum class ServerState {
     /** Initial state - no check has completed yet. */
     UNKNOWN,
+
     /** We launched the process and are waiting for /global/health to return 200. */
     STARTING,
+
     /** /global/health returned 200 - server is fully ready. */
     READY,
+
     /** Stop was requested and shutdown is in progress. */
     STOPPING,
+
     /** Port is closed - server is not running. */
     STOPPED,
+
     /** Port is open but occupied by a non-OpenCode process - user action required. */
     PORT_CONFLICT,
+
     /** A reset was requested - clearing state and reconnecting. */
     RESETTING,
 }
@@ -55,19 +61,23 @@ class ServerManager(
         private const val HEALTH_INITIAL_DELAY_SECONDS = 2L
     }
 
-    @Volatile private var disposed = false
+    @Volatile
+    private var disposed = false
 
-    @Volatile var serverState: ServerState = ServerState.UNKNOWN
+    @Volatile
+    var serverState: ServerState = ServerState.UNKNOWN
         private set
 
     val isRunning: Boolean
         get() = serverState == ServerState.READY || serverState == ServerState.STARTING
 
-    @Volatile private var ownedProcess: Process? = null
+    @Volatile
+    private var ownedProcess: Process? = null
 
     val ownsProcess: Boolean get() = ownedProcess != null
 
-    @Volatile private var shutdownHook: Thread? = null
+    @Volatile
+    private var shutdownHook: Thread? = null
 
     /** Last-known port-open state for unexpected-stop detection. EDT-only. */
     private var wasPortOpen = false
@@ -125,12 +135,14 @@ class ServerManager(
                     wasPortOpen = true
                     externalHealthRevision.incrementAndGet()
                 }
+
                 ownedProcess != null -> {
                     wasPortOpen = true
                     externalHealthRevision.incrementAndGet()
                     if (serverState != ServerState.STARTING) applyState(ServerState.STARTING)
                     startHealthPolling(port)
                 }
+
                 else -> {
                     val revision = externalHealthRevision.incrementAndGet()
                     scheduler.submit { checkExternalHealth(port, revision) }

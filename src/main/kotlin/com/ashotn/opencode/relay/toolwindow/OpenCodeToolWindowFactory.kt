@@ -24,7 +24,17 @@ class OpenCodeToolWindowFactory : ToolWindowFactory {
         val panel = OpenCodeToolWindowPanel(project)
         val content = ContentFactory.getInstance().createContent(panel, "", false)
         toolWindow.contentManager.addContent(content)
-        toolWindow.setTitleActions(listOf(ToggleSessionsSectionAction(project), McpServersAction(project), OpenTerminalAction(project), OpenBrowserAction(project), StopServerAction(project), ResetPluginAction(project), OpenSettingsAction(project)))
+        toolWindow.setTitleActions(
+            listOf(
+                ToggleSessionsSectionAction(project),
+                McpServersAction(project),
+                OpenTerminalAction(project),
+                OpenBrowserAction(project),
+                StopServerAction(project),
+                ResetPluginAction(project),
+                OpenSettingsAction(project)
+            )
+        )
 
         // Update tool window icon based on server connection state
         val plugin = OpenCodePlugin.getInstance(project)

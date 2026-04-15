@@ -255,6 +255,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             override fun update(e: AnActionEvent) {
                 e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false
             }
+
             override fun actionPerformed(e: AnActionEvent) {
                 val row = fileList.selectedValue ?: return
                 if (row.isDeleted) return
@@ -272,6 +273,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             override fun update(e: AnActionEvent) {
                 e.presentation.isEnabled = fileList.selectedValue?.isDeleted == false
             }
+
             override fun actionPerformed(e: AnActionEvent) {
                 val row = fileList.selectedValue ?: return
                 if (row.isDeleted) return

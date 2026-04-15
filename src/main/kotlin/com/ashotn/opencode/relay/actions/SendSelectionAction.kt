@@ -54,7 +54,8 @@ class SendSelectionAction : AnAction() {
             startLine = document.getLineNumber(selectionModel.selectionStart) + 1
             // Use selectionEnd - 1 so a cursor parked at column 0 of the next line doesn't
             // inflate the range by one (e.g. selecting lines 1–3 ending at line 4 offset 0).
-            endLine = document.getLineNumber((selectionModel.selectionEnd - 1).coerceAtLeast(selectionModel.selectionStart)) + 1
+            endLine =
+                document.getLineNumber((selectionModel.selectionEnd - 1).coerceAtLeast(selectionModel.selectionStart)) + 1
         } else {
             // No selection — fall back to the line the caret is on
             val caretLine = document.getLineNumber(editor.caretModel.offset) + 1

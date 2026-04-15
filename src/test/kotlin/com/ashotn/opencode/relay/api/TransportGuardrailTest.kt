@@ -45,7 +45,11 @@ class TransportGuardrailTest {
 
         assertTrue(
             violations.isEmpty(),
-            "Transport usage is only allowed under com.ashotn.opencode.relay.api. Violations:\n${violations.joinToString("\n")}",
+            "Transport usage is only allowed under com.ashotn.opencode.relay.api. Violations:\n${
+                violations.joinToString(
+                    "\n"
+                )
+            }",
         )
     }
 }

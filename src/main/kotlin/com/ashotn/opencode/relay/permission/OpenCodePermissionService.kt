@@ -24,7 +24,8 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     private val log = logger<OpenCodePermissionService>()
     private val permissionApiClient = PermissionApiClient()
 
-    @Volatile private var port: Int = 0
+    @Volatile
+    private var port: Int = 0
 
     private val permissionQueue = ConcurrentLinkedQueue<OpenCodeEvent.PermissionAsked>()
 
@@ -82,7 +83,11 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
 
                 is ApiResult.Failure -> {
                     log.warn(
-                        "OpenCodePermissionService: permission reply ${response.wireValue} failed error=${apiErrorMessage(result.error)}",
+                        "OpenCodePermissionService: permission reply ${response.wireValue} failed error=${
+                            apiErrorMessage(
+                                result.error
+                            )
+                        }",
                     )
                 }
             }

@@ -170,6 +170,7 @@ class OpenCodeTuiClient(private val project: Project) {
                     coreService.removeSession(sessionId)
                     onResult(true, null)
                 }
+
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
             coreService.refreshSessionHierarchy()
@@ -193,6 +194,7 @@ class OpenCodeTuiClient(private val project: Project) {
                     coreService.updateSessionState(result.value)
                     onResult(true, null)
                 }
+
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
             coreService.refreshSessionHierarchy()

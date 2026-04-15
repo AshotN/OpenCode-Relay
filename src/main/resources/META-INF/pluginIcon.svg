@@ -1,27 +1,27 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 40 40" fill="none">
-  <defs>
-    <linearGradient id="bezel-grad" x1="5" y1="4" x2="35" y2="36" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#0EA5E9"/>
-      <stop offset="1" stop-color="#10B981"/>
-    </linearGradient>
-    <linearGradient id="titlebar-grad" x1="5" y1="4" x2="35" y2="12" gradientUnits="userSpaceOnUse">
-      <stop offset="0" stop-color="#38BDF8"/>
-      <stop offset="1"/>
-    </linearGradient>
-  </defs>
+    <defs>
+        <linearGradient id="bezel-grad" x1="5" y1="4" x2="35" y2="36" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#0EA5E9"/>
+            <stop offset="1" stop-color="#10B981"/>
+        </linearGradient>
+        <linearGradient id="titlebar-grad" x1="5" y1="4" x2="35" y2="12" gradientUnits="userSpaceOnUse">
+            <stop offset="0" stop-color="#38BDF8"/>
+            <stop offset="1"/>
+        </linearGradient>
+    </defs>
 
-  <!-- Bezel (the physical monitor frame) -->
-  <rect x="5" y="4" width="30" height="32" rx="3" fill="url(#bezel-grad)"/>
+    <!-- Bezel (the physical monitor frame) -->
+    <rect x="5" y="4" width="30" height="32" rx="3" fill="url(#bezel-grad)"/>
 
-  <!-- Recessed screen area (inset 2px from bezel) -->
-  <rect x="7" y="6" width="26" height="28" fill="#0F172A"/>
+    <!-- Recessed screen area (inset 2px from bezel) -->
+    <rect x="7" y="6" width="26" height="28" fill="#0F172A"/>
 
-  <!-- Title bar strip (top of screen) -->
-  <rect x="7" y="6" width="26" height="5" fill="url(#titlebar-grad)"/>
+    <!-- Title bar strip (top of screen) -->
+    <rect x="7" y="6" width="26" height="5" fill="url(#titlebar-grad)"/>
 
-  <!-- Prompt: '>' chevron (scaled up from 16px version) -->
-  <path d="M12 24L15 27L12 30" stroke="#10B981" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
+    <!-- Prompt: '>' chevron (scaled up from 16px version) -->
+    <path d="M12 24L15 27L12 30" stroke="#10B981" stroke-width="2.5" stroke-linecap="square" stroke-linejoin="miter"/>
 
-  <!-- Cursor: '_' underscore -->
-  <line x1="18" y1="30" x2="28" y2="30" stroke="#0EA5E9" stroke-width="2.5" stroke-linecap="square"/>
+    <!-- Cursor: '_' underscore -->
+    <line x1="18" y1="30" x2="28" y2="30" stroke="#0EA5E9" stroke-width="2.5" stroke-linecap="square"/>
 </svg>

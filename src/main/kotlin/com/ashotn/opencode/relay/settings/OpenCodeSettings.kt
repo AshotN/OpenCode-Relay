@@ -13,6 +13,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     enum class TerminalEngine {
         /** JBTerminalWidget (classic terminal plugin, works on all supported IDE versions). */
         CLASSIC,
+
         /** Parked reworked terminal option kept for easy re-enable later. */
         REWORKED,
     }
@@ -38,35 +39,51 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
     var serverPort: Int
         get() = state.serverPort
-        set(value) { state.serverPort = value }
+        set(value) {
+            state.serverPort = value
+        }
 
     var executablePath: String
         get() = state.executablePath
-        set(value) { state.executablePath = value }
+        set(value) {
+            state.executablePath = value
+        }
 
     var inlineDiffEnabled: Boolean
         get() = state.inlineDiffEnabled
-        set(value) { state.inlineDiffEnabled = value }
+        set(value) {
+            state.inlineDiffEnabled = value
+        }
 
     var diffTraceEnabled: Boolean
         get() = state.diffTraceEnabled
-        set(value) { state.diffTraceEnabled = value }
+        set(value) {
+            state.diffTraceEnabled = value
+        }
 
     var diffTraceHistoryEnabled: Boolean
         get() = state.diffTraceHistoryEnabled
-        set(value) { state.diffTraceHistoryEnabled = value }
+        set(value) {
+            state.diffTraceHistoryEnabled = value
+        }
 
     var inlineTerminalEnabled: Boolean
         get() = state.inlineTerminalEnabled
-        set(value) { state.inlineTerminalEnabled = value }
+        set(value) {
+            state.inlineTerminalEnabled = value
+        }
 
     var sessionsSectionVisible: Boolean
         get() = state.sessionsSectionVisible
-        set(value) { state.sessionsSectionVisible = value }
+        set(value) {
+            state.sessionsSectionVisible = value
+        }
 
     var terminalEngine: TerminalEngine
         get() = state.terminalEngine
-        set(value) { state.terminalEngine = value }
+        set(value) {
+            state.terminalEngine = value
+        }
 
     companion object {
         fun getInstance(project: Project): OpenCodeSettings =

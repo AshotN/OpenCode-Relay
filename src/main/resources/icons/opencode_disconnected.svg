@@ -1,14 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16" fill="none">
-  <!-- Bezel (dimmed, 1px border) -->
-  <rect x="2" y="1" width="12" height="14" fill="#6C707E" opacity="0.4"/>
-  <!-- Recessed screen area (dimmed, inset 1px) -->
-  <rect x="3" y="2" width="10" height="12" fill="#2B2D30" opacity="0.4"/>
-  <!-- Title bar strip (dimmed) -->
-  <rect x="3" y="2" width="10" height="2" fill="#4E5157" opacity="0.4"/>
-  <!-- Prompt: '>' chevron (dimmed) -->
-  <path d="M5 10L6 11L5 12" stroke="#6C707E" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter" opacity="0.4"/>
-  <!-- Cursor: '_' underscore (dimmed) -->
-  <line x1="8" y1="12" x2="11" y2="12" stroke="#6C707E" stroke-width="1" stroke-linecap="square" opacity="0.4"/>
-  <!-- Disconnected modifier: red dot, bottom-right -->
-  <circle cx="13" cy="13" r="3" fill="#DB5860"/>
+    <!-- Bezel (dimmed, 1px border) -->
+    <rect x="2" y="1" width="12" height="14" fill="#6C707E" opacity="0.4"/>
+    <!-- Recessed screen area (dimmed, inset 1px) -->
+    <rect x="3" y="2" width="10" height="12" fill="#2B2D30" opacity="0.4"/>
+    <!-- Title bar strip (dimmed) -->
+    <rect x="3" y="2" width="10" height="2" fill="#4E5157" opacity="0.4"/>
+    <!-- Prompt: '>' chevron (dimmed) -->
+    <path d="M5 10L6 11L5 12" stroke="#6C707E" stroke-width="1" stroke-linecap="square" stroke-linejoin="miter"
+          opacity="0.4"/>
+    <!-- Cursor: '_' underscore (dimmed) -->
+    <line x1="8" y1="12" x2="11" y2="12" stroke="#6C707E" stroke-width="1" stroke-linecap="square" opacity="0.4"/>
+    <!-- Disconnected modifier: red dot, bottom-right -->
+    <circle cx="13" cy="13" r="3" fill="#DB5860"/>
 </svg>

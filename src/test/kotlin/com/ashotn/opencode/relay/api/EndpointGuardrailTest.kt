@@ -28,7 +28,11 @@ class EndpointGuardrailTest {
 
         assertTrue(
             violations.isEmpty(),
-            "Domain endpoint factories must live next to their API clients, not in api.transport. Violations:\n${violations.joinToString("\n")}",
+            "Domain endpoint factories must live next to their API clients, not in api.transport. Violations:\n${
+                violations.joinToString(
+                    "\n"
+                )
+            }",
         )
     }
 }
