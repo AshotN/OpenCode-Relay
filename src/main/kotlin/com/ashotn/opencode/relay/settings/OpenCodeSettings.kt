@@ -10,6 +10,11 @@ import com.intellij.openapi.project.Project
 )
 class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
+    data class EnvironmentVariable(
+        var name: String = "",
+        var value: String = "",
+    )
+
     enum class TerminalEngine {
         /** JBTerminalWidget (classic terminal plugin, works on all supported IDE versions). */
         CLASSIC,
@@ -20,6 +25,11 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
     data class State(
         var serverPort: Int = 4096,
+        var serverHostname: String = "127.0.0.1",
+        var serverMdnsEnabled: Boolean = false,
+        var serverMdnsDomain: String = "opencode.local",
+        var serverCorsOrigins: String = "",
+        var serverEnvironmentVariables: MutableList<EnvironmentVariable> = mutableListOf(),
         var executablePath: String = "",
         var inlineDiffEnabled: Boolean = true,
         var diffTraceEnabled: Boolean = false,
@@ -41,6 +51,36 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         get() = state.serverPort
         set(value) {
             state.serverPort = value
+        }
+
+    var serverHostname: String
+        get() = state.serverHostname
+        set(value) {
+            state.serverHostname = value
+        }
+
+    var serverMdnsEnabled: Boolean
+        get() = state.serverMdnsEnabled
+        set(value) {
+            state.serverMdnsEnabled = value
+        }
+
+    var serverMdnsDomain: String
+        get() = state.serverMdnsDomain
+        set(value) {
+            state.serverMdnsDomain = value
+        }
+
+    var serverCorsOrigins: String
+        get() = state.serverCorsOrigins
+        set(value) {
+            state.serverCorsOrigins = value
+        }
+
+    var serverEnvironmentVariables: MutableList<EnvironmentVariable>
+        get() = state.serverEnvironmentVariables
+        set(value) {
+            state.serverEnvironmentVariables = value
         }
 
     var executablePath: String
@@ -93,6 +133,11 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
 fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
     serverPort = serverPort,
+    serverHostname = serverHostname,
+    serverMdnsEnabled = serverMdnsEnabled,
+    serverMdnsDomain = serverMdnsDomain,
+    serverCorsOrigins = serverCorsOrigins,
+    serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() },
     executablePath = executablePath,
     inlineDiffEnabled = inlineDiffEnabled,
     diffTraceEnabled = diffTraceEnabled,

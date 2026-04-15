@@ -11,9 +11,154 @@ import java.awt.Component
 import java.awt.Container
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import javax.swing.text.JTextComponent
 import kotlin.test.assertFailsWith
 
 class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
+
+    fun testIsModifiedWhenOnlyCorsOriginsChange() {
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverCorsOriginsModel.setItems(
+                    listOf(OpenCodeSettingsConfigurable.CorsOriginRow("http://localhost:5173"))
+                )
+            }
+
+            assertTrue(configurable.isModified())
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testIsModifiedWhenOnlyEnvironmentVariablesChange() {
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverEnvironmentVariablesModel.setItems(
+                    listOf(OpenCodeSettings.EnvironmentVariable("FOO", "bar"))
+                )
+            }
+
+            assertTrue(configurable.isModified())
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyPersistsServerEnvironmentVariables() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverEnvironmentVariablesModel.setItems(
+                    listOf(
+                        OpenCodeSettings.EnvironmentVariable("FOO", "bar"),
+                        OpenCodeSettings.EnvironmentVariable("HELLO", "world"),
+                    )
+                )
+                configurable.apply()
+            }
+
+            assertEquals(
+                listOf(
+                    OpenCodeSettings.EnvironmentVariable("FOO", "bar"),
+                    OpenCodeSettings.EnvironmentVariable("HELLO", "world"),
+                ),
+                settings.serverEnvironmentVariables,
+            )
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyPersistsServeCommandOptions() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverHostnameField.text = "0.0.0.0"
+                configurable.serverMdnsEnabledCheckBox.isSelected = true
+                configurable.serverMdnsDomainField.text = "relay.local"
+                configurable.serverCorsOriginsModel.setItems(
+                    listOf(
+                        OpenCodeSettingsConfigurable.CorsOriginRow("http://localhost:5173"),
+                        OpenCodeSettingsConfigurable.CorsOriginRow("https://app.example.com"),
+                    )
+                )
+                configurable.apply()
+            }
+
+            assertEquals("0.0.0.0", settings.serverHostname)
+            assertTrue(settings.serverMdnsEnabled)
+            assertEquals("relay.local", settings.serverMdnsDomain)
+            assertEquals("http://localhost:5173\nhttps://app.example.com", settings.serverCorsOrigins)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyCommitsActiveCorsCellEdit() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverCorsOriginsModel.setItems(
+                    listOf(OpenCodeSettingsConfigurable.CorsOriginRow("http://localhost:5173"))
+                )
+                assertTrue(configurable.serverCorsOriginsTable.editCellAt(0, 0))
+                val editor = configurable.serverCorsOriginsTable.editorComponent as? JTextComponent
+                    ?: error("CORS editor component not found")
+                editor.text = "https://app.example.com"
+                configurable.apply()
+            }
+
+            assertEquals("https://app.example.com", settings.serverCorsOrigins)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyPreservesEnvValueWhitespaceAndDropsBlankNames() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverEnvironmentVariablesModel.setItems(
+                    listOf(
+                        OpenCodeSettings.EnvironmentVariable(" FOO ", "  spaced value  "),
+                        OpenCodeSettings.EnvironmentVariable("", "should be dropped"),
+                    )
+                )
+                configurable.apply()
+            }
+
+            assertEquals(
+                listOf(OpenCodeSettings.EnvironmentVariable("FOO", "  spaced value  ")),
+                settings.serverEnvironmentVariables,
+            )
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
 
     fun testApplyAllowsSavingWhenPathIsBlankAndResolutionFails() {
         val settings = OpenCodeSettings.getInstance(project)
