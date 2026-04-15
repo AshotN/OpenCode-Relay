@@ -47,28 +47,24 @@ class ResetConnectionTest {
         )
 
         // Also set a selected session and a pending turn patch to verify those are cleared
-        h.stateStore.commitSelectedSession(
-            stateLock = h.stateLock,
-            requestedSessionId = h.sessionId,
-            sessionExists = { true },
-        )
+        h.selectCurrentSession()
         h.commitTurnPatch(listOf("src/Main.kt"))
 
         // Pre-condition: store has real data
         assertTrue(h.hunkFiles().isNotEmpty(), "pre-condition: hunkFiles should be populated")
-        assertEquals(h.sessionId, h.stateStore.selectedSessionId, "pre-condition: selectedSessionId should be set")
+        assertEquals(h.sessionId, h.selectedSessionId(), "pre-condition: selectedSessionId should be set")
         assertTrue(
-            h.stateStore.pendingTurnFilesBySession.isNotEmpty(),
+            h.hasPendingTurnFiles(),
             "pre-condition: pendingTurnFilesBySession should be populated"
         )
 
         // Act: reset (mirrors what stopListening() calls internally)
-        h.stateStore.resetState()
+        h.resetState()
 
         // Assert: every field on the store matches a freshly constructed instance.
         // Uses reflection so that any new field added to StateStore is automatically
         // covered — no manual update to this assertion is ever needed.
-        assertMatchesFreshStore(h.stateStore)
+        assertMatchesFreshStore(h.stateStoreForAssertions())
     }
 
     // -------------------------------------------------------------------------
@@ -94,7 +90,7 @@ class ResetConnectionTest {
         assertEquals(setOf(h.abs("note.md")), h.hunkFiles(), "pre-reset: file should be tracked")
 
         // Reset
-        h.stateStore.resetState()
+        h.resetState()
         assertTrue(h.hunkFiles().isEmpty(), "post-reset: hunkFiles should be empty")
 
         // Second round of activity after reset — must work as if starting fresh
@@ -123,7 +119,7 @@ class ResetConnectionTest {
  * constructed [StateStore]. Uses reflection (including private fields) so new
  * fields are automatically covered without any changes to this helper or the test.
  */
-private fun assertMatchesFreshStore(store: StateStore) {
+private fun assertMatchesFreshStore(store: Any) {
     val fresh = StateStore()
     val mismatches = StateStore::class.java.declaredFields.mapNotNull { field ->
         field.isAccessible = true

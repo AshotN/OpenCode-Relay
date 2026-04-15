@@ -8,6 +8,9 @@ package com.ashotn.opencode.relay.ipc
  */
 sealed class OpenCodeEvent {
 
+    /** server.connected — fired when the SSE stream is attached and ready. */
+    data object ServerConnected : OpenCodeEvent()
+
     /**
      * session.idle — fired when the AI finishes responding (turn complete).
      */
@@ -83,4 +86,3 @@ sealed class OpenCodeEvent {
         val metadata: Map<String, String>,
     ) : OpenCodeEvent()
 }
-

@@ -127,6 +127,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
     private fun handleEvent(event: OpenCodeEvent, generation: Long) {
         if (generation != lifecycleGeneration.get()) return
         when (event) {
+            is OpenCodeEvent.ServerConnected -> Unit
             is OpenCodeEvent.SessionDiff -> handleSessionDiff(event, fromHistory = false, generation = generation)
             is OpenCodeEvent.SessionBusy -> {
                 markSessionBusy(event.sessionId, true, generation)

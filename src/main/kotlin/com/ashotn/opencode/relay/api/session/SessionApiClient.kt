@@ -3,17 +3,18 @@ package com.ashotn.opencode.relay.api.session
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
-import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
 import com.ashotn.opencode.relay.api.transport.mapJsonArrayResponse
 import com.ashotn.opencode.relay.api.transport.mapJsonObjectResponse
+import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
 import com.ashotn.opencode.relay.api.transport.withParseContext
-import com.ashotn.opencode.relay.util.toAbsolutePath
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.ipc.SnapshotDiffTextParser
 import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
+import com.ashotn.opencode.relay.util.toAbsolutePath
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 
 class SessionApiClient(
@@ -38,6 +39,38 @@ class SessionApiClient(
             } else {
                 ApiResult.Success(CreatedSession(id))
             }
+        }.withParseContext(endpoint)
+    }
+
+    fun promptTextAsync(
+        port: Int,
+        sessionId: String,
+        providerId: String,
+        modelId: String,
+        text: String,
+    ): ApiResult<Unit> {
+        val endpoint = SessionEndpoints.promptAsync(sessionId)
+        val parts = JsonArray().apply {
+            add(JsonObject().apply {
+                addProperty("type", "text")
+                addProperty("text", text)
+            })
+        }
+        val payload = JsonObject().apply {
+            add("model", JsonObject().apply {
+                addProperty("providerID", providerId)
+                addProperty("modelID", modelId)
+            })
+            add("parts", parts)
+        }
+        val response = transport.post(
+            port = port,
+            path = endpoint.path,
+            payload = payload.toString(),
+        )
+        return when (response) {
+            is ApiResult.Failure -> response
+            is ApiResult.Success -> ApiResult.Success(Unit)
         }.withParseContext(endpoint)
     }
 

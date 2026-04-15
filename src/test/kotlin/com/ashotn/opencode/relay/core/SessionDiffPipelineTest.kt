@@ -391,30 +391,7 @@ class SessionDiffPipelineTest {
         h.disk[h.abs(file)] = original
 
         // Reconciler runs (simulated by running it directly)
-        val snapshot = h.stateStore.snapshotSessionReconcileState(
-            stateLock = h.stateLock,
-            sessionId = h.sessionId,
-            expectedGeneration = h.generation,
-            currentGeneration = { h.generation },
-        )!!
-        val decision = h.eventReducer.reduceReconcile(
-            currentHunks = snapshot.currentHunks,
-            currentDeleted = snapshot.currentDeleted,
-            currentAdded = snapshot.currentAdded,
-            currentBaselines = snapshot.currentBaselines,
-            readCurrentContent = { absPath -> h.disk[absPath] ?: "" },
-        )!!
-        h.stateStore.commitReconcile(
-            stateLock = h.stateLock,
-            sessionId = h.sessionId,
-            revision = h.stateStore.currentSessionRevision(h.stateLock, h.sessionId),
-            updatedHunks = decision.updatedHunks,
-            updatedDeleted = decision.updatedDeleted,
-            updatedAdded = decision.updatedAdded,
-            currentBaselines = snapshot.currentBaselines,
-            expectedGeneration = h.generation,
-            currentGeneration = { h.generation },
-        )
+        h.reconcileCurrentState()
 
         // The file must still be in the list — the user needs to be able to
         // open the diff viewer to see and restore what the AI did.

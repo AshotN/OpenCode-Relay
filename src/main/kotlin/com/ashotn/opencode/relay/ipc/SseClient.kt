@@ -33,7 +33,6 @@ class SseClient(
         private const val READ_TIMEOUT_MS = 0
         private const val RETRY_INITIAL_MS = 1_000L
         private const val RETRY_MAX_MS = 10_000L
-        private val NO_OP: OpenCodeEvent? = null
     }
 
     private val log = logger<SseClient>()
@@ -133,7 +132,7 @@ class SseClient(
             val properties = root.getObjectOrNull("properties") ?: JsonObject()
 
             val event: OpenCodeEvent? = when (type) {
-                "server.connected" -> NO_OP
+                "server.connected" -> OpenCodeEvent.ServerConnected
                 "session.diff" -> parseSessionDiff(properties)
                 "session.idle" -> parseSessionIdle(properties)
                 "session.created" -> parseSessionCreated(properties)
