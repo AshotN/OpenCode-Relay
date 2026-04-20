@@ -148,7 +148,9 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
 }
 
-fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
+fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = state.toSnapshot()
+
+fun OpenCodeSettings.State.toSnapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
     serverPort = serverPort,
     serverHostname = serverHostname,
     serverMdnsEnabled = serverMdnsEnabled,

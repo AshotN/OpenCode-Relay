@@ -10,12 +10,15 @@ class OpenCodeTestEventCollector(
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
     private val lock = Object()
     private val events = mutableListOf<OpenCodeEvent>()
-    private val sseClient = SseClient(port) { event ->
-        synchronized(lock) {
-            events.add(event)
-            lock.notifyAll()
-        }
-    }
+    private val sseClient = SseClient(
+        port = port,
+        onEvent = { event ->
+            synchronized(lock) {
+                events.add(event)
+                lock.notifyAll()
+            }
+        },
+    )
 
     init {
         sseClient.start()

@@ -241,7 +241,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settings = OpenCodeSettings.getInstance(project)
         val serverAuth = OpenCodeServerAuth.getInstance(project)
         val plugin = OpenCodePlugin.getInstance(project)
-        val oldSettings = snapshot(settings.state)
+        val oldSettings = settings.state.toSnapshot()
         val oldPassword = serverAuth.password()
         val oldResolutionState = plugin.executableResolutionState
 
@@ -260,7 +260,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             throw ConfigurationException("Enter a password to protect the server launched by plugin")
         }
 
-        val newSettings = snapshot(pendingState)
+        val newSettings = pendingState.toSnapshot()
         val settingsChanged = newSettings != oldSettings
         val newPassword = currentServerAuthPassword()
         val passwordChanged = newPassword != oldPassword
@@ -481,24 +481,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     private fun persistPendingToSettings(settings: OpenCodeSettings) {
         settings.loadState(pendingState.copy())
     }
-
-    private fun snapshot(state: OpenCodeSettings.State): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
-        serverPort = state.serverPort,
-        serverHostname = state.serverHostname,
-        serverMdnsEnabled = state.serverMdnsEnabled,
-        serverMdnsDomain = state.serverMdnsDomain,
-        serverCorsOrigins = state.serverCorsOrigins,
-        serverAuthUsername = state.serverAuthUsername,
-        protectPluginLaunchedServerWithAuth = state.protectPluginLaunchedServerWithAuth,
-        serverEnvironmentVariables = state.serverEnvironmentVariables.map { it.copy() },
-        executablePath = state.executablePath,
-        inlineDiffEnabled = state.inlineDiffEnabled,
-        diffTraceEnabled = state.diffTraceEnabled,
-        diffTraceHistoryEnabled = state.diffTraceHistoryEnabled,
-        inlineTerminalEnabled = state.inlineTerminalEnabled,
-        sessionsSectionVisible = state.sessionsSectionVisible,
-        terminalEngine = state.terminalEngine,
-    )
 
     private fun corsOriginColumn(): ColumnInfo<CorsOriginRow, String> =
         object : ColumnInfo<CorsOriginRow, String>("Origin") {

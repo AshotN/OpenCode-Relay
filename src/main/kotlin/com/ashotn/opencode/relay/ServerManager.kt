@@ -6,6 +6,7 @@ import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
@@ -261,12 +262,6 @@ class ServerManager(
     private fun ApiError.isAuthenticationFailure(): Boolean =
         this is ApiError.HttpError && (statusCode == 401 || statusCode == 403)
 
-    private fun processEnvironmentVariables(
-        settings: OpenCodeSettings,
-        overrides: Map<String, String>
-    ): Map<String, String> =
-        settings.serverEnvironmentVariables.associate { it.name to it.value } + overrides
-
     private fun showNotification(title: String, content: String, type: NotificationType) {
         NotificationGroupManager.getInstance()
             .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
@@ -359,10 +354,10 @@ class ServerManager(
             }
             if (settings.serverMdnsEnabled) {
                 add("--mdns")
-            }
-            if (mdnsDomain.isNotEmpty()) {
-                add("--mdns-domain")
-                add(mdnsDomain)
+                if (mdnsDomain.isNotEmpty()) {
+                    add("--mdns-domain")
+                    add(mdnsDomain)
+                }
             }
             settings.serverCorsOrigins
                 .lineSequence()
@@ -404,7 +399,7 @@ class ServerManager(
             try {
                 val settings = OpenCodeSettings.getInstance(project)
                 val environmentVariables =
-                    processEnvironmentVariables(settings, serverAuth.serverLaunchEnvironmentVariables())
+                    settings.processEnvironmentVariables(serverAuth.serverLaunchEnvironmentVariables())
                 val serveArguments = buildServeArguments(settings, port)
                 val command =
                     if (SystemInfo.isWindows) {

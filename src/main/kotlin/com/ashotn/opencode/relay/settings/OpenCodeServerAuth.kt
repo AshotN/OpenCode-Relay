@@ -54,7 +54,8 @@ class OpenCodeServerAuth(private val project: Project) {
     fun serverLaunchEnvironmentVariables(): Map<String, String> {
         val settings = OpenCodeSettings.getInstance(project)
         if (!settings.protectPluginLaunchedServerWithAuth) return emptyMap()
-        return connectionEnvironmentVariables()
+        return connectionCredentials()?.environmentVariables()
+            ?: error("Server launch authentication is enabled but credentials are incomplete")
     }
 
     private fun attributes(): CredentialAttributes =
