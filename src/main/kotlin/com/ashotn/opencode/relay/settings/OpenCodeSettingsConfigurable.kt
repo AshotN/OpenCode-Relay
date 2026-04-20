@@ -219,6 +219,10 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.serverCorsOrigins = serializeServerCorsOrigins()
         pendingState.serverEnvironmentVariables = serializeServerEnvironmentVariables()
 
+        if (pendingState.serverEnvironmentVariables.any { it.name.contains('=') }) {
+            throw ConfigurationException("Environment variable names cannot contain '='")
+        }
+
         val newSettings = snapshot(pendingState)
         val settingsChanged = newSettings != oldSettings
         val newPort = newSettings.serverPort

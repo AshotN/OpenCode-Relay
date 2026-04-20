@@ -3,6 +3,7 @@ package com.ashotn.opencode.relay.terminal
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.serverUrl
 import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
@@ -70,18 +71,21 @@ class ClassicTuiPanel(
             }
 
             val workingDir = project.basePath ?: System.getProperty("user.home")
+            val environmentVariables = OpenCodeSettings.getInstance(project).processEnvironmentVariables()
             val command = OpenCodeProcessEnvironment.terminalCommand(
                 listOf(
                     executablePath,
                     "attach",
                     serverUrl(OpenCodeSettings.getInstance(project).serverPort),
-                )
+                ),
+                environmentVariables,
             )
 
             val runner = LocalTerminalDirectRunner.createTerminalRunner(project)
             val startupOptions = ShellStartupOptions.Builder()
                 .workingDirectory(workingDir)
                 .shellCommand(command)
+                .envVariables(environmentVariables)
                 .build()
 
             val widget = runner.startShellTerminalWidget(this, startupOptions, true)

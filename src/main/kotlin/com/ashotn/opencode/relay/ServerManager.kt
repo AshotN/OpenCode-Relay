@@ -2,6 +2,8 @@ package com.ashotn.opencode.relay
 
 import com.ashotn.opencode.relay.api.health.HealthApiClient
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.showNotification
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
@@ -308,6 +310,7 @@ class ServerManager(
             }
 
             try {
+                val environmentVariables = OpenCodeSettings.getInstance(project).processEnvironmentVariables()
                 val command =
                     if (SystemInfo.isWindows) {
                         listOf("cmd", "/c", buildWindowsCommand(executablePath, "serve", "--port", port.toString()))
@@ -317,7 +320,7 @@ class ServerManager(
                 val process = ProcessBuilder(command)
                     .inheritIO()
                     .apply {
-                        OpenCodeProcessEnvironment.configure(this, executablePath)
+                        OpenCodeProcessEnvironment.configure(this, executablePath, environmentVariables)
                         val basePath = project.basePath
                         if (basePath != null) directory(File(basePath))
                     }

@@ -146,3 +146,6 @@ fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnap
     sessionsSectionVisible = sessionsSectionVisible,
     terminalEngine = terminalEngine,
 )
+
+fun OpenCodeSettings.processEnvironmentVariables(): Map<String, String> =
+    serverEnvironmentVariables.associate { it.name to it.value }
