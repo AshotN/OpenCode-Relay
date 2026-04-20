@@ -1,16 +1,19 @@
 package com.ashotn.opencode.relay.core
 
+import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.api.session.Session
 import com.ashotn.opencode.relay.api.session.SessionApiClient
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.core.session.PendingSessionSelection
 import com.ashotn.opencode.relay.core.session.SessionInfo
 import com.ashotn.opencode.relay.core.session.SessionScopeResolver
 import com.ashotn.opencode.relay.ipc.McpChangedListener
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
-import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.ashotn.opencode.relay.ipc.SseClient
 import com.ashotn.opencode.relay.permission.OpenCodePermissionService
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.OpenCodeSettings
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -58,7 +61,10 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
 
     private val permissionService = OpenCodePermissionService.getInstance(project)
     private val documentSyncService = DocumentSyncService(project)
-    private val sessionApiClient = SessionApiClient()
+    private val serverAuth = OpenCodeServerAuth.getInstance(project)
+    private val sessionApiClient = SessionApiClient(
+        OpenCodeHttpTransport(authorizationHeaderProvider = serverAuth::connectionAuthorizationHeader),
+    )
     private val hunkComputer = DiffHunkComputer(log)
     private val sessionDiffApplyComputer = SessionDiffApplyComputer(
         contentReader = documentSyncService::readCurrentContent,
@@ -98,6 +104,10 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         sseClient = SseClient(
             port = port,
             onEvent = { event -> handleEvent(event, generation) },
+            authorizationHeaderProvider = serverAuth::connectionAuthorizationHeader,
+            onAuthenticationFailure = {
+                OpenCodePlugin.getInstance(project).reportAuthenticationRequired()
+            },
         ).also { it.start() }
         trace("listener.started") {
             val traceFilePath = (tracer as? JsonlDiffTracer)?.traceFilePath()

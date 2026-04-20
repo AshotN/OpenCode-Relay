@@ -3,8 +3,11 @@ package com.ashotn.opencode.relay.tui
 import com.ashotn.opencode.relay.api.session.SessionApiClient
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
+import com.ashotn.opencode.relay.api.transport.isAuthenticationFailure
 import com.ashotn.opencode.relay.api.tui.TuiApiClient
 import com.ashotn.opencode.relay.core.OpenCodeCoreService
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.project.Project
@@ -22,8 +25,10 @@ import com.intellij.openapi.project.Project
 @Service(Service.Level.PROJECT)
 class OpenCodeTuiClient(private val project: Project) {
 
-    private val sessionApiClient = SessionApiClient()
-    private val tuiApiClient = TuiApiClient()
+    private val serverAuth = OpenCodeServerAuth.getInstance(project)
+    private val transport = OpenCodeHttpTransport(authorizationHeaderProvider = serverAuth::connectionAuthorizationHeader)
+    private val sessionApiClient = SessionApiClient(transport)
+    private val tuiApiClient = TuiApiClient(transport)
 
     @Volatile
     private var port: Int = 0
@@ -202,7 +207,11 @@ class OpenCodeTuiClient(private val project: Project) {
     }
 
     private fun apiErrorMessage(error: ApiError): String = when (error) {
-        is ApiError.HttpError -> "Server returned HTTP ${error.statusCode}"
+        is ApiError.HttpError -> if (error.isAuthenticationFailure()) {
+            "OpenCode authentication failed. Update Server Authentication settings."
+        } else {
+            "Server returned HTTP ${error.statusCode}"
+        }
         is ApiError.NetworkError -> error.message
         is ApiError.ParseError -> error.message
     }

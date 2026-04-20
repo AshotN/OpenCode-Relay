@@ -4,6 +4,7 @@ import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
@@ -49,7 +50,8 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
      * Launches an external OS terminal window running `<resolved-opencode> attach <url>`.
      */
     private fun launchExternalTerminal(executablePath: String, url: String) {
-        val environmentVariables = OpenCodeSettings.getInstance(project).processEnvironmentVariables()
+        val environmentVariables = OpenCodeSettings.getInstance(project)
+            .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
         val attachArgs = listOf(executablePath, "attach", url)
         val processCommand: List<String> = when {
             SystemInfo.isWindows -> listOf(

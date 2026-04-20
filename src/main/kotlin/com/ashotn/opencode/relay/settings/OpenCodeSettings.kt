@@ -166,5 +166,5 @@ fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnap
     terminalEngine = terminalEngine,
 )
 
-fun OpenCodeSettings.processEnvironmentVariables(): Map<String, String> =
-    serverEnvironmentVariables.associate { it.name to it.value }
+fun OpenCodeSettings.processEnvironmentVariables(overrides: Map<String, String> = emptyMap()): Map<String, String> =
+    serverEnvironmentVariables.associate { it.name to it.value } + overrides

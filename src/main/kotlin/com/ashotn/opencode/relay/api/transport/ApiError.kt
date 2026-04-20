@@ -16,3 +16,6 @@ sealed interface ApiError {
         val cause: Throwable? = null,
     ) : ApiError
 }
+
+fun ApiError.isAuthenticationFailure(): Boolean =
+    this is ApiError.HttpError && (statusCode == 401 || statusCode == 403)

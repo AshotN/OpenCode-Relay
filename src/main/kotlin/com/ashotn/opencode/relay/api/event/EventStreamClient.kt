@@ -9,7 +9,10 @@ import java.net.URI
 class EventStreamClient(
     private val connectTimeoutMs: Int = 5_000,
     private val readTimeoutMs: Int = 0,
+    private val authorizationHeaderProvider: () -> String? = { null },
 ) {
+    class AuthenticationException(message: String) : IOException(message)
+
     @Volatile
     private var activeSubscription: EventSubscription? = null
 
@@ -43,6 +46,7 @@ class EventStreamClient(
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "text/event-stream")
         connection.setRequestProperty("Cache-Control", "no-cache")
+        authorizationHeaderProvider()?.let { connection.setRequestProperty("Authorization", it) }
         connection.connectTimeout = connectTimeoutMs
         connection.readTimeout = readTimeoutMs
         connection.connect()
@@ -51,7 +55,11 @@ class EventStreamClient(
         if (statusCode !in 200..299) {
             val errorBody = connection.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
             connection.disconnect()
-            throw IOException("SSE stream failed HTTP $statusCode body=${errorBody?.take(200)}")
+            val message = "SSE stream failed HTTP $statusCode body=${errorBody?.take(200)}"
+            if (statusCode == 401 || statusCode == 403) {
+                throw AuthenticationException(message)
+            }
+            throw IOException(message)
         }
 
         val contentType = connection.contentType?.lowercase() ?: ""

@@ -75,6 +75,26 @@ class OpenCodeHttpTransportTest {
     }
 
     @Test
+    fun `adds authorization header when configured`() {
+        withTestServer { server, port ->
+            var capturedAuthorization = ""
+            server.createContext("/auth") { exchange ->
+                capturedAuthorization = exchange.requestHeaders.getFirst("Authorization") ?: ""
+
+                val response = "{}"
+                exchange.sendResponseHeaders(200, response.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(response.toByteArray(Charsets.UTF_8)) }
+            }
+
+            val transport = OpenCodeHttpTransport(authorizationHeaderProvider = { "Basic abc123" })
+            val result = transport.get(port, "/auth")
+
+            assertIs<ApiResult.Success<String?>>(result)
+            assertEquals("Basic abc123", capturedAuthorization)
+        }
+    }
+
+    @Test
     fun `maps malformed json parsing to parse error`() {
         val transport = OpenCodeHttpTransport()
 

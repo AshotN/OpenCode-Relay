@@ -3,9 +3,12 @@ package com.ashotn.opencode.relay.permission
 import com.ashotn.opencode.relay.api.permission.PermissionApiClient
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
+import com.ashotn.opencode.relay.api.transport.isAuthenticationFailure
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.PermissionChangedListener
 import com.ashotn.opencode.relay.ipc.PermissionReply
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
@@ -22,7 +25,11 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     }
 
     private val log = logger<OpenCodePermissionService>()
-    private val permissionApiClient = PermissionApiClient()
+    private val permissionApiClient = PermissionApiClient(
+        OpenCodeHttpTransport(
+            authorizationHeaderProvider = OpenCodeServerAuth.getInstance(project)::connectionAuthorizationHeader,
+        ),
+    )
 
     @Volatile
     private var port: Int = 0
@@ -95,7 +102,11 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     }
 
     private fun apiErrorMessage(error: ApiError): String = when (error) {
-        is ApiError.HttpError -> "HTTP ${error.statusCode}"
+        is ApiError.HttpError -> if (error.isAuthenticationFailure()) {
+            "OpenCode authentication failed. Update Server Authentication settings."
+        } else {
+            "HTTP ${error.statusCode}"
+        }
         is ApiError.NetworkError -> error.message
         is ApiError.ParseError -> error.message
     }

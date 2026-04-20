@@ -18,6 +18,9 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
     override fun tearDown() {
         try {
+            val settings = OpenCodeSettings.getInstance(project)
+            settings.serverAuthUsername = OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME
+            settings.protectPluginLaunchedServerWithAuth = false
             OpenCodeServerAuth.getInstance(project).setPassword("")
         } finally {
             super.tearDown()
@@ -154,6 +157,26 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             }
 
             assertEquals(OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME, settings.serverAuthUsername)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyRejectsProtectedServerWithoutPassword() {
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.protectPluginLaunchedServerWithAuthCheckBox.isSelected = true
+                configurable.serverAuthPasswordField.text = ""
+            }
+
+            val exception = assertFailsWith<ConfigurationException> {
+                runOnEdt { configurable.apply() }
+            }
+            assertTrue(exception.localizedMessage.orEmpty().contains("protect the server launched by plugin"))
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }

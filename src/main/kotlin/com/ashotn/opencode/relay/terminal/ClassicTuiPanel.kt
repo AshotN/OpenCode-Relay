@@ -3,6 +3,7 @@ package com.ashotn.opencode.relay.terminal
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.serverUrl
 import com.intellij.ide.DataManager
@@ -71,7 +72,8 @@ class ClassicTuiPanel(
             }
 
             val workingDir = project.basePath ?: System.getProperty("user.home")
-            val environmentVariables = OpenCodeSettings.getInstance(project).processEnvironmentVariables()
+            val environmentVariables = OpenCodeSettings.getInstance(project)
+                .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
             val command = OpenCodeProcessEnvironment.terminalCommand(
                 listOf(
                     executablePath,

@@ -256,11 +256,20 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             throw ConfigurationException("Environment variable names cannot contain '='")
         }
         validateReservedServerAuthEnvironmentVariables(pendingState.serverEnvironmentVariables)
+        if (pendingState.protectPluginLaunchedServerWithAuth && currentServerAuthPassword().isBlank()) {
+            throw ConfigurationException("Enter a password to protect the server launched by plugin")
+        }
 
         val newSettings = snapshot(pendingState)
         val settingsChanged = newSettings != oldSettings
         val newPassword = currentServerAuthPassword()
         val passwordChanged = newPassword != oldPassword
+        val connectionAuthChanged = oldSettings.serverAuthUsername != newSettings.serverAuthUsername || passwordChanged
+        val oldLaunchAuthEnabled = oldSettings.protectPluginLaunchedServerWithAuth && oldPassword.isNotEmpty()
+        val newLaunchAuthEnabled = newSettings.protectPluginLaunchedServerWithAuth && newPassword.isNotEmpty()
+        val launchAuthChanged =
+            oldLaunchAuthEnabled != newLaunchAuthEnabled ||
+                    (newLaunchAuthEnabled && connectionAuthChanged)
         val newPort = newSettings.serverPort
         val newPath = newSettings.executablePath
         val portChanged = newPort != oldSettings.serverPort
@@ -269,8 +278,9 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             pathChanged || (newPath.isBlank() && oldResolutionState == OpenCodeExecutableResolutionState.Resolving)
         if (!settingsChanged && !passwordChanged && !shouldUpdateExecutableResolution) return
 
-        val mustConfirmStop = plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged)
+        val mustConfirmStop = plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || launchAuthChanged)
         val mustReattach = plugin.isRunning && !plugin.ownsProcess && portChanged
+        val mustResetConnection = plugin.isRunning && !plugin.ownsProcess && !portChanged && connectionAuthChanged
 
         var resolvedState = oldResolutionState
         if (shouldUpdateExecutableResolution) {
@@ -299,6 +309,11 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         when {
             mustConfirmStop -> plugin.stopServer()
             mustReattach -> plugin.reattach(newPort)
+            mustResetConnection -> plugin.resetConnection()
+        }
+
+        if (connectionAuthChanged && !plugin.ownsProcess && !mustReattach && !mustResetConnection) {
+            plugin.checkPort(newPort)
         }
 
         if (shouldUpdateExecutableResolution && resolvedState != oldResolutionState) {

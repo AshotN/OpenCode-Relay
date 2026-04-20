@@ -3,6 +3,9 @@ package com.ashotn.opencode.relay.api.mcp
 import com.ashotn.opencode.relay.api.config.ConfigApiClient
 import com.ashotn.opencode.relay.api.config.ConfigApiClient.McpServerConfig
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.intellij.openapi.project.Project
 import java.util.concurrent.CopyOnWriteArraySet
 
 /**
@@ -100,6 +103,18 @@ class McpService(
             listMcpEntries(port)
         } finally {
             loadingNames.remove(name)
+        }
+    }
+
+    companion object {
+        fun forProject(project: Project): McpService {
+            val transport = OpenCodeHttpTransport(
+                authorizationHeaderProvider = OpenCodeServerAuth.getInstance(project)::connectionAuthorizationHeader,
+            )
+            return McpService(
+                configClient = ConfigApiClient(transport),
+                mcpClient = McpApiClient(transport),
+            )
         }
     }
 }

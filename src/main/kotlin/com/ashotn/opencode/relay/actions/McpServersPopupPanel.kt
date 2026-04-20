@@ -33,8 +33,9 @@ import javax.swing.SwingConstants
  * [Disposable] so the subscription is cleaned up when the popup closes.
  */
 class McpServersPopupPanel(
+    project: Project,
     private val port: Int,
-    private val mcpService: McpService = McpService(),
+    private val mcpService: McpService = McpService.forProject(project),
 ) : JPanel(BorderLayout()) {
 
     private val listPanel = JPanel(GridBagLayout()).apply { isOpaque = false }

@@ -31,7 +31,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
                 OpenCodeCoreService.getInstance(project).startListening(port)
                 OpenCodeTuiClient.getInstance(project).setPort(port)
             }
-        } else if (state == ServerState.STOPPED) {
+        } else if (state == ServerState.STOPPED || state == ServerState.PORT_CONFLICT || state == ServerState.AUTH_REQUIRED) {
             ApplicationManager.getApplication().executeOnPooledThread {
                 if (project.isDisposed) return@executeOnPooledThread
                 OpenCodeCoreService.getInstance(project).stopListening()
@@ -151,6 +151,10 @@ class OpenCodePlugin(private val project: Project) : Disposable {
                 broadcastState(realState)
             }
         }
+    }
+
+    fun reportAuthenticationRequired() {
+        serverManager.reportAuthenticationRequired()
     }
 
     // --- Disposable ---

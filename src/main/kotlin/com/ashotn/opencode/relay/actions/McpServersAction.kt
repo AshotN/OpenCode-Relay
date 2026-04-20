@@ -25,7 +25,7 @@ class McpServersAction(private val project: Project) : AnAction() {
 
     override fun actionPerformed(e: AnActionEvent) {
         val port = OpenCodeSettings.getInstance(project).serverPort
-        val content = McpServersPopupPanel(port)
+        val content = McpServersPopupPanel(project, port)
 
         val popup = JBPopupFactory.getInstance()
             .createComponentPopupBuilder(content, content)
