@@ -8,6 +8,8 @@ data class OpenCodeSettingsSnapshot(
     val serverMdnsEnabled: Boolean,
     val serverMdnsDomain: String,
     val serverCorsOrigins: String,
+    val serverAuthUsername: String,
+    val protectPluginLaunchedServerWithAuth: Boolean,
     val serverEnvironmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     val executablePath: String,
     val inlineDiffEnabled: Boolean,

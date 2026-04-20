@@ -16,6 +16,14 @@ import kotlin.test.assertFailsWith
 
 class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
+    override fun tearDown() {
+        try {
+            OpenCodeServerAuth.getInstance(project).setPassword("")
+        } finally {
+            super.tearDown()
+        }
+    }
+
     fun testIsModifiedWhenOnlyCorsOriginsChange() {
         val configurable = OpenCodeSettingsConfigurable(project)
 
@@ -110,6 +118,47 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         }
     }
 
+    fun testApplyPersistsServerAuthenticationSettings() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val serverAuth = OpenCodeServerAuth.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverAuthUsernameField.text = "alice"
+                configurable.serverAuthPasswordField.text = "secret"
+                configurable.protectPluginLaunchedServerWithAuthCheckBox.isSelected = true
+                configurable.apply()
+            }
+
+            assertEquals("alice", settings.serverAuthUsername)
+            assertTrue(settings.protectPluginLaunchedServerWithAuth)
+            assertEquals("secret", serverAuth.password())
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyDefaultsBlankServerAuthUsername() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverAuthUsernameField.text = "   "
+                configurable.apply()
+            }
+
+            assertEquals(OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME, settings.serverAuthUsername)
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
     fun testApplyCommitsActiveCorsCellEdit() {
         val settings = OpenCodeSettings.getInstance(project)
         val configurable = OpenCodeSettingsConfigurable(project)
@@ -155,6 +204,27 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
                 listOf(OpenCodeSettings.EnvironmentVariable("FOO", "  spaced value  ")),
                 settings.serverEnvironmentVariables,
             )
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyRejectsReservedServerAuthEnvironmentVariables() {
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverEnvironmentVariablesModel.setItems(
+                    listOf(OpenCodeSettings.EnvironmentVariable("OPENCODE_SERVER_PASSWORD", "secret"))
+                )
+            }
+
+            val exception = assertFailsWith<ConfigurationException> {
+                runOnEdt { configurable.apply() }
+            }
+            assertTrue(exception.localizedMessage.orEmpty().contains("Server Authentication fields"))
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }

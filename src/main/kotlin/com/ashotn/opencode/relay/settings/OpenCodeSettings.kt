@@ -10,6 +10,13 @@ import com.intellij.openapi.project.Project
 )
 class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
 
+    companion object {
+        const val DEFAULT_SERVER_AUTH_USERNAME: String = "opencode"
+
+        fun getInstance(project: Project): OpenCodeSettings =
+            project.getService(OpenCodeSettings::class.java)
+    }
+
     data class EnvironmentVariable(
         var name: String = "",
         var value: String = "",
@@ -29,6 +36,8 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var serverMdnsEnabled: Boolean = false,
         var serverMdnsDomain: String = "opencode.local",
         var serverCorsOrigins: String = "",
+        var serverAuthUsername: String = DEFAULT_SERVER_AUTH_USERNAME,
+        var protectPluginLaunchedServerWithAuth: Boolean = false,
         var serverEnvironmentVariables: MutableList<EnvironmentVariable> = mutableListOf(),
         var executablePath: String = "",
         var inlineDiffEnabled: Boolean = true,
@@ -75,6 +84,18 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         get() = state.serverCorsOrigins
         set(value) {
             state.serverCorsOrigins = value
+        }
+
+    var serverAuthUsername: String
+        get() = state.serverAuthUsername
+        set(value) {
+            state.serverAuthUsername = value
+        }
+
+    var protectPluginLaunchedServerWithAuth: Boolean
+        get() = state.protectPluginLaunchedServerWithAuth
+        set(value) {
+            state.protectPluginLaunchedServerWithAuth = value
         }
 
     var serverEnvironmentVariables: MutableList<EnvironmentVariable>
@@ -125,10 +146,6 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             state.terminalEngine = value
         }
 
-    companion object {
-        fun getInstance(project: Project): OpenCodeSettings =
-            project.getService(OpenCodeSettings::class.java)
-    }
 }
 
 fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
@@ -137,6 +154,8 @@ fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnap
     serverMdnsEnabled = serverMdnsEnabled,
     serverMdnsDomain = serverMdnsDomain,
     serverCorsOrigins = serverCorsOrigins,
+    serverAuthUsername = serverAuthUsername,
+    protectPluginLaunchedServerWithAuth = protectPluginLaunchedServerWithAuth,
     serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() },
     executablePath = executablePath,
     inlineDiffEnabled = inlineDiffEnabled,
