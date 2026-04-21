@@ -253,6 +253,30 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         }
     }
 
+    fun testApplyRejectsDuplicateEnvironmentVariableNamesIgnoringCase() {
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+
+            runOnEdt {
+                configurable.serverEnvironmentVariablesModel.setItems(
+                    listOf(
+                        OpenCodeSettings.EnvironmentVariable("FOO", "one"),
+                        OpenCodeSettings.EnvironmentVariable(" foo ", "two"),
+                    )
+                )
+            }
+
+            val exception = assertFailsWith<ConfigurationException> {
+                runOnEdt { configurable.apply() }
+            }
+            assertTrue(exception.localizedMessage.orEmpty().contains("must be unique"))
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
     fun testApplyAllowsSavingWhenPathIsBlankAndResolutionFails() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.executablePath = "C:/Users/VM/AppData/Roaming/npm/opencode.cmd"

@@ -53,7 +53,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     override fun getState(): State = state
 
     override fun loadState(state: State) {
-        this.state = state
+        this.state = state.deepCopy()
     }
 
     var serverPort: Int
@@ -98,10 +98,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             state.protectPluginLaunchedServerWithAuth = value
         }
 
-    var serverEnvironmentVariables: MutableList<EnvironmentVariable>
-        get() = state.serverEnvironmentVariables
+    var serverEnvironmentVariables: List<EnvironmentVariable>
+        get() = state.serverEnvironmentVariables.map { it.copy() }
         set(value) {
-            state.serverEnvironmentVariables = value
+            state.serverEnvironmentVariables = value.map { it.copy() }.toMutableList()
         }
 
     var executablePath: String
@@ -147,6 +147,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         }
 
 }
+
+fun OpenCodeSettings.State.deepCopy(): OpenCodeSettings.State = copy(
+    serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() }.toMutableList(),
+)
 
 fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = state.toSnapshot()
 

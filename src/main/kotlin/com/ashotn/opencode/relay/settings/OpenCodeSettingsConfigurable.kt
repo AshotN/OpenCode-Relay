@@ -255,6 +255,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         if (pendingState.serverEnvironmentVariables.any { it.name.contains('=') }) {
             throw ConfigurationException("Environment variable names cannot contain '='")
         }
+        validateUniqueEnvironmentVariableNames(pendingState.serverEnvironmentVariables)
         validateReservedServerAuthEnvironmentVariables(pendingState.serverEnvironmentVariables)
         if (pendingState.protectPluginLaunchedServerWithAuth && currentServerAuthPassword().isBlank()) {
             throw ConfigurationException("Enter a password to protect the server launched by plugin")
@@ -420,6 +421,23 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         )
     }
 
+    private fun validateUniqueEnvironmentVariableNames(
+        environmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
+    ) {
+        val duplicateName = environmentVariables
+            .map { it.name.trim() }
+            .filter(String::isNotEmpty)
+            .groupingBy { it.uppercase() }
+            .eachCount()
+            .entries
+            .firstOrNull { it.value > 1 }
+            ?.key
+            ?: return
+
+        val originalName = environmentVariables.first { it.name.trim().uppercase() == duplicateName }.name.trim()
+        throw ConfigurationException("Environment variable names must be unique: $originalName")
+    }
+
     private fun currentCorsOriginRows(): List<CorsOriginRow> =
         currentTableItems(
             table = serverCorsOriginsTable,
@@ -479,7 +497,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     }
 
     private fun persistPendingToSettings(settings: OpenCodeSettings) {
-        settings.loadState(pendingState.copy())
+        settings.loadState(pendingState.deepCopy())
     }
 
     private fun corsOriginColumn(): ColumnInfo<CorsOriginRow, String> =

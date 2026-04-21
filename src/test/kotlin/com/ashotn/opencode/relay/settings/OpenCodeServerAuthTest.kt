@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.settings
 
 import com.intellij.testFramework.fixtures.BasePlatformTestCase
+import kotlin.test.assertFailsWith
 
 class OpenCodeServerAuthTest : BasePlatformTestCase() {
 
@@ -50,5 +51,18 @@ class OpenCodeServerAuthTest : BasePlatformTestCase() {
             ),
             auth.serverLaunchEnvironmentVariables(),
         )
+    }
+
+    fun testServerLaunchEnvironmentVariablesFailWhenProtectionEnabledAndPasswordMissing() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val auth = OpenCodeServerAuth.getInstance(project)
+
+        settings.serverAuthUsername = "alice"
+        auth.setPassword("")
+        settings.protectPluginLaunchedServerWithAuth = true
+
+        assertFailsWith<OpenCodeServerAuth.MissingServerLaunchAuthCredentialsException> {
+            auth.serverLaunchEnvironmentVariables()
+        }
     }
 }

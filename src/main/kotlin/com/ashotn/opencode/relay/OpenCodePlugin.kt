@@ -9,6 +9,7 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 
 @Service(Service.Level.PROJECT)
 class OpenCodePlugin(private val project: Project) : Disposable {
@@ -16,6 +17,9 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     // --- Listeners ---
 
     private val listeners = CopyOnWriteArrayList<ServerStateListener>()
+    private val connectionSyncExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "opencode-connection-sync").apply { isDaemon = true }
+    }
 
     fun addListener(listener: ServerStateListener) = listeners.add(listener)
     fun removeListener(listener: ServerStateListener) = listeners.remove(listener)
@@ -24,20 +28,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
 
     private val serverManager = ServerManager(project) { state ->
         listeners.forEach { it.onStateChanged(state) }
-        if (state == ServerState.READY) {
-            val port = OpenCodeSettings.getInstance(project).serverPort
-            ApplicationManager.getApplication().executeOnPooledThread {
-                if (project.isDisposed) return@executeOnPooledThread
-                OpenCodeCoreService.getInstance(project).startListening(port)
-                OpenCodeTuiClient.getInstance(project).setPort(port)
-            }
-        } else if (state == ServerState.STOPPED || state == ServerState.PORT_CONFLICT || state == ServerState.AUTH_REQUIRED) {
-            ApplicationManager.getApplication().executeOnPooledThread {
-                if (project.isDisposed) return@executeOnPooledThread
-                OpenCodeCoreService.getInstance(project).stopListening()
-                OpenCodeTuiClient.getInstance(project).setPort(0)
-            }
-        }
+        scheduleConnectionSync(state)
     }
 
     val isRunning: Boolean get() = serverManager.isRunning
@@ -105,6 +96,27 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         listeners.forEach { it.onStateChanged(state) }
     }
 
+    private fun scheduleConnectionSync(state: ServerState) {
+        connectionSyncExecutor.execute {
+            if (project.isDisposed) return@execute
+
+            when (state) {
+                ServerState.READY -> {
+                    val port = OpenCodeSettings.getInstance(project).serverPort
+                    OpenCodeCoreService.getInstance(project).startListening(port)
+                    OpenCodeTuiClient.getInstance(project).setPort(port)
+                }
+
+                ServerState.STOPPED, ServerState.PORT_CONFLICT, ServerState.AUTH_REQUIRED -> {
+                    OpenCodeCoreService.getInstance(project).stopListening()
+                    OpenCodeTuiClient.getInstance(project).setPort(0)
+                }
+
+                else -> Unit
+            }
+        }
+    }
+
     fun startPolling(port: Int, intervalSeconds: Long = 10L) = serverManager.startPolling(port, intervalSeconds)
     fun checkPort(port: Int) = serverManager.checkPort(port)
 
@@ -138,17 +150,19 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         val port = OpenCodeSettings.getInstance(project).serverPort
         overrideState = ServerState.RESETTING
         broadcastState(ServerState.RESETTING)
-        ApplicationManager.getApplication().executeOnPooledThread {
-            if (project.isDisposed) return@executeOnPooledThread
+        connectionSyncExecutor.execute {
+            if (project.isDisposed) return@execute
             val diffService = OpenCodeCoreService.getInstance(project)
+            val tuiClient = OpenCodeTuiClient.getInstance(project)
             diffService.stopListening()
-            overrideState = null
+            tuiClient.setPort(0)
             diffService.startListening(port)
-            // Broadcast the real underlying state now that the override is cleared,
-            // so listeners (e.g. the TUI panel) can react and restore themselves.
-            val realState = serverManager.serverState
+            tuiClient.setPort(port)
+            overrideState = null
             ApplicationManager.getApplication().invokeLater {
-                broadcastState(realState)
+                if (!project.isDisposed) {
+                    broadcastState(serverManager.serverState)
+                }
             }
         }
     }
@@ -162,6 +176,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     override fun dispose() {
         listeners.clear()
         serverManager.dispose()
+        connectionSyncExecutor.shutdownNow()
     }
 
     companion object {

@@ -379,8 +379,8 @@ class ServerManager(
         }
         if (!isLaunchable) {
             showNotification(
-                "Failed to start OpenCode Relay",
-                "OpenCode Relay executable is not valid or executable: $executablePath",
+                "Failed to start OpenCode server",
+                "The OpenCode executable is not valid or executable: $executablePath",
                 NotificationType.ERROR,
             )
             applyState(ServerState.STOPPED)
@@ -435,13 +435,25 @@ class ServerManager(
 
                 scheduler.schedule({ doCheckPort(port) }, HEALTH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
-                val message = e.message ?: e.javaClass.simpleName
                 SwingUtilities.invokeLater {
-                    showNotification(
-                        "Failed to start OpenCode Relay",
-                        "Could not launch the OpenCode Relay process: $message",
-                        NotificationType.ERROR,
-                    )
+                    when (e) {
+                        is OpenCodeServerAuth.MissingServerLaunchAuthCredentialsException -> {
+                            showNotification(
+                                "Failed to start OpenCode server",
+                                "Server authentication is enabled, but the password is missing. Re-enter it in Settings | OpenCode Relay.",
+                                NotificationType.ERROR,
+                            )
+                        }
+
+                        else -> {
+                            val message = e.message ?: e.javaClass.simpleName
+                            showNotification(
+                                "Failed to start OpenCode server",
+                                "Could not launch the OpenCode server process: $message",
+                                NotificationType.ERROR,
+                            )
+                        }
+                    }
                     applyState(ServerState.STOPPED)
                 }
             }

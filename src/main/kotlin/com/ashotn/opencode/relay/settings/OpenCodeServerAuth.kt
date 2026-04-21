@@ -12,6 +12,10 @@ import java.util.Base64
 @Service(Service.Level.PROJECT)
 class OpenCodeServerAuth(private val project: Project) {
 
+    class MissingServerLaunchAuthCredentialsException : IllegalStateException(
+        "Server launch authentication is enabled but credentials are incomplete",
+    )
+
     data class BasicAuthCredentials(
         val username: String,
         val password: String,
@@ -55,7 +59,7 @@ class OpenCodeServerAuth(private val project: Project) {
         val settings = OpenCodeSettings.getInstance(project)
         if (!settings.protectPluginLaunchedServerWithAuth) return emptyMap()
         return connectionCredentials()?.environmentVariables()
-            ?: error("Server launch authentication is enabled but credentials are incomplete")
+            ?: throw MissingServerLaunchAuthCredentialsException()
     }
 
     private fun attributes(): CredentialAttributes =

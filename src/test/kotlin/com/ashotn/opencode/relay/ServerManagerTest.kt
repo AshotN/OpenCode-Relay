@@ -13,24 +13,27 @@ class ServerManagerTest : BasePlatformTestCase() {
         settings.serverCorsOrigins = "http://localhost:5173\nhttps://app.example.com"
 
         val manager = ServerManager(project) { }
-
-        assertEquals(
-            listOf(
-                "serve",
-                "--port",
-                "4096",
-                "--hostname",
-                "0.0.0.0",
-                "--mdns",
-                "--mdns-domain",
-                "relay.local",
-                "--cors",
-                "http://localhost:5173",
-                "--cors",
-                "https://app.example.com",
-            ),
-            manager.buildServeArguments(settings, 4096),
-        )
+        try {
+            assertEquals(
+                listOf(
+                    "serve",
+                    "--port",
+                    "4096",
+                    "--hostname",
+                    "0.0.0.0",
+                    "--mdns",
+                    "--mdns-domain",
+                    "relay.local",
+                    "--cors",
+                    "http://localhost:5173",
+                    "--cors",
+                    "https://app.example.com",
+                ),
+                manager.buildServeArguments(settings, 4096),
+            )
+        } finally {
+            manager.dispose()
+        }
     }
 
     fun testBuildServeArgumentsOmitsBlankHostnameAndCorsOrigins() {
@@ -41,10 +44,13 @@ class ServerManagerTest : BasePlatformTestCase() {
         settings.serverCorsOrigins = "\n  \n"
 
         val manager = ServerManager(project) { }
-
-        assertEquals(
-            listOf("serve", "--port", "4096"),
-            manager.buildServeArguments(settings, 4096),
-        )
+        try {
+            assertEquals(
+                listOf("serve", "--port", "4096"),
+                manager.buildServeArguments(settings, 4096),
+            )
+        } finally {
+            manager.dispose()
+        }
     }
 }
