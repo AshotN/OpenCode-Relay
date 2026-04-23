@@ -90,7 +90,8 @@ class ClassicTuiPanel(
             val widget = runner.startShellTerminalWidget(this, startupOptions, true)
             terminalWidget = widget
             Disposer.register(this, widget)
-            terminalPanel = ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also(::installEmbeddedTerminalDataProvider)
+            terminalPanel =
+                ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also(::installEmbeddedTerminalDataProvider)
 
             // When the shell process exits, clean up and notify the owner.
             widget.addTerminationCallback({
@@ -152,6 +153,7 @@ class ClassicTuiPanel(
         // inside a custom tool window. Install the override on the terminal panel itself so the
         // explicit null wins before any ancestor ToolWindow provider in the data-context chain.
         installTerminalToolWindowOverride(panel)
+        installEmbeddedTerminalKeyOverrides(panel)
     }
 
     private fun uninstallEmbeddedTerminalDataProvider() {
