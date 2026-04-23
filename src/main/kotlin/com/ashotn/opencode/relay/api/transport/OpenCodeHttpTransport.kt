@@ -12,6 +12,7 @@ import java.time.Duration
 class OpenCodeHttpTransport(
     defaultConnectTimeoutMs: Int = 3_000,
     private val defaultReadTimeoutMs: Int = 5_000,
+    private val authorizationHeaderProvider: () -> String? = { null },
 ) {
     data class Timeouts(val readTimeoutMs: Int)
 
@@ -137,6 +138,7 @@ class OpenCodeHttpTransport(
             .method(method, bodyPublisher)
             .apply {
                 header("Accept", accept)
+                authorizationHeaderProvider()?.let { header("Authorization", it) }
                 if (payload != null && contentType != null) header("Content-Type", contentType)
                 timeout(Duration.ofMillis(resolvedTimeouts.readTimeoutMs.toLong()))
             }

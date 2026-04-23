@@ -3,11 +3,10 @@ package com.ashotn.opencode.relay.terminal
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.serverUrl
-import com.intellij.ide.DataManager
 import com.intellij.openapi.Disposable
-import com.intellij.openapi.actionSystem.CustomizedDataContext
-import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
 import com.intellij.openapi.project.Project
@@ -70,26 +69,28 @@ class ClassicTuiPanel(
             }
 
             val workingDir = project.basePath ?: System.getProperty("user.home")
+            val environmentVariables = OpenCodeSettings.getInstance(project)
+                .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
             val command = OpenCodeProcessEnvironment.terminalCommand(
                 listOf(
                     executablePath,
                     "attach",
                     serverUrl(OpenCodeSettings.getInstance(project).serverPort),
-                )
+                ),
+                environmentVariables,
             )
 
             val runner = LocalTerminalDirectRunner.createTerminalRunner(project)
             val startupOptions = ShellStartupOptions.Builder()
                 .workingDirectory(workingDir)
                 .shellCommand(command)
+                .envVariables(environmentVariables)
                 .build()
 
             val widget = runner.startShellTerminalWidget(this, startupOptions, true)
             terminalWidget = widget
             Disposer.register(this, widget)
-            terminalPanel = ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also { panel ->
-                installEmbeddedTerminalDataProvider(panel)
-            }
+            terminalPanel = ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also(::installEmbeddedTerminalDataProvider)
 
             // When the shell process exits, clean up and notify the owner.
             widget.addTerminationCallback({
@@ -148,18 +149,13 @@ class ClassicTuiPanel(
     private fun installEmbeddedTerminalDataProvider(panel: JBTerminalPanel) {
         // JBTerminalPanel's internal TerminalEscapeKeyListener moves focus back to the editor
         // whenever the terminal reports a ToolWindow in its data context. Our terminal is embedded
-        // inside a custom tool window, so return an explicit null for TOOL_WINDOW to keep ESC inside
-        // the TUI while still allowing the key event to reach the terminal process.
-        DataManager.registerDataProvider(panel) { dataId ->
-            when {
-                PlatformDataKeys.TOOL_WINDOW.`is`(dataId) -> CustomizedDataContext.EXPLICIT_NULL
-                else -> null
-            }
-        }
+        // inside a custom tool window. Install the override on the terminal panel itself so the
+        // explicit null wins before any ancestor ToolWindow provider in the data-context chain.
+        installTerminalToolWindowOverride(panel)
     }
 
     private fun uninstallEmbeddedTerminalDataProvider() {
-        terminalPanel?.let(DataManager::removeDataProvider)
+        terminalPanel?.let(::uninstallTerminalToolWindowOverride)
         terminalPanel = null
     }
 

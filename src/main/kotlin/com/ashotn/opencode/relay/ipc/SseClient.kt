@@ -27,6 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class SseClient(
     private val port: Int,
     private val onEvent: (OpenCodeEvent) -> Unit,
+    authorizationHeaderProvider: () -> String? = { null },
+    private val onAuthenticationFailure: (() -> Unit)? = null,
 ) {
     companion object {
         private const val CONNECT_TIMEOUT_MS = 5_000
@@ -45,6 +47,7 @@ class SseClient(
     private val eventStreamClient = EventStreamClient(
         connectTimeoutMs = CONNECT_TIMEOUT_MS,
         readTimeoutMs = READ_TIMEOUT_MS,
+        authorizationHeaderProvider = authorizationHeaderProvider,
     )
 
     private var future: Future<*>? = null
@@ -70,6 +73,11 @@ class SseClient(
             try {
                 connect()
                 retryDelayMs = RETRY_INITIAL_MS
+            } catch (e: EventStreamClient.AuthenticationException) {
+                log.info("SseClient: authentication failed, stopping SSE loop", e)
+                running.set(false)
+                onAuthenticationFailure?.invoke()
+                break
             } catch (_: InterruptedException) {
                 break
             } catch (e: Exception) {

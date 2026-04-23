@@ -1,8 +1,11 @@
 package com.ashotn.opencode.relay.actions
 
 import com.ashotn.opencode.relay.OpenCodePlugin
+import com.ashotn.opencode.relay.OpenCodeProcessEnvironment
 import com.ashotn.opencode.relay.ServerState
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.ashotn.opencode.relay.util.applyStrings
 import com.ashotn.opencode.relay.util.showNotification
 import com.ashotn.opencode.relay.util.serverUrl
@@ -47,6 +50,8 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
      * Launches an external OS terminal window running `<resolved-opencode> attach <url>`.
      */
     private fun launchExternalTerminal(executablePath: String, url: String) {
+        val environmentVariables = OpenCodeSettings.getInstance(project)
+            .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
         val attachArgs = listOf(executablePath, "attach", url)
         val processCommand: List<String> = when {
             SystemInfo.isWindows -> listOf(
@@ -56,7 +61,9 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
             )
 
             SystemInfo.isMac -> {
-                val command = buildPosixAttachCommand(executablePath, url)
+                val command = buildPosixAttachCommand(
+                    OpenCodeProcessEnvironment.terminalCommand(attachArgs, environmentVariables)
+                )
                 listOf(
                     "osascript",
                     "-e",
@@ -79,6 +86,9 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
         try {
             ProcessBuilder(processCommand)
                 .inheritIO()
+                .apply {
+                    OpenCodeProcessEnvironment.configure(this, executablePath, environmentVariables)
+                }
                 .start()
         } catch (ex: Exception) {
             project.showNotification(
@@ -92,8 +102,8 @@ class OpenTerminalAction(private val project: Project) : AnAction() {
     private fun buildWindowsAttachCommand(executablePath: String, url: String): String =
         "start \"\" \"$executablePath\" attach \"$url\""
 
-    private fun buildPosixAttachCommand(executablePath: String, url: String): String =
-        "${shellQuote(executablePath)} attach ${shellQuote(url)}"
+    private fun buildPosixAttachCommand(command: List<String>): String =
+        command.joinToString(" ", transform = ::shellQuote)
 
     private fun shellQuote(value: String): String =
         "'${value.replace("'", "'\"'\"'")}'"

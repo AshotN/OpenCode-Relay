@@ -200,6 +200,12 @@ class InstalledPanel(
                 buttonPanel.isVisible = false
             }
 
+            ServerState.AUTH_REQUIRED -> {
+                portStatusLabel.text = "Authentication required for the server on port $port"
+                portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()
+                buttonPanel.isVisible = false
+            }
+
             ServerState.RESETTING -> {
                 portStatusLabel.text = "Resetting OpenCode Relay…"
                 portStatusLabel.foreground = JBUI.CurrentTheme.Label.disabledForeground()

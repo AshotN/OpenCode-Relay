@@ -5,23 +5,35 @@ import java.io.File
 
 internal object OpenCodeProcessEnvironment {
 
-    fun configure(processBuilder: ProcessBuilder, executablePath: String) {
+    fun configure(
+        processBuilder: ProcessBuilder,
+        executablePath: String,
+        environmentVariables: Map<String, String> = emptyMap(),
+    ) {
+        applyEnvironmentVariables(processBuilder.environment(), environmentVariables)
         nvmBinDirectory(executablePath)?.let { binDir ->
             prependPath(processBuilder.environment(), binDir)
         }
     }
 
-    fun terminalCommand(command: List<String>): List<String> {
+    fun terminalCommand(
+        command: List<String>,
+        environmentVariables: Map<String, String>,
+    ): List<String> {
         if (command.isEmpty()) return command
 
-        val executablePath = command.first()
-        val nvmBinDirectory = nvmBinDirectory(executablePath) ?: return command
-        if (SystemInfo.isWindows) return command
+        val environment = linkedMapOf<String, String>()
+        applyEnvironmentVariables(environment, environmentVariables)
+        nvmBinDirectory(command.first())?.let { binDir ->
+            prependPath(environment, binDir)
+        }
+        if (environment.isEmpty()) return command
 
-        return listOf(
-            "/usr/bin/env",
-            "PATH=${pathWithPrependedDirectory(System.getenv("PATH"), nvmBinDirectory)}",
-        ) + command
+        return if (SystemInfo.isWindows) {
+            listOf("cmd", "/c", buildWindowsTerminalCommand(command, environment))
+        } else {
+            listOf("/usr/bin/env") + environment.map { (name, value) -> "$name=$value" } + command
+        }
     }
 
     private fun nvmBinDirectory(executablePath: String): String? {
@@ -40,10 +52,40 @@ internal object OpenCodeProcessEnvironment {
         }
     }
 
+    private fun applyEnvironmentVariables(
+        environment: MutableMap<String, String>,
+        environmentVariables: Map<String, String>,
+    ) {
+        environmentVariables.forEach { (name, value) ->
+            val normalizedName = name.trim()
+            if (normalizedName.isBlank()) return@forEach
+
+            val key = environment.keys.firstOrNull { it.equals(normalizedName, ignoreCase = true) } ?: normalizedName
+            environment[key] = value
+        }
+    }
+
     private fun prependPath(environment: MutableMap<String, String>, directory: String) {
         val pathKey = environment.keys.firstOrNull { it.equals("PATH", ignoreCase = true) } ?: "PATH"
         environment[pathKey] = pathWithPrependedDirectory(environment[pathKey], directory)
     }
+
+    private fun buildWindowsTerminalCommand(
+        command: List<String>,
+        environment: Map<String, String>,
+    ): String = buildString {
+        environment.forEach { (name, value) ->
+            append("set \"")
+            append(name)
+            append('=')
+            append(value.replace("\"", "\"\""))
+            append("\" && ")
+        }
+        append(command.joinToString(" ") { windowsQuote(it) })
+    }
+
+    private fun windowsQuote(value: String): String =
+        "\"${value.replace("\"", "\\\"")}\""
 
     private fun pathWithPrependedDirectory(currentPath: String?, directory: String): String {
         val pathEntries = currentPath.orEmpty().split(File.pathSeparator).filter { it.isNotBlank() }

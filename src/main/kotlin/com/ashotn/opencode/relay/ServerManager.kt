@@ -1,8 +1,13 @@
 package com.ashotn.opencode.relay
 
 import com.ashotn.opencode.relay.api.health.HealthApiClient
+import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
-import com.ashotn.opencode.relay.util.showNotification
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
+import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.processEnvironmentVariables
+import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
@@ -36,6 +41,9 @@ enum class ServerState {
     /** Port is open but occupied by a non-OpenCode process - user action required. */
     PORT_CONFLICT,
 
+    /** Port is open and the process listening on it requires authentication. */
+    AUTH_REQUIRED,
+
     /** A reset was requested - clearing state and reconnecting. */
     RESETTING,
 }
@@ -51,6 +59,12 @@ class ServerManager(
     private val project: Project,
     private val onStateChanged: (ServerState) -> Unit,
 ) {
+
+    private enum class HealthStatus {
+        HEALTHY,
+        AUTH_REQUIRED,
+        UNHEALTHY,
+    }
 
     companion object {
         private val log = logger<ServerManager>()
@@ -85,7 +99,14 @@ class ServerManager(
     /** Monotonic revision to ignore stale external health checks. */
     private val externalHealthRevision = AtomicLong(0)
 
-    private val healthApiClient = HealthApiClient()
+    private val serverAuth = OpenCodeServerAuth.getInstance(project)
+    private val healthApiClient = HealthApiClient(
+        transport = OpenCodeHttpTransport(
+            defaultConnectTimeoutMs = 1_000,
+            defaultReadTimeoutMs = 1_000,
+            authorizationHeaderProvider = serverAuth::connectionAuthorizationHeader,
+        ),
+    )
 
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "opencode-poll").apply { isDaemon = true }
@@ -153,7 +174,7 @@ class ServerManager(
 
         externalHealthRevision.incrementAndGet()
         if (wasPortOpen) {
-            project.showNotification(
+            showNotification(
                 "OpenCode stopped unexpectedly",
                 "The OpenCode server process was terminated externally.",
                 NotificationType.WARNING,
@@ -180,42 +201,81 @@ class ServerManager(
     }
 
     private fun doCheckHealth(port: Int) {
-        if (checkHealthOnce(port)) {
-            SwingUtilities.invokeLater {
-                stopHealthPolling()
-                if (serverState == ServerState.STARTING) applyState(ServerState.READY)
+        when (checkHealthStatus(port)) {
+            HealthStatus.HEALTHY -> {
+                SwingUtilities.invokeLater {
+                    stopHealthPolling()
+                    if (serverState == ServerState.STARTING) applyState(ServerState.READY)
+                }
             }
+
+            HealthStatus.AUTH_REQUIRED -> {
+                SwingUtilities.invokeLater {
+                    wasPortOpen = true
+                    stopHealthPolling()
+                    applyState(ServerState.AUTH_REQUIRED)
+                }
+            }
+
+            HealthStatus.UNHEALTHY -> Unit
         }
     }
 
     private fun checkExternalHealth(port: Int, revision: Long) {
-        val healthy = checkHealthOnce(port)
+        val healthStatus = checkHealthStatus(port)
         SwingUtilities.invokeLater {
             if (revision != externalHealthRevision.get()) return@invokeLater
             if (ownedProcess != null || serverState == ServerState.STARTING) return@invokeLater
 
-            if (healthy) {
-                wasPortOpen = true
-                applyState(ServerState.READY)
-            } else {
-                applyState(ServerState.PORT_CONFLICT)
+            when (healthStatus) {
+                HealthStatus.HEALTHY -> {
+                    wasPortOpen = true
+                    applyState(ServerState.READY)
+                }
+
+                HealthStatus.AUTH_REQUIRED -> {
+                    wasPortOpen = true
+                    applyState(ServerState.AUTH_REQUIRED)
+                }
+
+                HealthStatus.UNHEALTHY -> {
+                    applyState(ServerState.PORT_CONFLICT)
+                }
             }
         }
     }
 
-    private fun checkHealthOnce(port: Int): Boolean =
+    private fun checkHealthStatus(port: Int): HealthStatus =
         try {
             when (val result = healthApiClient.isHealthy(port)) {
-                is ApiResult.Success -> result.value
+                is ApiResult.Success -> if (result.value) HealthStatus.HEALTHY else HealthStatus.UNHEALTHY
                 is ApiResult.Failure -> {
                     log.debug("ServerManager: health check failed for port $port reason=${result.error}")
-                    false
+                    if (result.error.isAuthenticationFailure()) HealthStatus.AUTH_REQUIRED else HealthStatus.UNHEALTHY
                 }
             }
         } catch (e: Exception) {
             log.debug("ServerManager: health check failed for port $port", e)
-            false
+            HealthStatus.UNHEALTHY
         }
+
+    private fun ApiError.isAuthenticationFailure(): Boolean =
+        this is ApiError.HttpError && (statusCode == 401 || statusCode == 403)
+
+    private fun showNotification(title: String, content: String, type: NotificationType) {
+        NotificationGroupManager.getInstance()
+            .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
+            .createNotification(title, content, type)
+            .notify(project)
+    }
+
+    fun reportAuthenticationRequired() {
+        SwingUtilities.invokeLater {
+            wasPortOpen = true
+            stopHealthPolling()
+            applyState(ServerState.AUTH_REQUIRED)
+        }
+    }
 
     private fun isPortOpen(port: Int): Boolean {
         val addresses = try {
@@ -281,6 +341,35 @@ class ServerManager(
             }
         }
 
+    internal fun buildServeArguments(settings: OpenCodeSettings, port: Int): List<String> {
+        val hostname = settings.serverHostname.trim()
+        val mdnsDomain = settings.serverMdnsDomain.trim()
+        return buildList {
+            add("serve")
+            add("--port")
+            add(port.toString())
+            if (hostname.isNotEmpty()) {
+                add("--hostname")
+                add(hostname)
+            }
+            if (settings.serverMdnsEnabled) {
+                add("--mdns")
+                if (mdnsDomain.isNotEmpty()) {
+                    add("--mdns-domain")
+                    add(mdnsDomain)
+                }
+            }
+            settings.serverCorsOrigins
+                .lineSequence()
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .forEach { origin ->
+                    add("--cors")
+                    add(origin)
+                }
+        }
+    }
+
     fun startServer(port: Int, executablePath: String) {
         val executable = File(executablePath)
         val isLaunchable = if (SystemInfo.isWindows) {
@@ -289,9 +378,9 @@ class ServerManager(
             executable.isFile && executable.canExecute()
         }
         if (!isLaunchable) {
-            project.showNotification(
-                "Failed to start OpenCode Relay",
-                "OpenCode Relay executable is not valid or executable: $executablePath",
+            showNotification(
+                "Failed to start OpenCode server",
+                "The OpenCode executable is not valid or executable: $executablePath",
                 NotificationType.ERROR,
             )
             applyState(ServerState.STOPPED)
@@ -308,16 +397,20 @@ class ServerManager(
             }
 
             try {
+                val settings = OpenCodeSettings.getInstance(project)
+                val environmentVariables =
+                    settings.processEnvironmentVariables(serverAuth.serverLaunchEnvironmentVariables())
+                val serveArguments = buildServeArguments(settings, port)
                 val command =
                     if (SystemInfo.isWindows) {
-                        listOf("cmd", "/c", buildWindowsCommand(executablePath, "serve", "--port", port.toString()))
+                        listOf("cmd", "/c", buildWindowsCommand(executablePath, *serveArguments.toTypedArray()))
                     } else {
-                        listOf(executablePath, "serve", "--port", port.toString())
+                        listOf(executablePath) + serveArguments
                     }
                 val process = ProcessBuilder(command)
                     .inheritIO()
                     .apply {
-                        OpenCodeProcessEnvironment.configure(this, executablePath)
+                        OpenCodeProcessEnvironment.configure(this, executablePath, environmentVariables)
                         val basePath = project.basePath
                         if (basePath != null) directory(File(basePath))
                     }
@@ -342,13 +435,25 @@ class ServerManager(
 
                 scheduler.schedule({ doCheckPort(port) }, HEALTH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
             } catch (e: Exception) {
-                val message = e.message ?: e.javaClass.simpleName
                 SwingUtilities.invokeLater {
-                    project.showNotification(
-                        "Failed to start OpenCode Relay",
-                        "Could not launch the OpenCode Relay process: $message",
-                        NotificationType.ERROR,
-                    )
+                    when (e) {
+                        is OpenCodeServerAuth.MissingServerLaunchAuthCredentialsException -> {
+                            showNotification(
+                                "Failed to start OpenCode server",
+                                "Server authentication is enabled, but the password is missing. Re-enter it in Settings | OpenCode Relay.",
+                                NotificationType.ERROR,
+                            )
+                        }
+
+                        else -> {
+                            val message = e.message ?: e.javaClass.simpleName
+                            showNotification(
+                                "Failed to start OpenCode server",
+                                "Could not launch the OpenCode server process: $message",
+                                NotificationType.ERROR,
+                            )
+                        }
+                    }
                     applyState(ServerState.STOPPED)
                 }
             }
