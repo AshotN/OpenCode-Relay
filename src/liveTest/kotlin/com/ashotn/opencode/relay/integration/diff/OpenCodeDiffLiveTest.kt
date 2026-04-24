@@ -117,11 +117,16 @@ class OpenCodeDiffLiveTest(
                 port = server.port,
                 sessionId = sessionId,
                 text = """
-                    Edit only note.txt.
-                    Replace the line Bravo with Beta.
-                    Keep all other lines unchanged.
-                    no prefixes like `1:`, no duplicated content, and no other changes
-                    Do not modify any other files.
+                    Edit only `note.txt`.
+                    Make exactly one change: replace the second line `Bravo` with `Beta`.
+                    The final file must be exactly:
+                    ```text
+                    Alpha
+                    Beta
+                    Charlie
+                    ```
+                    Keep the trailing newline.
+                    Do not add line numbers, duplicate content, or modify any other files.
                 """.trimIndent(),
             )
 
@@ -155,7 +160,28 @@ class OpenCodeDiffLiveTest(
         withLiveSession(version) { environment, server, sessionClient, events, sessionId ->
             val longFile = environment.repoRoot.resolve("numbers.txt")
             val original = lines(1..100)
+            val removedBlock = lines(41..60)
             val expected = lines((1..100).filter { it !in 41..60 })
+            val searchBlock = "40\n${removedBlock}61\n"
+            val replacementBlock = "40\n61\n"
+            val prompt = """
+                Edit only `numbers.txt`.
+                Perform one exact text replacement in the file.
+                Replace this exact text:
+                ```text
+                $searchBlock
+                ```
+                with this exact text:
+                ```text
+                $replacementBlock
+                ```
+                Do not rewrite the whole file.
+                Leave all remaining content byte-for-byte unchanged.
+                After the edit, line `40` must be followed immediately by line `61`.
+                The file must still start with `1`, end with `100`, contain one plain number per line,
+                and keep the trailing newline.
+                Do not add line numbers, duplicate content, renumber anything, or modify any other files.
+            """.trimIndent()
             longFile.writeText(original)
 
             submitPromptAndAwaitTurn(
@@ -195,7 +221,7 @@ class OpenCodeDiffLiveTest(
                 repoRoot = environment.repoRoot.toString(),
                 sessionId = sessionId,
                 diffFile = diffFile,
-                expectedRemoved = lines(41..60).removeSuffix("\n"),
+                expectedRemoved = removedBlock.removeSuffix("\n"),
                 expectedAdded = "",
             )
         }
