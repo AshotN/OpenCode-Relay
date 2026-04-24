@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-04-24
+
 <p><strong>Added</strong></p>
 <ul>
   <li>OpenCode server authentication support and expose the related IDE settings.</li>
