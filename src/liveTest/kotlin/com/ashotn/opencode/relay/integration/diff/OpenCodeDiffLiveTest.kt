@@ -190,15 +190,7 @@ class OpenCodeDiffLiveTest(
                 port = server.port,
                 sessionId = sessionId,
                 turnTimeoutMs = 60_000,
-                text = """
-                    Edit only numbers.txt.
-                    Rewrite the file so it contains exactly the following content, with one plain number per line,
-                    no prefixes like `1:`, no duplicated content, and no other changes:
-                    ```text
-                    $expected
-                    ```
-                    Do not modify any other files.
-                """.trimIndent(),
+                text = prompt,
             )
 
             assertFileText(longFile, expected)

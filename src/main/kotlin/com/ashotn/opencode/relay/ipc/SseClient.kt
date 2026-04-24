@@ -187,7 +187,7 @@ class SseClient(
             val obj = elem.asJsonObject
 
             val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-            val diffText = SnapshotDiffTextParser.parse(obj)
+            val diffText = PatchDiffTextParser.parse(obj)
             val additions = obj.getIntOrNull("additions") ?: 0
             val deletions = obj.getIntOrNull("deletions") ?: 0
             val statusRaw = obj.getStringOrNull("status") ?: "modified"

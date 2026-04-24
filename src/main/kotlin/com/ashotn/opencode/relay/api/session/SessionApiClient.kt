@@ -9,7 +9,7 @@ import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
 import com.ashotn.opencode.relay.api.transport.withParseContext
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
-import com.ashotn.opencode.relay.ipc.SnapshotDiffTextParser
+import com.ashotn.opencode.relay.ipc.PatchDiffTextParser
 import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
@@ -89,7 +89,7 @@ class SessionApiClient(
                             val obj = element.asJsonObject
 
                             val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-                            val diffText = SnapshotDiffTextParser.parse(obj)
+                            val diffText = PatchDiffTextParser.parse(obj)
                             val additions = obj.getIntOrNull("additions") ?: 0
                             val deletions = obj.getIntOrNull("deletions") ?: 0
                             val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
@@ -180,7 +180,7 @@ class SessionApiClient(
                 if (!diffElement.isJsonObject) return@mapNotNull null
                 val diffObj = diffElement.asJsonObject
                 val file = diffObj.getStringOrNull("file") ?: return@mapNotNull null
-                val diffText = SnapshotDiffTextParser.parse(diffObj)
+                val diffText = PatchDiffTextParser.parse(diffObj)
                 FileDiff(
                     file = file,
                     before = diffText.before,

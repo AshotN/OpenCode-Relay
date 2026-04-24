@@ -3,28 +3,20 @@ package com.ashotn.opencode.relay.ipc
 import com.ashotn.opencode.relay.util.getStringOrNull
 import com.google.gson.JsonObject
 
-internal data class SnapshotDiffText(
+internal data class DiffText(
     val before: String,
     val after: String,
 )
 
-internal object SnapshotDiffTextParser {
-    fun parse(obj: JsonObject): SnapshotDiffText {
-        // OpenCode before 1.4.0 sent full snapshot text in `before`/`after`.
-        val before = obj.getStringOrNull("before")
-        val after = obj.getStringOrNull("after")
-        if (before != null || after != null) {
-            return SnapshotDiffText(before = before ?: "", after = after ?: "")
-        }
-
-        // OpenCode 1.4.0+ sends only a unified diff in `patch`, so rebuild both sides.
-        val patch = obj.getStringOrNull("patch") ?: return SnapshotDiffText(before = "", after = "")
+internal object PatchDiffTextParser {
+    fun parse(obj: JsonObject): DiffText {
+        val patch = obj.getStringOrNull("patch") ?: return DiffText(before = "", after = "")
         return parseUnifiedPatch(patch)
     }
 
-    private fun parseUnifiedPatch(patch: String): SnapshotDiffText {
-        // OpenCode emits full-file unified diffs here, not minimal-context patches.
-        if (patch.isEmpty()) return SnapshotDiffText(before = "", after = "")
+    private fun parseUnifiedPatch(patch: String): DiffText {
+        // The session diff payload currently uses full-file unified diffs.
+        if (patch.isEmpty()) return DiffText(before = "", after = "")
 
         val before = StringBuilder()
         val after = StringBuilder()
@@ -70,7 +62,7 @@ internal object SnapshotDiffTextParser {
             }
         }
 
-        return SnapshotDiffText(before = before.toString(), after = after.toString())
+        return DiffText(before = before.toString(), after = after.toString())
     }
 
     private fun appendPatchLine(before: StringBuilder, after: StringBuilder, content: String) {

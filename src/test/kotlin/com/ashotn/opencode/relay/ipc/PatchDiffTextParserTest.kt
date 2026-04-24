@@ -4,28 +4,10 @@ import com.google.gson.JsonParser
 import org.junit.Test
 import kotlin.test.assertEquals
 
-class SnapshotDiffTextParserTest {
+class PatchDiffTextParserTest {
 
     @Test
-    fun `parses legacy before after snapshot diff`() {
-        val obj = JsonParser.parseString(
-            """
-            {
-              "file": "a.txt",
-              "before": "old",
-              "after": "new"
-            }
-            """.trimIndent()
-        ).asJsonObject
-
-        val diffText = SnapshotDiffTextParser.parse(obj)
-
-        assertEquals("old", diffText.before)
-        assertEquals("new", diffText.after)
-    }
-
-    @Test
-    fun `reconstructs snapshot text from patch only diff`() {
+    fun `reconstructs before and after text from patch diff`() {
         val obj = JsonParser.parseString(
             """
             {
@@ -35,7 +17,7 @@ class SnapshotDiffTextParserTest {
             """.trimIndent()
         ).asJsonObject
 
-        val diffText = SnapshotDiffTextParser.parse(obj)
+        val diffText = PatchDiffTextParser.parse(obj)
 
         assertEquals("old\n", diffText.before)
         assertEquals("new\n", diffText.after)
@@ -52,7 +34,7 @@ class SnapshotDiffTextParserTest {
             """.trimIndent()
         ).asJsonObject
 
-        val diffText = SnapshotDiffTextParser.parse(obj)
+        val diffText = PatchDiffTextParser.parse(obj)
 
         assertEquals("old", diffText.before)
         assertEquals("new", diffText.after)
