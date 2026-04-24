@@ -5,6 +5,13 @@ plugins {
     id("org.jetbrains.intellij.platform") version "2.10.4"
 }
 
+fun extractReleasedChangeNotes(changelog: String, version: String): String {
+    val sectionPattern = Regex(
+        pattern = """(?ms)^## \[${Regex.escape(version)}\](?: - [^\r\n]*)?\r?\n(.*?)(?=^## \[|\z)""",
+    )
+    return sectionPattern.find(changelog)?.groupValues?.get(1)?.trim().orEmpty()
+}
+
 group = "com.ashotn"
 version = providers.gradleProperty("pluginVersion").get()
 
@@ -46,6 +53,10 @@ intellijPlatform {
         id = "com.ashotn.opencode-relay"
         name = "OpenCode Relay"
         version = project.version.toString()
+        changeNotes = providers
+            .fileContents(layout.projectDirectory.file("CHANGELOG.md"))
+            .asText
+            .map { changelog -> extractReleasedChangeNotes(changelog, project.version.toString()) }
 
         vendor {
             name = "Ashot Nazaryan"

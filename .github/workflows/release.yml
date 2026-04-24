@@ -37,10 +37,25 @@ jobs:
       - name: Build plugin ZIP
         run: ./gradlew buildPlugin
 
+      - name: Extract release notes from CHANGELOG
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v version="$VERSION" '
+            $0 ~ ("^## \\[" version "\\]( - .*)?$") { in_section = 1; next }
+            in_section && /^## \[/ { exit }
+            in_section { print }
+          ' CHANGELOG.md > release-notes.md
+
+          if [ ! -s release-notes.md ]; then
+            echo "Failed to extract release notes for $VERSION from CHANGELOG.md"
+            exit 1
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: build/distributions/*.zip
