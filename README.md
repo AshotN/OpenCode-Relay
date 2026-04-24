@@ -112,5 +112,5 @@ Responses are sent back to the server immediately.
 
 ## Requirements
 
-- A JetBrains IDE based on IntelliJ Platform 2023.3 or later
+- A JetBrains IDE based on IntelliJ Platform 2024.3.7 or later
 - [OpenCode CLI](https://opencode.ai/docs) version `1.4.0+` installed and on `PATH` (or the path configured in settings)
