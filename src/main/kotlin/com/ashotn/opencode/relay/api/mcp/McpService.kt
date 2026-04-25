@@ -85,6 +85,7 @@ class McpService(
         return try {
             val toggleResult = mcpClient.connect(port, name)
             if (toggleResult is ApiResult.Failure) return toggleResult
+            loadingNames.remove(name)
             listMcpEntries(port)
         } finally {
             loadingNames.remove(name)
@@ -100,6 +101,7 @@ class McpService(
         return try {
             val toggleResult = mcpClient.disconnect(port, name)
             if (toggleResult is ApiResult.Failure) return toggleResult
+            loadingNames.remove(name)
             listMcpEntries(port)
         } finally {
             loadingNames.remove(name)
