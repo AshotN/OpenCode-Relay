@@ -139,12 +139,8 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         when (event) {
             is OpenCodeEvent.ServerConnected -> Unit
             is OpenCodeEvent.SessionDiff -> handleSessionDiff(event, fromHistory = false, generation = generation)
-            is OpenCodeEvent.SessionBusy -> {
-                markSessionBusy(event.sessionId, true, generation)
-            }
-
-            is OpenCodeEvent.SessionIdle -> {
-                markSessionBusy(event.sessionId, false, generation)
+            is OpenCodeEvent.SessionStatus -> {
+                applySessionStatus(event.sessionId, event.status, generation)
             }
 
             is OpenCodeEvent.SessionCreated -> {
@@ -187,7 +183,12 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         }
     }
 
-    private fun markSessionBusy(sessionId: String, isBusy: Boolean, generation: Long) {
+    private fun applySessionStatus(
+        sessionId: String,
+        status: OpenCodeEvent.SessionStatusType,
+        generation: Long,
+    ) {
+        val isBusy = status != OpenCodeEvent.SessionStatusType.IDLE
         if (generation != lifecycleGeneration.get()) return
 
         val previousLiveVisibleFiles = synchronized(stateLock) {

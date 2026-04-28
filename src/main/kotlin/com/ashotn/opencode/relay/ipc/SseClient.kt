@@ -142,7 +142,8 @@ class SseClient(
             val event: OpenCodeEvent? = when (type) {
                 "server.connected" -> OpenCodeEvent.ServerConnected
                 "session.diff" -> parseSessionDiff(properties)
-                "session.idle" -> parseSessionIdle(properties)
+                // Deprecated upstream compatibility event; session.status is authoritative.
+                "session.idle" -> null
                 "session.created" -> parseSessionCreated(properties)
                 "session.status" -> parseSessionStatus(properties)
                 "message.part.updated" -> parseMessagePartUpdated(properties)
@@ -245,10 +246,19 @@ class SseClient(
         return OpenCodeEvent.PermissionAsked(id, sessionId, permission, patterns, metadata)
     }
 
-    private fun parseSessionStatus(props: JsonObject): OpenCodeEvent.SessionBusy? {
+    private fun parseSessionStatus(props: JsonObject): OpenCodeEvent.SessionStatus? {
         val sessionId = props.getStringOrNull("sessionID") ?: return null
         val statusType = props.getObjectOrNull("status")?.getStringOrNull("type") ?: return null
-        return if (statusType == "busy") OpenCodeEvent.SessionBusy(sessionId) else null
+        val parsedStatus = when (statusType) {
+            "busy" -> OpenCodeEvent.SessionStatusType.BUSY
+            "idle" -> OpenCodeEvent.SessionStatusType.IDLE
+            "retry" -> OpenCodeEvent.SessionStatusType.RETRY
+            else -> {
+                log.warn("SseClient: unknown session.status type '$statusType' for session=$sessionId")
+                return null
+            }
+        }
+        return OpenCodeEvent.SessionStatus(sessionId, parsedStatus)
     }
 
     private fun parseSessionCreated(props: JsonObject): OpenCodeEvent.SessionCreated? {
@@ -272,11 +282,6 @@ class SseClient(
             ?: emptyList()
 
         return OpenCodeEvent.TurnPatch(sessionId, files)
-    }
-
-    private fun parseSessionIdle(props: JsonObject): OpenCodeEvent.SessionIdle? {
-        val sessionId = props.getStringOrNull("sessionID") ?: return null
-        return OpenCodeEvent.SessionIdle(sessionId)
     }
 
     private fun parseMcpToolsChanged(props: JsonObject): OpenCodeEvent.McpToolsChanged? {

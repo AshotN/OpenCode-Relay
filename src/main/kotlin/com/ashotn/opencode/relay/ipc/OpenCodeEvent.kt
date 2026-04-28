@@ -12,18 +12,21 @@ sealed class OpenCodeEvent {
     data object ServerConnected : OpenCodeEvent()
 
     /**
-     * session.idle — fired when the AI finishes responding (turn complete).
+     * Canonical session execution state from session.status.
      */
-    data class SessionIdle(val sessionId: String) : OpenCodeEvent()
+    data class SessionStatus(
+        val sessionId: String,
+        val status: SessionStatusType,
+    ) : OpenCodeEvent()
+
+    enum class SessionStatusType {
+        IDLE,
+        BUSY,
+        RETRY,
+    }
 
     /** session.created — fired when a new session is created. */
     data class SessionCreated(val sessionId: String) : OpenCodeEvent()
-
-    /**
-     * session.busy — fired when the AI starts or resumes work in a session.
-     * Used to keep track of the latest active session.
-     */
-    data class SessionBusy(val sessionId: String) : OpenCodeEvent()
 
     /** message.part.updated with type == "patch". */
     data class TurnPatch(

@@ -276,7 +276,7 @@ class OpenCodeDiffLiveTest(
             ),
         )
         events.awaitSessionDiff(sessionId, nextDiffCount, timeoutMs = turnTimeoutMs)
-        events.awaitSessionIdle(sessionId, nextIdleCount, timeoutMs = turnTimeoutMs)
+        events.awaitIdleStatus(sessionId, nextIdleCount, timeoutMs = turnTimeoutMs)
     }
 
     private fun requireSessionDiffFile(

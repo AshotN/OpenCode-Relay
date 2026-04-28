@@ -266,7 +266,7 @@ class SessionOrderingTest {
     }
 
     // -------------------------------------------------------------------------
-    // A live SSE event (session.busy / session.idle) for a session must update
+    // A live session.status event for a session must update
     // its position in the list — it represents real current activity and should
     // override the server-seeded timestamp.
     // -------------------------------------------------------------------------

@@ -31,17 +31,21 @@ class OpenCodeTestEventCollector(
     }
 
     fun sessionIdleCount(sessionId: String): Int = synchronized(lock) {
-        events.count { it is OpenCodeEvent.SessionIdle && it.sessionId == sessionId }
+        events.count {
+            it is OpenCodeEvent.SessionStatus &&
+                    it.sessionId == sessionId &&
+                    it.status == OpenCodeEvent.SessionStatusType.IDLE
+        }
     }
 
     fun sessionDiffCount(sessionId: String): Int = synchronized(lock) {
         events.count { it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId }
     }
 
-    fun awaitSessionIdle(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionIdle =
-        awaitEvent(timeoutMs, "session.idle for $sessionId count >= $atLeastCount") { recordedEvents ->
-            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionIdle>()
-                .filter { it.sessionId == sessionId }
+    fun awaitIdleStatus(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionStatus =
+        awaitEvent(timeoutMs, "session.status idle for $sessionId count >= $atLeastCount") { recordedEvents ->
+            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionStatus>()
+                .filter { it.sessionId == sessionId && it.status == OpenCodeEvent.SessionStatusType.IDLE }
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
@@ -57,7 +61,9 @@ class OpenCodeTestEventCollector(
         events.takeLast(limit).joinToString(separator = " | ") { event ->
             when (event) {
                 is OpenCodeEvent.ServerConnected -> "server.connected"
-                is OpenCodeEvent.SessionIdle -> "session.idle(sessionId=${event.sessionId})"
+                is OpenCodeEvent.SessionStatus -> {
+                    "session.status(sessionId=${event.sessionId}, type=${event.status.name.lowercase()})"
+                }
                 is OpenCodeEvent.SessionDiff -> {
                     val files = event.files.joinToString(",") { it.file.substringAfterLast('/') }
                     "session.diff(sessionId=${event.sessionId}, files=$files)"
