@@ -10,9 +10,15 @@ import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 @Service(Service.Level.PROJECT)
 class OpenCodePlugin(private val project: Project) : Disposable {
+
+    @Volatile
+    private var disposed = false
+
+    private fun isInactive(): Boolean = disposed || project.isDisposed
 
     // --- Listeners ---
 
@@ -55,13 +61,13 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         val application = ApplicationManager.getApplication()
         if (application.isDispatchThread) {
             application.executeOnPooledThread {
-                if (project.isDisposed) return@executeOnPooledThread
+                if (isInactive()) return@executeOnPooledThread
                 publishExecutableResolution(resolveExecutableState())
             }
             return
         }
 
-        if (project.isDisposed) return
+        if (isInactive()) return
         publishExecutableResolution(resolveExecutableState())
     }
 
@@ -81,7 +87,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         executableResolutionState = state
         val info = (state as? OpenCodeExecutableResolutionState.Resolved)?.info
         ApplicationManager.getApplication().invokeLater {
-            if (!project.isDisposed) {
+            if (!isInactive()) {
                 project.messageBus.syncPublisher(OpenCodeInfoChangedListener.TOPIC)
                     .onOpenCodeInfoChanged(info)
             }
@@ -96,20 +102,36 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         listeners.forEach { it.onStateChanged(state) }
     }
 
-    private fun scheduleConnectionSync(state: ServerState) {
-        connectionSyncExecutor.execute {
-            if (project.isDisposed) return@execute
+    private fun attachRelayConnections(port: Int) {
+        if (isInactive()) return
 
+        val diffService = OpenCodeCoreService.getInstance(project)
+        val tuiClient = OpenCodeTuiClient.getInstance(project)
+        diffService.startListening(port)
+        if (isInactive()) {
+            diffService.stopListening()
+            return
+        }
+        tuiClient.setPort(port)
+    }
+
+    private fun detachRelayConnections() {
+        if (isInactive()) return
+
+        OpenCodeCoreService.getInstance(project).stopListening()
+        OpenCodeTuiClient.getInstance(project).setPort(0)
+    }
+
+    private fun scheduleConnectionSync(state: ServerState) {
+        submitConnectionSyncTask {
             when (state) {
                 ServerState.READY -> {
                     val port = OpenCodeSettings.getInstance(project).serverPort
-                    OpenCodeCoreService.getInstance(project).startListening(port)
-                    OpenCodeTuiClient.getInstance(project).setPort(port)
+                    attachRelayConnections(port)
                 }
 
                 ServerState.STOPPED, ServerState.PORT_CONFLICT, ServerState.AUTH_REQUIRED -> {
-                    OpenCodeCoreService.getInstance(project).stopListening()
-                    OpenCodeTuiClient.getInstance(project).setPort(0)
+                    detachRelayConnections()
                 }
 
                 else -> Unit
@@ -138,9 +160,9 @@ class OpenCodePlugin(private val project: Project) : Disposable {
      */
     fun reattach(port: Int) {
         ApplicationManager.getApplication().executeOnPooledThread {
-            if (project.isDisposed) return@executeOnPooledThread
-            OpenCodeCoreService.getInstance(project).stopListening()
-            OpenCodeTuiClient.getInstance(project).setPort(0)
+            if (isInactive()) return@executeOnPooledThread
+            detachRelayConnections()
+            if (isInactive()) return@executeOnPooledThread
             startPolling(port)
             checkPort(port)
         }
@@ -150,20 +172,42 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         val port = OpenCodeSettings.getInstance(project).serverPort
         overrideState = ServerState.RESETTING
         broadcastState(ServerState.RESETTING)
-        connectionSyncExecutor.execute {
-            if (project.isDisposed) return@execute
-            val diffService = OpenCodeCoreService.getInstance(project)
-            val tuiClient = OpenCodeTuiClient.getInstance(project)
-            diffService.stopListening()
-            tuiClient.setPort(0)
-            diffService.startListening(port)
-            tuiClient.setPort(port)
-            overrideState = null
-            ApplicationManager.getApplication().invokeLater {
-                if (!project.isDisposed) {
-                    broadcastState(serverManager.serverState)
+        val submitted = submitConnectionSyncTask {
+            try {
+                detachRelayConnections()
+                attachRelayConnections(port)
+            } finally {
+                overrideState = null
+                ApplicationManager.getApplication().invokeLater {
+                    if (!isInactive()) {
+                        broadcastState(serverManager.serverState)
+                    }
                 }
             }
+        }
+
+        if (!submitted) {
+            overrideState = null
+            if (!isInactive()) {
+                broadcastState(serverManager.serverState)
+            }
+        }
+    }
+
+    private fun submitConnectionSyncTask(task: () -> Unit): Boolean {
+        if (isInactive()) return false
+
+        return try {
+            connectionSyncExecutor.execute {
+                if (isInactive()) return@execute
+                task()
+            }
+            true
+        } catch (e: RejectedExecutionException) {
+            if (!isInactive()) {
+                log.warn("Connection sync task was rejected before plugin disposal completed", e)
+            }
+            false
         }
     }
 
@@ -174,6 +218,7 @@ class OpenCodePlugin(private val project: Project) : Disposable {
     // --- Disposable ---
 
     override fun dispose() {
+        disposed = true
         listeners.clear()
         serverManager.dispose()
         connectionSyncExecutor.shutdownNow()

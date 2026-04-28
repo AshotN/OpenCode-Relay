@@ -9,6 +9,7 @@ import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.ashotn.opencode.relay.settings.processEnvironmentVariables
 import com.intellij.notification.NotificationGroupManager
 import com.intellij.notification.NotificationType
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.SystemInfo
@@ -17,6 +18,7 @@ import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
@@ -58,7 +60,7 @@ fun interface ServerStateListener {
 class ServerManager(
     private val project: Project,
     private val onStateChanged: (ServerState) -> Unit,
-) {
+) : Disposable {
 
     private enum class HealthStatus {
         HEALTHY,
@@ -111,16 +113,18 @@ class ServerManager(
     private val scheduler = Executors.newSingleThreadScheduledExecutor { r ->
         Thread(r, "opencode-poll").apply { isDaemon = true }
     }
+    private val lifecycleLock = Any()
     private var portPollFuture: ScheduledFuture<*>? = null
     private var healthPollFuture: ScheduledFuture<*>? = null
 
+    private fun isInactive(): Boolean = disposed || project.isDisposed
+
     fun startPolling(port: Int, intervalSeconds: Long = PORT_POLL_INTERVAL_SECONDS) {
         portPollFuture?.cancel(false)
-        portPollFuture = scheduler.scheduleWithFixedDelay(
+        portPollFuture = scheduleWithFixedDelayTask(
             { checkPort(port) },
-            intervalSeconds,
-            intervalSeconds,
-            TimeUnit.SECONDS,
+            initialDelaySeconds = intervalSeconds,
+            delaySeconds = intervalSeconds,
         )
     }
 
@@ -130,14 +134,21 @@ class ServerManager(
     }
 
     fun checkPort(port: Int) {
-        scheduler.submit { doCheckPort(port) }
+        submitSchedulerTask { doCheckPort(port) }
     }
 
     private fun doCheckPort(port: Int) {
-        SwingUtilities.invokeLater { applyPortResult(isPortOpen(port), port) }
+        val portOpen = isPortOpen(port)
+        SwingUtilities.invokeLater {
+            if (!isInactive()) {
+                applyPortResult(portOpen, port)
+            }
+        }
     }
 
     private fun applyPortResult(portOpen: Boolean, port: Int) {
+        if (isInactive()) return
+
         if (serverState == ServerState.STOPPING) {
             if (!portOpen) {
                 wasPortOpen = false
@@ -166,7 +177,7 @@ class ServerManager(
 
                 else -> {
                     val revision = externalHealthRevision.incrementAndGet()
-                    scheduler.submit { checkExternalHealth(port, revision) }
+                    submitSchedulerTask { checkExternalHealth(port, revision) }
                 }
             }
             return
@@ -186,13 +197,50 @@ class ServerManager(
     }
 
     private fun startHealthPolling(port: Int, intervalSeconds: Long = HEALTH_POLL_INTERVAL_SECONDS) {
-        if (healthPollFuture != null) return
-        healthPollFuture = scheduler.scheduleWithFixedDelay(
+        if (isInactive() || healthPollFuture != null) return
+        healthPollFuture = scheduleWithFixedDelayTask(
             { doCheckHealth(port) },
-            0L,
-            intervalSeconds,
-            TimeUnit.SECONDS,
+            initialDelaySeconds = 0L,
+            delaySeconds = intervalSeconds,
         )
+    }
+
+    private fun submitSchedulerTask(task: () -> Unit) {
+        try {
+            scheduler.execute {
+                if (!isInactive()) {
+                    task()
+                }
+            }
+        } catch (e: RejectedExecutionException) {
+            if (!isInactive()) {
+                log.warn("Polling task was rejected before server manager disposal completed", e)
+            }
+        }
+    }
+
+    private fun scheduleWithFixedDelayTask(
+        task: () -> Unit,
+        initialDelaySeconds: Long,
+        delaySeconds: Long,
+    ): ScheduledFuture<*>? {
+        return try {
+            scheduler.scheduleWithFixedDelay(
+                {
+                    if (!isInactive()) {
+                        task()
+                    }
+                },
+                initialDelaySeconds,
+                delaySeconds,
+                TimeUnit.SECONDS,
+            )
+        } catch (e: RejectedExecutionException) {
+            if (!isInactive()) {
+                log.warn("Recurring polling task was rejected before server manager disposal completed", e)
+            }
+            null
+        }
     }
 
     private fun stopHealthPolling() {
@@ -204,6 +252,7 @@ class ServerManager(
         when (checkHealthStatus(port)) {
             HealthStatus.HEALTHY -> {
                 SwingUtilities.invokeLater {
+                    if (isInactive()) return@invokeLater
                     stopHealthPolling()
                     if (serverState == ServerState.STARTING) applyState(ServerState.READY)
                 }
@@ -211,6 +260,7 @@ class ServerManager(
 
             HealthStatus.AUTH_REQUIRED -> {
                 SwingUtilities.invokeLater {
+                    if (isInactive()) return@invokeLater
                     wasPortOpen = true
                     stopHealthPolling()
                     applyState(ServerState.AUTH_REQUIRED)
@@ -224,6 +274,7 @@ class ServerManager(
     private fun checkExternalHealth(port: Int, revision: Long) {
         val healthStatus = checkHealthStatus(port)
         SwingUtilities.invokeLater {
+            if (isInactive()) return@invokeLater
             if (revision != externalHealthRevision.get()) return@invokeLater
             if (ownedProcess != null || serverState == ServerState.STARTING) return@invokeLater
 
@@ -263,6 +314,8 @@ class ServerManager(
         this is ApiError.HttpError && (statusCode == 401 || statusCode == 403)
 
     private fun showNotification(title: String, content: String, type: NotificationType) {
+        if (isInactive()) return
+
         NotificationGroupManager.getInstance()
             .getNotificationGroup(OpenCodeConstants.NOTIFICATION_GROUP_ID)
             .createNotification(title, content, type)
@@ -271,6 +324,7 @@ class ServerManager(
 
     fun reportAuthenticationRequired() {
         SwingUtilities.invokeLater {
+            if (isInactive()) return@invokeLater
             wasPortOpen = true
             stopHealthPolling()
             applyState(ServerState.AUTH_REQUIRED)
@@ -298,6 +352,8 @@ class ServerManager(
     }
 
     private fun applyState(newState: ServerState) {
+        if (isInactive()) return
+
         val oldState = serverState
         if (oldState == newState) return
         serverState = newState
@@ -387,13 +443,13 @@ class ServerManager(
             return
         }
 
-        scheduler.submit {
+        submitSchedulerTask {
             val portAlreadyOpen = isPortOpen(port)
 
             if (portAlreadyOpen) {
                 startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
                 SwingUtilities.invokeLater { applyPortResult(true, port) }
-                return@submit
+                return@submitSchedulerTask
             }
 
             try {
@@ -416,14 +472,26 @@ class ServerManager(
                     }
                     .start()
 
-                ownedProcess = process
-                shutdownHook = registerShutdownHook(process)
+                val publishedProcess = synchronized(lifecycleLock) {
+                    if (isInactive()) {
+                        false
+                    } else {
+                        ownedProcess = process
+                        shutdownHook = registerShutdownHook(process)
+                        true
+                    }
+                }
+                if (!publishedProcess) {
+                    forceKillProcess(process)
+                    return@submitSchedulerTask
+                }
+
                 startPolling(port, intervalSeconds = PORT_POLL_INTERVAL_AFTER_START_SECONDS)
 
                 process.onExit().thenRun {
-                    if (!disposed && ownedProcess === process) {
+                    if (!isInactive() && ownedProcess === process) {
                         SwingUtilities.invokeLater {
-                            if (!disposed) {
+                            if (!isInactive()) {
                                 removeShutdownHook()
                                 ownedProcess = null
                                 wasPortOpen = false
@@ -433,9 +501,25 @@ class ServerManager(
                     }
                 }
 
-                scheduler.schedule({ doCheckPort(port) }, HEALTH_INITIAL_DELAY_SECONDS, TimeUnit.SECONDS)
+                try {
+                    scheduler.schedule(
+                        {
+                            if (!isInactive()) {
+                                doCheckPort(port)
+                            }
+                        },
+                        HEALTH_INITIAL_DELAY_SECONDS,
+                        TimeUnit.SECONDS,
+                    )
+                } catch (e: RejectedExecutionException) {
+                    if (!isInactive()) {
+                        log.warn("Delayed polling task was rejected before server manager disposal completed", e)
+                    }
+                }
             } catch (e: Exception) {
                 SwingUtilities.invokeLater {
+                    if (isInactive()) return@invokeLater
+
                     when (e) {
                         is OpenCodeServerAuth.MissingServerLaunchAuthCredentialsException -> {
                             showNotification(
@@ -467,16 +551,50 @@ class ServerManager(
         }
 
         applyState(ServerState.STOPPING)
-        ownedProcess = null
-        removeShutdownHook()
         wasPortOpen = false
         externalHealthRevision.incrementAndGet()
         stopHealthPolling()
 
-        scheduler.submit {
+        try {
+            scheduler.execute {
+                val shouldKill = synchronized(lifecycleLock) {
+                    if (ownedProcess !== process) {
+                        false
+                    } else {
+                        removeShutdownHook()
+                        ownedProcess = null
+                        true
+                    }
+                }
+                if (!shouldKill) return@execute
+
+                forceKillProcess(process)
+                SwingUtilities.invokeLater {
+                    if (!isInactive()) {
+                        applyState(ServerState.STOPPED)
+                    }
+                }
+            }
+        } catch (e: RejectedExecutionException) {
+            if (isInactive()) return
+
+            log.warn("Stop task was rejected before server manager disposal completed", e)
+            val shouldKill = synchronized(lifecycleLock) {
+                if (ownedProcess !== process) {
+                    false
+                } else {
+                    removeShutdownHook()
+                    ownedProcess = null
+                    true
+                }
+            }
+            if (!shouldKill) return
+
             forceKillProcess(process)
             SwingUtilities.invokeLater {
-                applyState(ServerState.STOPPED)
+                if (!isInactive()) {
+                    applyState(ServerState.STOPPED)
+                }
             }
         }
     }
@@ -486,16 +604,19 @@ class ServerManager(
         process.destroyForcibly()
     }
 
-    fun dispose() {
-        disposed = true
-        stopPortPolling()
-        stopHealthPolling()
-        externalHealthRevision.incrementAndGet()
-        removeShutdownHook()
+    override fun dispose() {
+        val process = synchronized(lifecycleLock) {
+            disposed = true
+            stopPortPolling()
+            stopHealthPolling()
+            externalHealthRevision.incrementAndGet()
+            removeShutdownHook()
 
-        val process = ownedProcess
-        if (process != null) {
+            val owned = ownedProcess
             ownedProcess = null
+            owned
+        }
+        if (process != null) {
             process.toHandle().descendants().forEach { it.destroyForcibly() }
             process.destroyForcibly()
         }

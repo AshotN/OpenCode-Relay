@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Refresh MCP server connection status immediately after connect and disconnect actions.</li>
+  <li><code>RejectedExecutionException</code> when replacing the current project in the same IDE window while late OpenCode server callbacks are still being delivered.</li>
+</ul>
+
 ## [1.0.0] - 2026-04-24
 
 <p><strong>Added</strong></p>
