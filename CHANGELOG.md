@@ -4,6 +4,7 @@
 
 <p><strong>Fixed</strong></p>
 <ul>
+  <li>Use <code>session.status</code> as the authoritative session state signal, dropping deprecated <code>session.idle</code> handling and fixing cases where the session list could stay stuck on <code>running...</code>.</li>
   <li>Refresh MCP server connection status immediately after connect and disconnect actions.</li>
   <li><code>RejectedExecutionException</code> when replacing the current project in the same IDE window while late OpenCode server callbacks are still being delivered.</li>
 </ul>
