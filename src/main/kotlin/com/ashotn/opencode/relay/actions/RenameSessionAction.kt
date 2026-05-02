@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.Messages
 import com.intellij.ui.AnimatedIcon
@@ -21,7 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class RenameSessionAction(
     private val project: Project,
     private val selectedSession: () -> Pair<String, String>?,
-) : AnAction() {
+) : AnAction(), DumbAware {
 
     private val isPending = AtomicBoolean(false)
 

@@ -13,12 +13,13 @@ import com.ashotn.opencode.relay.actions.StopServerAction
 import com.ashotn.opencode.relay.actions.ToggleSessionsSectionAction
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 
-class OpenCodeToolWindowFactory : ToolWindowFactory {
+class OpenCodeToolWindowFactory : ToolWindowFactory, DumbAware {
 
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         val panel = OpenCodeToolWindowPanel(project)

@@ -13,6 +13,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.DumbAware
 
 /**
  * Editor action that appends an @path#Lstart-end file reference to the TUI's prompt
@@ -26,7 +27,7 @@ import com.intellij.openapi.application.ApplicationManager
  *
  * Does NOT create a message or trigger a model response; the user still submits manually.
  */
-class SendSelectionAction : AnAction() {
+class SendSelectionAction : AnAction(), DumbAware {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 

@@ -12,6 +12,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindowManager
 
@@ -21,7 +22,7 @@ import com.intellij.openapi.wm.ToolWindowManager
  * Can be constructed with an explicit [project] (for toolbar registration via setTitleActions)
  * or with no args (for XML registration, where the project is resolved from [AnActionEvent]).
  */
-class NewSessionAction(private val project: Project? = null) : AnAction() {
+class NewSessionAction(private val project: Project? = null) : AnAction(), DumbAware {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 

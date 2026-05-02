@@ -7,10 +7,11 @@ import com.intellij.icons.AllIcons
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.ToggleAction
+import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 
 class ToggleSessionsSectionAction(private val project: Project) :
-    ToggleAction("Sessions", "Show or hide the sessions section above the inline terminal", null) {
+    ToggleAction("Sessions", "Show or hide the sessions section above the inline terminal", null), DumbAware {
 
     override fun getActionUpdateThread(): ActionUpdateThread = ActionUpdateThread.BGT
 
