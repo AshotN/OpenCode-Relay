@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+<p><strong>Added</strong></p>
+<ul>
+  <li>Alert users when OpenCode requests permission by requesting IDE attention while the project window is inactive and showing a notification when the permission UI is not visible.</li>
+</ul>
+
 <p><strong>Fixed</strong></p>
 <ul>
   <li>Use <code>session.status</code> as the authoritative session state signal, dropping deprecated <code>session.idle</code> handling and fixing cases where the session list could stay stuck on <code>running...</code>.</li>

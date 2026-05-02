@@ -9,11 +9,17 @@ import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.PermissionChangedListener
 import com.ashotn.opencode.relay.ipc.PermissionReply
 import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
+import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.util.showNotification
+import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.diagnostic.logger
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.WindowManager
+import com.intellij.ui.AppIcon
 import java.util.concurrent.ConcurrentLinkedQueue
 
 @Service(Service.Level.PROJECT)
@@ -34,36 +40,55 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     @Volatile
     private var port: Int = 0
 
+    private val permissionLock = Any()
     private val permissionQueue = ConcurrentLinkedQueue<OpenCodeEvent.PermissionAsked>()
+    private var permissionAlertGeneration = 0L
 
     fun setPort(port: Int) {
         this.port = port
     }
 
-    fun currentPermission(): OpenCodeEvent.PermissionAsked? = permissionQueue.peek()
+    fun currentPermission(): OpenCodeEvent.PermissionAsked? = synchronized(permissionLock) {
+        permissionQueue.peek()
+    }
 
     fun clearPermissions() {
-        val hadPermissions = permissionQueue.isNotEmpty()
-        permissionQueue.clear()
+        val hadPermissions = synchronized(permissionLock) {
+            val hadPermissions = permissionQueue.isNotEmpty()
+            permissionQueue.clear()
+            hadPermissions
+        }
         if (hadPermissions) publishPermissionChanged()
     }
 
     fun handlePermissionAsked(event: OpenCodeEvent.PermissionAsked) {
         log.info("OpenCodePermissionService: permission.asked id=${event.requestId} permission=${event.permission}")
-        val wasEmpty = permissionQueue.isEmpty()
-        permissionQueue.add(event)
-        if (wasEmpty) publishPermissionChanged()
+        val alertGeneration = synchronized(permissionLock) {
+            val wasEmpty = permissionQueue.isEmpty()
+            permissionQueue.add(event)
+            if (wasEmpty) ++permissionAlertGeneration else 0L
+        }
+        if (alertGeneration > 0L) {
+            publishPermissionChanged()
+            ApplicationManager.getApplication().invokeLater {
+                val current = currentPermissionForAlert(alertGeneration)
+                if (!project.isDisposed && current != null) alertPermissionRequested(current)
+            }
+        }
     }
 
     fun handlePermissionReplied(event: OpenCodeEvent.PermissionReplied) {
         log.info("OpenCodePermissionService: permission.replied id=${event.requestId} reply=${event.reply.wireValue}")
-        val wasHead = permissionQueue.peek()?.requestId == event.requestId
-        permissionQueue.removeIf { it.requestId == event.requestId }
+        val wasHead = synchronized(permissionLock) {
+            val wasHead = permissionQueue.peek()?.requestId == event.requestId
+            permissionQueue.removeIf { it.requestId == event.requestId }
+            wasHead
+        }
         if (wasHead) publishPermissionChanged()
     }
 
     fun replyToPermission(response: PermissionReply) {
-        val event = permissionQueue.peek() ?: return
+        val event = currentPermission() ?: return
         val currentPort = port
 
         if (currentPort <= 0) {
@@ -107,6 +132,7 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
         } else {
             "HTTP ${error.statusCode}"
         }
+
         is ApiError.NetworkError -> error.message
         is ApiError.ParseError -> error.message
     }
@@ -114,10 +140,42 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     private fun publishPermissionChanged() {
         project.messageBus
             .syncPublisher(PermissionChangedListener.TOPIC)
-            .onPermissionChanged(permissionQueue.peek())
+            .onPermissionChanged(currentPermission())
+    }
+
+    private fun currentPermissionForAlert(alertGeneration: Long): OpenCodeEvent.PermissionAsked? =
+        synchronized(permissionLock) {
+            if (permissionAlertGeneration == alertGeneration) permissionQueue.peek() else null
+        }
+
+    private fun alertPermissionRequested(event: OpenCodeEvent.PermissionAsked) {
+        if (!isProjectFrameActive()) {
+            AppIcon.getInstance().requestAttention(project, true)
+        }
+
+        if (!isPermissionUiVisible()) {
+            project.showNotification(
+                "OpenCode needs permission",
+                "Review the pending ${event.permission} permission request.",
+                NotificationType.WARNING,
+            )
+        }
+    }
+
+    private fun isProjectFrameActive(): Boolean =
+        WindowManager.getInstance().getFrame(project)?.isActive == true
+
+    private fun isPermissionUiVisible(): Boolean {
+        val toolWindow = ToolWindowManager.getInstance(project).getToolWindow("OpenCode Relay")
+        if (toolWindow?.isVisible != true) return false
+
+        val settings = OpenCodeSettings.getInstance(project)
+        return !settings.inlineTerminalEnabled || settings.sessionsSectionVisible
     }
 
     override fun dispose() {
-        permissionQueue.clear()
+        synchronized(permissionLock) {
+            permissionQueue.clear()
+        }
     }
 }
