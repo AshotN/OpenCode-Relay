@@ -8,4 +8,7 @@ object OpenCodeIcons {
 
     @JvmField
     val Disconnected = IconLoader.getIcon("/icons/opencode_disconnected.svg", OpenCodeIcons::class.java)
+
+    @JvmField
+    val LightningFilled = IconLoader.getIcon("/icons/lightning_filled.svg", OpenCodeIcons::class.java)
 }
