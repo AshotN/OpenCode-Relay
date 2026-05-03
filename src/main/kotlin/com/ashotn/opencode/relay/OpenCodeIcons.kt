@@ -11,4 +11,7 @@ object OpenCodeIcons {
 
     @JvmField
     val LightningFilled = IconLoader.getIcon("/icons/lightning_filled.svg", OpenCodeIcons::class.java)
+
+    @JvmField
+    val Lightning = IconLoader.getIcon("/icons/lightning.svg", OpenCodeIcons::class.java)
 }
