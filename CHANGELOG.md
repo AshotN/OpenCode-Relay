@@ -5,6 +5,7 @@
 <p><strong>Added</strong></p>
 <ul>
   <li>Alert users when OpenCode requests permission by requesting IDE attention while the project window is inactive and showing a notification when the permission UI is not visible.</li>
+  <li>Brave Mode for automatically accepting OpenCode permission requests, with toggles in the tool window toolbar and settings UI.</li>
 </ul>
 
 <p><strong>Fixed</strong></p>

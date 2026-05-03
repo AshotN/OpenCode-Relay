@@ -184,6 +184,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         )
                 }
             }
+            group("Permissions") {
+                row {
+                    checkBox("Enable brave mode")
+                        .bindSelected(pendingState::braveModeEnabled)
+                        .comment(
+                            "Automatically accepts OpenCode permission requests while enabled. " +
+                                    "OpenCode config still controls server-side rejections.",
+                        )
+                }
+            }
             group("Terminal") {
                 row {
                     checkBox("Show inline terminal")
@@ -279,7 +289,8 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             pathChanged || (newPath.isBlank() && oldResolutionState == OpenCodeExecutableResolutionState.Resolving)
         if (!settingsChanged && !passwordChanged && !shouldUpdateExecutableResolution) return
 
-        val mustConfirmStop = plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || launchAuthChanged)
+        val mustConfirmStop =
+            plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || launchAuthChanged)
         val mustReattach = plugin.isRunning && !plugin.ownsProcess && portChanged
         val mustResetConnection = plugin.isRunning && !plugin.ownsProcess && !portChanged && connectionAuthChanged
 
@@ -370,6 +381,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.sessionsSectionVisible = settings.sessionsSectionVisible
         pendingState.terminalEngine =
             if (settings.terminalEngine == TerminalEngine.REWORKED) TerminalEngine.CLASSIC else settings.terminalEngine
+        pendingState.braveModeEnabled = settings.braveModeEnabled
     }
 
     private fun syncServerCorsOriginsModel(serializedOrigins: String) {

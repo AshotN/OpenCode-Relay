@@ -10,6 +10,7 @@ import com.ashotn.opencode.relay.actions.OpenSettingsAction
 import com.ashotn.opencode.relay.actions.OpenTerminalAction
 import com.ashotn.opencode.relay.actions.ResetPluginAction
 import com.ashotn.opencode.relay.actions.StopServerAction
+import com.ashotn.opencode.relay.actions.ToggleBraveModeAction
 import com.ashotn.opencode.relay.actions.ToggleSessionsSectionAction
 import com.intellij.ide.ActivityTracker
 import com.intellij.openapi.application.ApplicationManager
@@ -28,6 +29,7 @@ class OpenCodeToolWindowFactory : ToolWindowFactory, DumbAware {
         toolWindow.setTitleActions(
             listOf(
                 ToggleSessionsSectionAction(project),
+                ToggleBraveModeAction(project),
                 McpServersAction(project),
                 OpenTerminalAction(project),
                 OpenBrowserAction(project),

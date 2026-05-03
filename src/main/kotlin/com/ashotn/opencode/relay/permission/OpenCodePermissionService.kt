@@ -10,6 +10,7 @@ import com.ashotn.opencode.relay.ipc.PermissionChangedListener
 import com.ashotn.opencode.relay.ipc.PermissionReply
 import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeSettingsChangedListener
 import com.ashotn.opencode.relay.util.showNotification
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.Disposable
@@ -43,12 +44,29 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
     private val permissionLock = Any()
     private val permissionQueue = ConcurrentLinkedQueue<OpenCodeEvent.PermissionAsked>()
     private var permissionAlertGeneration = 0L
+    private var braveModeEnabled = OpenCodeSettings.getInstance(project).braveModeEnabled
+
+    init {
+        project.messageBus.connect(this).subscribe(
+            OpenCodeSettingsChangedListener.TOPIC,
+            OpenCodeSettingsChangedListener { oldSettings, newSettings ->
+                if (!oldSettings.braveModeEnabled && newSettings.braveModeEnabled) {
+                    autoAcceptPendingPermissions()
+                } else {
+                    synchronized(permissionLock) {
+                        braveModeEnabled = newSettings.braveModeEnabled
+                    }
+                }
+            },
+        )
+    }
 
     fun setPort(port: Int) {
         this.port = port
     }
 
     fun currentPermission(): OpenCodeEvent.PermissionAsked? = synchronized(permissionLock) {
+        if (braveModeEnabled) return@synchronized null
         permissionQueue.peek()
     }
 
@@ -63,12 +81,22 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
 
     fun handlePermissionAsked(event: OpenCodeEvent.PermissionAsked) {
         log.info("OpenCodePermissionService: permission.asked id=${event.requestId} permission=${event.permission}")
-        val alertGeneration = synchronized(permissionLock) {
+        val (shouldAutoAccept, alertGeneration) = synchronized(permissionLock) {
+            if (braveModeEnabled) {
+                return@synchronized true to null
+            }
+
             val wasEmpty = permissionQueue.isEmpty()
             permissionQueue.add(event)
-            if (wasEmpty) ++permissionAlertGeneration else 0L
+            false to if (wasEmpty) ++permissionAlertGeneration else null
         }
-        if (alertGeneration > 0L) {
+
+        if (shouldAutoAccept) {
+            sendPermissionReply(event, PermissionReply.ONCE)
+            return
+        }
+
+        if (alertGeneration != null) {
             publishPermissionChanged()
             ApplicationManager.getApplication().invokeLater {
                 val current = currentPermissionForAlert(alertGeneration)
@@ -89,6 +117,21 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
 
     fun replyToPermission(response: PermissionReply) {
         val event = currentPermission() ?: return
+        sendPermissionReply(event, response)
+    }
+
+    private fun autoAcceptPendingPermissions() {
+        val events = synchronized(permissionLock) {
+            braveModeEnabled = true
+            if (permissionQueue.isEmpty()) return
+            permissionAlertGeneration++
+            permissionQueue.toList().also { permissionQueue.clear() }
+        }
+        publishPermissionChanged()
+        events.forEach { event -> sendPermissionReply(event, PermissionReply.ONCE) }
+    }
+
+    private fun sendPermissionReply(event: OpenCodeEvent.PermissionAsked, response: PermissionReply) {
         val currentPort = port
 
         if (currentPort <= 0) {
@@ -145,7 +188,7 @@ class OpenCodePermissionService(private val project: Project) : Disposable {
 
     private fun currentPermissionForAlert(alertGeneration: Long): OpenCodeEvent.PermissionAsked? =
         synchronized(permissionLock) {
-            if (permissionAlertGeneration == alertGeneration) permissionQueue.peek() else null
+            if (!braveModeEnabled && permissionAlertGeneration == alertGeneration) permissionQueue.peek() else null
         }
 
     private fun alertPermissionRequested(event: OpenCodeEvent.PermissionAsked) {

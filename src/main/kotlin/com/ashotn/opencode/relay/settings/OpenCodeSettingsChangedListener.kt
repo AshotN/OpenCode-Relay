@@ -18,6 +18,7 @@ data class OpenCodeSettingsSnapshot(
     val inlineTerminalEnabled: Boolean,
     val sessionsSectionVisible: Boolean,
     val terminalEngine: OpenCodeSettings.TerminalEngine,
+    val braveModeEnabled: Boolean,
 )
 
 fun interface OpenCodeSettingsChangedListener {
