@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-04
+
 <p><strong>Added</strong></p>
 <ul>
   <li>Alert users when OpenCode requests permission by requesting IDE attention while the project window is inactive and showing a notification when the permission UI is not visible.</li>
