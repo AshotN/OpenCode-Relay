@@ -135,7 +135,7 @@ object OpenCodeChecker {
                 listOf("opencode")
             }
 
-        val pathEnv = System.getenv("PATH")
+        val pathEnv = OpenCodeProcessEnvironment.pathEnvironmentValue()
         if (pathEnv.isNullOrBlank()) {
             log.debug("PATH environment variable is empty; skipping PATH scan")
         } else {

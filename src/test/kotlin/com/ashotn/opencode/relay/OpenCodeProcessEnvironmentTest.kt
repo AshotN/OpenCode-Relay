@@ -1,5 +1,6 @@
 package com.ashotn.opencode.relay
 
+import org.junit.After
 import org.junit.Test
 import java.io.File
 import kotlin.test.assertEquals
@@ -8,8 +9,16 @@ import kotlin.test.assertTrue
 
 class OpenCodeProcessEnvironmentTest {
 
+    private val defaultUserEnvironmentProvider = OpenCodeProcessEnvironment.userEnvironmentProvider
+
+    @After
+    fun resetUserEnvironmentProvider() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = defaultUserEnvironmentProvider
+    }
+
     @Test
     fun `configure applies custom environment variables`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = { emptyMap() }
         val processBuilder = ProcessBuilder("opencode")
 
         OpenCodeProcessEnvironment.configure(
@@ -27,6 +36,7 @@ class OpenCodeProcessEnvironmentTest {
 
     @Test
     fun `configure ignores blank names and still prepends nvm path`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = { emptyMap() }
         val processBuilder = ProcessBuilder("opencode")
         processBuilder.environment()["PATH"] = "/usr/bin"
 
@@ -50,7 +60,42 @@ class OpenCodeProcessEnvironmentTest {
     }
 
     @Test
+    fun `configure applies shell PATH before custom overrides`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = {
+            mapOf(
+                "PATH" to "/shell/bin",
+                "SHELL_VAR" to "from-shell",
+                "FOO" to "from-shell",
+            )
+        }
+        val processBuilder = ProcessBuilder("opencode")
+        processBuilder.environment()["PATH"] = "/ide/bin"
+
+        OpenCodeProcessEnvironment.configure(
+            processBuilder,
+            "/tmp/opencode",
+            mapOf(
+                "FOO" to "from-custom",
+                "BAR" to "from-custom",
+            ),
+        )
+
+        assertEquals("/shell/bin", processBuilder.environment()["PATH"])
+        assertFalse(processBuilder.environment().containsKey("SHELL_VAR"))
+        assertEquals("from-custom", processBuilder.environment()["FOO"])
+        assertEquals("from-custom", processBuilder.environment()["BAR"])
+    }
+
+    @Test
+    fun `pathEnvironmentValue reads shell PATH case insensitively`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = { mapOf("Path" to "/shell/bin") }
+
+        assertEquals("/shell/bin", OpenCodeProcessEnvironment.pathEnvironmentValue())
+    }
+
+    @Test
     fun `terminalCommand applies custom environment variables`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = { emptyMap() }
         val command = OpenCodeProcessEnvironment.terminalCommand(
             listOf("/tmp/opencode", "attach", "http://127.0.0.1:4096"),
             mapOf(
@@ -67,6 +112,7 @@ class OpenCodeProcessEnvironmentTest {
 
     @Test
     fun `terminalCommand merges environment variables with nvm path`() {
+        OpenCodeProcessEnvironment.userEnvironmentProvider = { emptyMap() }
         val command = OpenCodeProcessEnvironment.terminalCommand(
             listOf("/Users/test/.nvm/versions/node/v20.0.0/bin/opencode", "attach", "http://127.0.0.1:4096"),
             mapOf("PATH" to "/custom/bin"),

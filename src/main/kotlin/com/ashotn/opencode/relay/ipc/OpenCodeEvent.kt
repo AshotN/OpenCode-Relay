@@ -25,8 +25,8 @@ sealed class OpenCodeEvent {
         RETRY,
     }
 
-    /** session.created — fired when a new session is created. */
-    data class SessionCreated(val sessionId: String) : OpenCodeEvent()
+    /** session lifecycle changed — refresh session hierarchy metadata. */
+    data class SessionLifecycleChanged(val sessionId: String) : OpenCodeEvent()
 
     /** message.part.updated with type == "patch". */
     data class TurnPatch(

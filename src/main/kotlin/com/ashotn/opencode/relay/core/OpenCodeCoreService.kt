@@ -104,6 +104,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         sseClient = SseClient(
             port = port,
             onEvent = { event -> handleEvent(event, generation) },
+            directory = project.basePath,
             authorizationHeaderProvider = serverAuth::connectionAuthorizationHeader,
             onAuthenticationFailure = {
                 OpenCodePlugin.getInstance(project).reportAuthenticationRequired()
@@ -143,7 +144,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 applySessionStatus(event.sessionId, event.status, generation)
             }
 
-            is OpenCodeEvent.SessionCreated -> {
+            is OpenCodeEvent.SessionLifecycleChanged -> {
                 refreshSessionHierarchyAsync(generation)
             }
 

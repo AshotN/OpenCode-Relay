@@ -9,6 +9,7 @@ import com.google.gson.JsonParser
 import com.intellij.openapi.diagnostic.logger
 import java.io.IOException
 import java.net.ConnectException
+import java.nio.file.Path
 import java.util.Collections
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
@@ -16,7 +17,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Connects to the OpenCode server's SSE event stream (`GET /event`) and
+ * Connects to the OpenCode server's durable SSE event stream (`GET /global/event`) and
  * dispatches parsed [OpenCodeEvent]s to a listener on a background thread.
  *
  * - Automatically reconnects on disconnect (with bounded backoff).
@@ -27,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class SseClient(
     private val port: Int,
     private val onEvent: (OpenCodeEvent) -> Unit,
+    private val directory: String? = null,
     authorizationHeaderProvider: () -> String? = { null },
     private val onAuthenticationFailure: (() -> Unit)? = null,
 ) {
@@ -102,7 +104,7 @@ class SseClient(
     }
 
     private fun connect() {
-        log.info("SseClient: connecting to /event on port $port")
+        log.info("SseClient: connecting to /global/event on port $port")
         val dataBuffer = StringBuilder()
         eventStreamClient.consume(port) { line ->
             if (Thread.currentThread().isInterrupted) return@consume
@@ -135,16 +137,17 @@ class SseClient(
             val rootElement = JsonParser.parseString(json)
             if (!rootElement.isJsonObject) return
 
-            val root = rootElement.asJsonObject
+            val root = unwrapGlobalEvent(rootElement.asJsonObject) ?: return
             val type = root.getStringOrNull("type") ?: return
             val properties = root.getObjectOrNull("properties") ?: JsonObject()
 
             val event: OpenCodeEvent? = when (type) {
                 "server.connected" -> OpenCodeEvent.ServerConnected
+                "server.heartbeat", "sync", "project.updated" -> null
                 "session.diff" -> parseSessionDiff(properties)
-                // Deprecated upstream compatibility event; session.status is authoritative.
                 "session.idle" -> null
-                "session.created" -> parseSessionCreated(properties)
+                // Any lifecycle change can alter the session list/order/title, so all refresh the hierarchy.
+                "session.created", "session.updated", "session.deleted" -> parseSessionLifecycleChanged(properties)
                 "session.status" -> parseSessionStatus(properties)
                 "message.part.updated" -> parseMessagePartUpdated(properties)
                 "mcp.tools.changed" -> parseMcpToolsChanged(properties)
@@ -171,6 +174,23 @@ class SseClient(
         val message = e.message?.lowercase() ?: return false
         return message.contains("stream is closed") || message.contains("socket closed")
     }
+
+    private fun unwrapGlobalEvent(root: JsonObject): JsonObject? {
+        val payload = root.getObjectOrNull("payload") ?: return root
+        val eventDirectory = root.getStringOrNull("directory")
+        val expectedDirectory = directory
+        if (eventDirectory != null && expectedDirectory != null && !sameDirectory(eventDirectory, expectedDirectory)) {
+            return null
+        }
+        return payload
+    }
+
+    private fun sameDirectory(left: String, right: String): Boolean =
+        normalizeDirectoryPath(left) == normalizeDirectoryPath(right)
+
+    private fun normalizeDirectoryPath(directory: String): Path =
+        runCatching { Path.of(directory).toRealPath() }
+            .getOrElse { Path.of(directory).toAbsolutePath().normalize() }
 
     private fun parseSessionDiff(props: JsonObject): OpenCodeEvent.SessionDiff? {
         val sessionId = props.getStringOrNull("sessionID")
@@ -248,7 +268,11 @@ class SseClient(
 
     private fun parseSessionStatus(props: JsonObject): OpenCodeEvent.SessionStatus? {
         val sessionId = props.getStringOrNull("sessionID") ?: return null
-        val statusType = props.getObjectOrNull("status")?.getStringOrNull("type") ?: return null
+        val status = props.get("status") ?: return null
+        val statusType = status.takeIf { it.isJsonObject }
+            ?.asJsonObject
+            ?.getStringOrNull("type")
+            ?: return null
         val parsedStatus = when (statusType) {
             "busy" -> OpenCodeEvent.SessionStatusType.BUSY
             "idle" -> OpenCodeEvent.SessionStatusType.IDLE
@@ -261,12 +285,11 @@ class SseClient(
         return OpenCodeEvent.SessionStatus(sessionId, parsedStatus)
     }
 
-    private fun parseSessionCreated(props: JsonObject): OpenCodeEvent.SessionCreated? {
+    private fun parseSessionLifecycleChanged(props: JsonObject): OpenCodeEvent.SessionLifecycleChanged? {
         val sessionId = props.getStringOrNull("sessionID")
-            ?: props.getStringOrNull("id")
-            ?: props.getObjectOrNull("session")?.getStringOrNull("id")
+            ?: props.getObjectOrNull("info")?.getStringOrNull("id")
             ?: return null
-        return OpenCodeEvent.SessionCreated(sessionId)
+        return OpenCodeEvent.SessionLifecycleChanged(sessionId)
     }
 
     private fun parseMessagePartUpdated(props: JsonObject): OpenCodeEvent.TurnPatch? {

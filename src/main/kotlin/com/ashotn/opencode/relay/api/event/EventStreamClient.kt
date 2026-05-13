@@ -42,7 +42,7 @@ class EventStreamClient(
     }
 
     private fun subscribe(port: Int): EventSubscription {
-        val connection = URI("http://localhost:$port/event").toURL().openConnection() as HttpURLConnection
+        val connection = URI("http://localhost:$port/global/event").toURL().openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
         connection.setRequestProperty("Accept", "text/event-stream")
         connection.setRequestProperty("Cache-Control", "no-cache")

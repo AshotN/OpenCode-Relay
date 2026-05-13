@@ -1,20 +1,28 @@
 package com.ashotn.opencode.relay
 
 import com.intellij.openapi.util.SystemInfo
+import com.intellij.util.EnvironmentUtil
 import java.io.File
 
 internal object OpenCodeProcessEnvironment {
+
+    internal var userEnvironmentProvider: () -> Map<String, String> = { EnvironmentUtil.getEnvironmentMap() }
 
     fun configure(
         processBuilder: ProcessBuilder,
         executablePath: String,
         environmentVariables: Map<String, String> = emptyMap(),
     ) {
-        applyEnvironmentVariables(processBuilder.environment(), environmentVariables)
+        val environment = processBuilder.environment()
+        pathEnvironmentValue()?.let { setPath(environment, it) }
+        applyEnvironmentVariables(environment, environmentVariables)
         nvmBinDirectory(executablePath)?.let { binDir ->
-            prependPath(processBuilder.environment(), binDir)
+            prependPath(environment, binDir)
         }
     }
+
+    fun pathEnvironmentValue(): String? =
+        pathValue(userEnvironment()) ?: System.getenv("PATH")?.takeIf { it.isNotBlank() }
 
     fun terminalCommand(
         command: List<String>,
@@ -65,9 +73,23 @@ internal object OpenCodeProcessEnvironment {
         }
     }
 
+    private fun userEnvironment(): Map<String, String> =
+        runCatching { userEnvironmentProvider() }.getOrDefault(emptyMap())
+
+    private fun pathValue(environment: Map<String, String>): String? =
+        environment.entries
+            .firstOrNull { it.key.equals("PATH", ignoreCase = true) }
+            ?.value
+            ?.takeIf { it.isNotBlank() }
+
     private fun prependPath(environment: MutableMap<String, String>, directory: String) {
         val pathKey = environment.keys.firstOrNull { it.equals("PATH", ignoreCase = true) } ?: "PATH"
         environment[pathKey] = pathWithPrependedDirectory(environment[pathKey], directory)
+    }
+
+    private fun setPath(environment: MutableMap<String, String>, path: String) {
+        val pathKey = environment.keys.firstOrNull { it.equals("PATH", ignoreCase = true) } ?: "PATH"
+        environment[pathKey] = path
     }
 
     private fun buildWindowsTerminalCommand(

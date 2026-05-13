@@ -137,7 +137,7 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
     }
 
     private fun isOnPath(executable: String): Boolean {
-        val pathEnv = System.getenv("PATH") ?: return false
+        val pathEnv = OpenCodeProcessEnvironment.pathEnvironmentValue() ?: return false
         return pathEnv.split(File.pathSeparator).any { dir ->
             File(dir, executable).let { it.isFile && it.canExecute() }
         }

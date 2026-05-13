@@ -5,6 +5,7 @@ import com.ashotn.opencode.relay.ipc.SseClient
 
 class OpenCodeTestEventCollector(
     port: Int,
+    directory: String? = null,
 ) : AutoCloseable {
 
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
@@ -12,6 +13,7 @@ class OpenCodeTestEventCollector(
     private val events = mutableListOf<OpenCodeEvent>()
     private val sseClient = SseClient(
         port = port,
+        directory = directory,
         onEvent = { event ->
             synchronized(lock) {
                 events.add(event)
@@ -31,11 +33,11 @@ class OpenCodeTestEventCollector(
     }
 
     fun sessionIdleCount(sessionId: String): Int = synchronized(lock) {
-        events.count {
-            it is OpenCodeEvent.SessionStatus &&
-                    it.sessionId == sessionId &&
-                    it.status == OpenCodeEvent.SessionStatusType.IDLE
-        }
+        sessionStatusCountLocked(sessionId, OpenCodeEvent.SessionStatusType.IDLE)
+    }
+
+    fun sessionStatusCount(sessionId: String, status: OpenCodeEvent.SessionStatusType): Int = synchronized(lock) {
+        sessionStatusCountLocked(sessionId, status)
     }
 
     fun sessionDiffCount(sessionId: String): Int = synchronized(lock) {
@@ -43,9 +45,31 @@ class OpenCodeTestEventCollector(
     }
 
     fun awaitIdleStatus(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionStatus =
-        awaitEvent(timeoutMs, "session.status idle for $sessionId count >= $atLeastCount") { recordedEvents ->
+        awaitSessionStatus(sessionId, OpenCodeEvent.SessionStatusType.IDLE, atLeastCount, timeoutMs)
+
+    fun awaitSessionStatus(
+        sessionId: String,
+        status: OpenCodeEvent.SessionStatusType,
+        atLeastCount: Int,
+        timeoutMs: Long = 15_000,
+    ): OpenCodeEvent.SessionStatus =
+        awaitEvent(
+            timeoutMs,
+            "session.status ${status.name.lowercase()} for $sessionId count >= $atLeastCount"
+        ) { recordedEvents ->
             val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionStatus>()
-                .filter { it.sessionId == sessionId && it.status == OpenCodeEvent.SessionStatusType.IDLE }
+                .filter { it.sessionId == sessionId && it.status == status }
+            if (matching.size >= atLeastCount) matching.last() else null
+        }
+
+    fun awaitSessionLifecycle(
+        sessionId: String,
+        atLeastCount: Int,
+        timeoutMs: Long = 15_000
+    ): OpenCodeEvent.SessionLifecycleChanged =
+        awaitEvent(timeoutMs, "session lifecycle event for $sessionId count >= $atLeastCount") { recordedEvents ->
+            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionLifecycleChanged>()
+                .filter { it.sessionId == sessionId }
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
@@ -64,15 +88,25 @@ class OpenCodeTestEventCollector(
                 is OpenCodeEvent.SessionStatus -> {
                     "session.status(sessionId=${event.sessionId}, type=${event.status.name.lowercase()})"
                 }
+
                 is OpenCodeEvent.SessionDiff -> {
                     val files = event.files.joinToString(",") { it.file.substringAfterLast('/') }
                     "session.diff(sessionId=${event.sessionId}, files=$files)"
                 }
 
+                is OpenCodeEvent.SessionLifecycleChanged -> "session.lifecycle(sessionId=${event.sessionId})"
+
                 else -> event::class.simpleName ?: "UnknownEvent"
             }
         }
     }
+
+    private fun sessionStatusCountLocked(sessionId: String, status: OpenCodeEvent.SessionStatusType): Int =
+        events.count {
+            it is OpenCodeEvent.SessionStatus &&
+                    it.sessionId == sessionId &&
+                    it.status == status
+        }
 
     private fun <T> awaitEvent(timeoutMs: Long, description: String, matcher: (List<OpenCodeEvent>) -> T?): T {
         val deadline = System.currentTimeMillis() + timeoutMs

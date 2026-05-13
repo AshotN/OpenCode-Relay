@@ -232,7 +232,7 @@ class OpenCodeDiffLiveTest(
         OpenCodeTestEnvironmentFactory.create(version).use { environment ->
             val server = environment.startServer()
             val sessionClient = SessionApiClient()
-            OpenCodeTestEventCollector(server.port).use { events ->
+            OpenCodeTestEventCollector(server.port, environment.repoRoot.toString()).use { events ->
                 try {
                     events.awaitConnected()
                     val session = assertIs<ApiResult.Success<SessionApiClient.CreatedSession>>(

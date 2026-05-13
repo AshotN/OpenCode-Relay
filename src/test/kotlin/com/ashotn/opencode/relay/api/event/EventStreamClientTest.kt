@@ -10,7 +10,7 @@ class EventStreamClientTest {
     @Test
     fun `consume throws authentication exception on unauthorized response`() {
         withTestServer { server, port ->
-            server.createContext("/event") { exchange ->
+            server.createContext("/global/event") { exchange ->
                 val body = "Unauthorized"
                 exchange.sendResponseHeaders(401, body.toByteArray(Charsets.UTF_8).size.toLong())
                 exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
