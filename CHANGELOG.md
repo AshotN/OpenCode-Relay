@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Switch to <code>/global/event</code> stream for SSE updates, fixing a regression in some OpenCode versions (fixed upstream in OpenCode 1.14.50) and restoring VCS refresh after LLM file edits.</li>
+</ul>
+
 ## [1.1.0] - 2026-05-04
 
 <p><strong>Added</strong></p>
