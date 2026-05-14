@@ -91,7 +91,8 @@ class ClassicTuiPanel(
             terminalWidget = widget
             Disposer.register(this, widget)
             terminalPanel =
-                ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel?.also(::installEmbeddedTerminalDataProvider)
+                ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel
+                    ?.also { installEmbeddedTerminalDataProvider(project, it) }
 
             // When the shell process exits, clean up and notify the owner.
             widget.addTerminationCallback({
@@ -146,15 +147,6 @@ class ClassicTuiPanel(
     }
 
     override fun dispose() = tearDown()
-
-    private fun installEmbeddedTerminalDataProvider(panel: JBTerminalPanel) {
-        // JBTerminalPanel's internal TerminalEscapeKeyListener moves focus back to the editor
-        // whenever the terminal reports a ToolWindow in its data context. Our terminal is embedded
-        // inside a custom tool window. Install the override on the terminal panel itself so the
-        // explicit null wins before any ancestor ToolWindow provider in the data-context chain.
-        installTerminalToolWindowOverride(panel)
-        installEmbeddedTerminalKeyOverrides(panel)
-    }
 
     private fun uninstallEmbeddedTerminalDataProvider() {
         terminalPanel?.let(::uninstallTerminalToolWindowOverride)

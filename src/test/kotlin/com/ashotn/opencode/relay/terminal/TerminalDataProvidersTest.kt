@@ -14,6 +14,7 @@ import com.jediterm.terminal.model.TerminalTextBuffer
 import java.awt.BorderLayout
 import java.awt.event.InputEvent
 import java.awt.event.KeyEvent
+import java.io.File
 import java.lang.reflect.Proxy
 import java.util.function.Consumer
 import javax.swing.JPanel
@@ -44,13 +45,12 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         }
     }
 
-    fun `test classic tui panel installs ctrl z key override without intercepting escape`() {
+    fun `test embedded terminal data provider installs ctrl z key override without intercepting escape`() {
         val terminalPanel = createTerminalPanel()
-        val classicTuiPanel = ClassicTuiPanel(project, testRootDisposable)
         val existingHandlers = preKeyEventHandlers(terminalPanel)
 
         try {
-            installEmbeddedTerminalDataProvider(classicTuiPanel, terminalPanel)
+            installEmbeddedTerminalDataProvider(project, terminalPanel)
 
             val handlers = preKeyEventHandlers(terminalPanel)
             val addedHandlers = handlers.drop(existingHandlers.size)
@@ -83,6 +83,144 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         }
     }
 
+    fun `test markdown terminal hyperlink filter resolves project relative file link`() {
+        val file = File(project.basePath, "src/main/kotlin/SendFileAction.kt").apply {
+            parentFile.mkdirs()
+            writeText("class SendFileAction")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        val line = "Open [SendFileAction](src/main/kotlin/SendFileAction.kt)"
+        val result = MarkdownTerminalHyperlinkFilter(project).apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val labelStart = line.indexOf("SendFileAction")
+        assertEquals(labelStart, item.startOffset)
+        assertEquals(labelStart + "SendFileAction".length, item.endOffset)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves markdown file link with line anchor`() {
+        val file = File(project.basePath, "note.md").apply {
+            parentFile?.mkdirs()
+            writeText("one\ntwo\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "Open [note.md](./note.md#L2)"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val labelStart = line.indexOf("note.md")
+        assertEquals(labelStart, item.startOffset)
+        assertEquals(labelStart + "note.md".length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(2, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves bare line anchor file reference`() {
+        val file = File(project.basePath, "note.md").apply {
+            parentFile?.mkdirs()
+            writeText("one\ntwo\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "note.md:2 (./note.md#L2)"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val targetStart = line.indexOf("./note.md#L2")
+        assertEquals(targetStart, item.startOffset)
+        assertEquals(targetStart + "./note.md#L2".length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(2, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves bare line range to first line`() {
+        val file = File(project.basePath, "note.md").apply {
+            parentFile?.mkdirs()
+            writeText((1..6).joinToString("\n") { "line $it" } + "\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "./note.md#L2-L6"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        assertEquals(0, item.startOffset)
+        assertEquals(line.length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(2, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves markdown line range to first line`() {
+        val file = File(project.basePath, "note.md").apply {
+            parentFile?.mkdirs()
+            writeText((1..6).joinToString("\n") { "line $it" } + "\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "[`note.md` lines 2-6](./note.md#L2-L6)"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val labelStart = line.indexOf("`note.md` lines 2-6")
+        assertEquals(labelStart, item.startOffset)
+        assertEquals(labelStart + "`note.md` lines 2-6".length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(2, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves bare line anchor inside html code tag`() {
+        val file = File(project.basePath, "note.md").apply {
+            parentFile?.mkdirs()
+            writeText((1..12).joinToString("\n") { "line $it" } + "\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "<td><code>./note.md#L12</code></td>"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val targetStart = line.indexOf("./note.md#L12")
+        assertEquals(targetStart, item.startOffset)
+        assertEquals(targetStart + "./note.md#L12".length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(12, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter ignores missing project relative file link`() {
+        val result = MarkdownTerminalHyperlinkFilter(project)
+            .apply("Open [Missing](src/main/kotlin/Missing.kt)")
+
+        assertNull(result)
+    }
+
     private fun toolWindowStub(): ToolWindow =
         Proxy.newProxyInstance(
             ToolWindow::class.java.classLoader,
@@ -105,17 +243,6 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
             )
         }
         return terminalPanel
-    }
-
-    private fun installEmbeddedTerminalDataProvider(classicTuiPanel: ClassicTuiPanel, terminalPanel: JBTerminalPanel) {
-        val method = ClassicTuiPanel::class.java.getDeclaredMethod(
-            "installEmbeddedTerminalDataProvider",
-            JBTerminalPanel::class.java,
-        )
-        method.isAccessible = true
-        ApplicationManager.getApplication().invokeAndWait {
-            method.invoke(classicTuiPanel, terminalPanel)
-        }
     }
 
     @Suppress("UNCHECKED_CAST")

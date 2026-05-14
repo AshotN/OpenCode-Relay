@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+<p><strong>Added</strong></p>
+<ul>
+  <li>Enable navigation to the specified file and line by clicking on line references within the embedded TUI.</li>
+</ul>
+
 ## [1.2.0] - 2026-05-14
 
 <p><strong>Fixed</strong></p>
