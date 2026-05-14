@@ -184,6 +184,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         )
                 }
             }
+            group("AI Guidance") {
+                row {
+                    checkBox("Inject JetBrains guidance into OpenCode prompts")
+                        .bindSelected(pendingState::relayPromptInjectionEnabled)
+                        .comment(
+                            "Loads a bundled OpenCode plugin for plugin-launched servers. " +
+                                    "If OPENCODE_CONFIG_DIR is already set, the plugin leaves it unchanged.",
+                        )
+                }
+            }
             group("Permissions") {
                 row {
                     checkBox("Enable brave mode")
@@ -375,6 +385,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.serverEnvironmentVariables = settings.serverEnvironmentVariables.map { it.copy() }.toMutableList()
         pendingState.executablePath = settings.executablePath
         pendingState.inlineDiffEnabled = settings.inlineDiffEnabled
+        pendingState.relayPromptInjectionEnabled = settings.relayPromptInjectionEnabled
         pendingState.diffTraceEnabled = settings.diffTraceEnabled
         pendingState.diffTraceHistoryEnabled = settings.diffTraceHistoryEnabled
         pendingState.inlineTerminalEnabled = settings.inlineTerminalEnabled

@@ -13,6 +13,7 @@ data class OpenCodeSettingsSnapshot(
     val serverEnvironmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     val executablePath: String,
     val inlineDiffEnabled: Boolean,
+    val relayPromptInjectionEnabled: Boolean,
     val diffTraceEnabled: Boolean,
     val diffTraceHistoryEnabled: Boolean,
     val inlineTerminalEnabled: Boolean,

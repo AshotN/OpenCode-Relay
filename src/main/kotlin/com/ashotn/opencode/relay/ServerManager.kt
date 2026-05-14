@@ -467,6 +467,24 @@ class ServerManager(
                     .inheritIO()
                     .apply {
                         OpenCodeProcessEnvironment.configure(this, executablePath, environmentVariables)
+                        when (val result = OpenCodeRelayPromptPlugin.configure(
+                            this,
+                            enabled = settings.relayPromptInjectionEnabled,
+                        )) {
+                            is OpenCodeRelayPromptPlugin.InjectionResult.Injected -> log.info(
+                                "OpenCode Relay prompt plugin enabled from ${result.configDirectory}",
+                            )
+
+                            is OpenCodeRelayPromptPlugin.InjectionResult.SkippedExistingConfigDir -> log.warn(
+                                "Skipping OpenCode Relay prompt plugin because ${result.environmentName} is already set",
+                            )
+
+                            is OpenCodeRelayPromptPlugin.InjectionResult.Failed -> log.warn(
+                                "Starting OpenCode without Relay prompt plugin: ${result.message}",
+                            )
+
+                            OpenCodeRelayPromptPlugin.InjectionResult.Disabled -> Unit
+                        }
                         val basePath = project.basePath
                         if (basePath != null) directory(File(basePath))
                     }

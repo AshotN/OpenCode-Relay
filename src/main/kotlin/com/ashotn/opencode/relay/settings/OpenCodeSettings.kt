@@ -41,6 +41,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var serverEnvironmentVariables: MutableList<EnvironmentVariable> = mutableListOf(),
         var executablePath: String = "",
         var inlineDiffEnabled: Boolean = true,
+        var relayPromptInjectionEnabled: Boolean = true,
         var diffTraceEnabled: Boolean = false,
         var diffTraceHistoryEnabled: Boolean = false,
         var inlineTerminalEnabled: Boolean = true,
@@ -117,6 +118,12 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             state.inlineDiffEnabled = value
         }
 
+    var relayPromptInjectionEnabled: Boolean
+        get() = state.relayPromptInjectionEnabled
+        set(value) {
+            state.relayPromptInjectionEnabled = value
+        }
+
     var diffTraceEnabled: Boolean
         get() = state.diffTraceEnabled
         set(value) {
@@ -172,6 +179,7 @@ fun OpenCodeSettings.State.toSnapshot(): OpenCodeSettingsSnapshot = OpenCodeSett
     serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() },
     executablePath = executablePath,
     inlineDiffEnabled = inlineDiffEnabled,
+    relayPromptInjectionEnabled = relayPromptInjectionEnabled,
     diffTraceEnabled = diffTraceEnabled,
     diffTraceHistoryEnabled = diffTraceHistoryEnabled,
     inlineTerminalEnabled = inlineTerminalEnabled,

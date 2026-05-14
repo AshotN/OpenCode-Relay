@@ -95,9 +95,8 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
 
         assertNotNull(result)
         val item = result!!.items.single()
-        val labelStart = line.indexOf("SendFileAction")
-        assertEquals(labelStart, item.startOffset)
-        assertEquals(labelStart + "SendFileAction".length, item.endOffset)
+        assertEquals(line.indexOf('['), item.startOffset)
+        assertEquals(line.length, item.endOffset)
     }
 
     fun `test markdown terminal hyperlink filter resolves markdown file link with line anchor`() {
@@ -116,9 +115,79 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
 
         assertNotNull(result)
         val item = result!!.items.single()
-        val labelStart = line.indexOf("note.md")
-        assertEquals(labelStart, item.startOffset)
-        assertEquals(labelStart + "note.md".length, item.endOffset)
+        assertEquals(line.indexOf('['), item.startOffset)
+        assertEquals(line.length, item.endOffset)
+        item.linkInfo.navigate()
+        assertEquals(2, navigatedLineNumber)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves prompt example markdown link`() {
+        val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
+            parentFile.mkdirs()
+            writeText("const IDE_GUIDANCE = 'test'\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        val line = "[./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js](./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js)"
+        val result = MarkdownTerminalHyperlinkFilter(project).apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        assertEquals(0, item.startOffset)
+        assertEquals(line.length, item.endOffset)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves wrapped markdown label path`() {
+        val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
+            parentFile.mkdirs()
+            writeText("const IDE_GUIDANCE = 'test'\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        val line = "[./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js"
+        val result = MarkdownTerminalHyperlinkFilter(project).apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        assertEquals(1, item.startOffset)
+        assertEquals(line.length, item.endOffset)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves bare local file reference`() {
+        val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
+            parentFile.mkdirs()
+            writeText("const IDE_GUIDANCE = 'test'\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        val line = "See ./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js"
+        val result = MarkdownTerminalHyperlinkFilter(project).apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        val targetStart = line.indexOf("./src")
+        assertEquals(targetStart, item.startOffset)
+        assertEquals(line.length, item.endOffset)
+    }
+
+    fun `test markdown terminal hyperlink filter resolves wrapped markdown label path with line suffix`() {
+        val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
+            parentFile.mkdirs()
+            writeText("one\ntwo\n")
+        }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+
+        var navigatedLineNumber: Int? = null
+        val line = "[./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js:2"
+        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+            assertEquals(file.path, virtualFile.path)
+            navigatedLineNumber = lineNumber
+        }.apply(line)
+
+        assertNotNull(result)
+        val item = result!!.items.single()
+        assertEquals(1, item.startOffset)
+        assertEquals(line.length, item.endOffset)
         item.linkInfo.navigate()
         assertEquals(2, navigatedLineNumber)
     }
@@ -184,9 +253,8 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
 
         assertNotNull(result)
         val item = result!!.items.single()
-        val labelStart = line.indexOf("`note.md` lines 2-6")
-        assertEquals(labelStart, item.startOffset)
-        assertEquals(labelStart + "`note.md` lines 2-6".length, item.endOffset)
+        assertEquals(line.indexOf('['), item.startOffset)
+        assertEquals(line.length, item.endOffset)
         item.linkInfo.navigate()
         assertEquals(2, navigatedLineNumber)
     }
@@ -217,6 +285,13 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
     fun `test markdown terminal hyperlink filter ignores missing project relative file link`() {
         val result = MarkdownTerminalHyperlinkFilter(project)
             .apply("Open [Missing](src/main/kotlin/Missing.kt)")
+
+        assertNull(result)
+    }
+
+    fun `test markdown terminal hyperlink filter ignores uri-like line anchor without crashing`() {
+        val result = MarkdownTerminalHyperlinkFilter(project)
+            .apply("mailto:test@example.com#L1")
 
         assertNull(result)
     }
