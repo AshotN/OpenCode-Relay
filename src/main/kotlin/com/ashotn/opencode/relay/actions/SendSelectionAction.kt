@@ -16,7 +16,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.DumbAware
 
 /**
- * Editor action that appends an @path#Lstart-end file reference to the TUI's prompt
+ * Editor action that appends an @path#Lstart or @path#Lstart-Lend file reference to the TUI's prompt
  * input buffer via POST /tui/append-prompt.
  *
  * Sends a reference only — no file content is embedded in the prompt. OpenCode resolves
@@ -69,7 +69,8 @@ class SendSelectionAction : AnAction(), DumbAware {
             project.basePath?.let { base -> path.toProjectRelativePath(base) } ?: path
         } ?: return
 
-        val ref = "@$relativePath#L$startLine-$endLine "
+        val lineAnchor = if (startLine == endLine) "#L$startLine" else "#L$startLine-L$endLine"
+        val ref = "@$relativePath$lineAnchor "
 
         OpenCodeTuiClient.getInstance(project).appendToTuiPrompt(ref) { success, error ->
             ApplicationManager.getApplication().invokeLater {
