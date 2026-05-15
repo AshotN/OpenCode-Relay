@@ -4,6 +4,7 @@
 
 <p><strong>Added</strong></p>
 <ul>
+  <li>Inject JetBrains IDE guidance into OpenCode's system prompt for plugin-launched servers, with a settings toggle to disable it.</li>
   <li>Enable navigation to the specified file and line by clicking on line references within the embedded TUI.</li>
 </ul>
 

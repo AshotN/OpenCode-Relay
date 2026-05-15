@@ -5,6 +5,7 @@ import com.intellij.openapi.actionSystem.DataProvider
 import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.newvfs.impl.VfsRootAccess
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.terminal.JBTerminalPanel
 import com.intellij.terminal.JBTerminalSystemSettingsProviderBase
@@ -107,7 +108,7 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
 
         var navigatedLineNumber: Int? = null
-        val line = "Open [note.md](./note.md#L2)"
+        val line = "Open [note.md:2](./note.md#L2)"
         val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
             assertEquals(file.path, virtualFile.path)
             navigatedLineNumber = lineNumber
@@ -153,21 +154,101 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         assertEquals(line.length, item.endOffset)
     }
 
-    fun `test markdown terminal hyperlink filter resolves bare local file reference`() {
-        val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
-            parentFile.mkdirs()
-            writeText("const IDE_GUIDANCE = 'test'\n")
+    fun `test markdown terminal hyperlink filter resolves advertised bare file formats`() {
+        data class Case(
+            val name: String,
+            val target: String,
+            val file: File,
+            val lineNumber: Int? = null,
+        )
+
+        val absoluteFile = File(project.basePath, "absolute/AbsoluteFile.kt")
+        val absoluteLineSuffixFile = File(project.basePath, "absolute/AbsoluteLineSuffixFile.kt")
+        val cases = listOf(
+            Case(
+                "dot slash relative path",
+                "./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js",
+                File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js"),
+            ),
+            Case(
+                "project relative path",
+                "src/main/kotlin/com/ashotn/opencode/relay/actions/SendFileAction.kt",
+                File(project.basePath, "src/main/kotlin/com/ashotn/opencode/relay/actions/SendFileAction.kt"),
+            ),
+            Case(
+                "parent relative path",
+                "../src/ParentRelative.kt",
+                File(project.basePath, "../src/ParentRelative.kt"),
+            ),
+            Case(
+                "absolute path",
+                absoluteFile.path,
+                absoluteFile,
+            ),
+            Case(
+                "line anchor without dot slash",
+                "note.md#L2",
+                File(project.basePath, "note.md"),
+                lineNumber = 2,
+            ),
+            Case(
+                "dot slash line anchor",
+                "./note.md#L2",
+                File(project.basePath, "note.md"),
+                lineNumber = 2,
+            ),
+            Case(
+                "line anchor range",
+                "./note.md#L2-L6",
+                File(project.basePath, "note.md"),
+                lineNumber = 2,
+            ),
+            Case(
+                "dot slash line suffix",
+                "./src/FileWithLineSuffix.kt:42",
+                File(project.basePath, "src/FileWithLineSuffix.kt"),
+                lineNumber = 42,
+            ),
+            Case(
+                "project relative line suffix range",
+                "src/main/FileWithLineSuffixRange.kt:42-48",
+                File(project.basePath, "src/main/FileWithLineSuffixRange.kt"),
+                lineNumber = 42,
+            ),
+            Case(
+                "absolute line suffix",
+                "${absoluteLineSuffixFile.path}:42",
+                absoluteLineSuffixFile,
+                lineNumber = 42,
+            ),
+        )
+
+        cases.forEach { case ->
+            case.file.apply {
+                parentFile?.mkdirs()
+                writeText((1..60).joinToString("\n") { "line $it" } + "\n")
+            }
+            VfsRootAccess.allowRootAccess(testRootDisposable, case.file.parentFile.canonicalPath)
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(case.file)
+
+            var navigatedPath: String? = null
+            var navigatedLineNumber: Int? = null
+            val line = "See ${case.target}"
+            val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+                navigatedPath = virtualFile.path
+                navigatedLineNumber = lineNumber
+            }.apply(line)
+
+            assertNotNull(case.name, result)
+            val item = result!!.items.single()
+            val targetStart = line.indexOf(case.target)
+            assertEquals(case.name, targetStart, item.startOffset)
+            assertEquals(case.name, targetStart + case.target.length, item.endOffset)
+
+            item.linkInfo.navigate()
+            assertEquals(case.name, case.file.canonicalPath, File(navigatedPath!!).canonicalPath)
+            assertEquals(case.name, case.lineNumber, navigatedLineNumber)
         }
-        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
-
-        val line = "See ./src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js"
-        val result = MarkdownTerminalHyperlinkFilter(project).apply(line)
-
-        assertNotNull(result)
-        val item = result!!.items.single()
-        val targetStart = line.indexOf("./src")
-        assertEquals(targetStart, item.startOffset)
-        assertEquals(line.length, item.endOffset)
     }
 
     fun `test markdown terminal hyperlink filter resolves wrapped markdown label path with line suffix`() {
@@ -187,51 +268,6 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         assertNotNull(result)
         val item = result!!.items.single()
         assertEquals(1, item.startOffset)
-        assertEquals(line.length, item.endOffset)
-        item.linkInfo.navigate()
-        assertEquals(2, navigatedLineNumber)
-    }
-
-    fun `test markdown terminal hyperlink filter resolves bare line anchor file reference`() {
-        val file = File(project.basePath, "note.md").apply {
-            parentFile?.mkdirs()
-            writeText("one\ntwo\n")
-        }
-        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
-
-        var navigatedLineNumber: Int? = null
-        val line = "note.md:2 (./note.md#L2)"
-        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
-            assertEquals(file.path, virtualFile.path)
-            navigatedLineNumber = lineNumber
-        }.apply(line)
-
-        assertNotNull(result)
-        val item = result!!.items.single()
-        val targetStart = line.indexOf("./note.md#L2")
-        assertEquals(targetStart, item.startOffset)
-        assertEquals(targetStart + "./note.md#L2".length, item.endOffset)
-        item.linkInfo.navigate()
-        assertEquals(2, navigatedLineNumber)
-    }
-
-    fun `test markdown terminal hyperlink filter resolves bare line range to first line`() {
-        val file = File(project.basePath, "note.md").apply {
-            parentFile?.mkdirs()
-            writeText((1..6).joinToString("\n") { "line $it" } + "\n")
-        }
-        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
-
-        var navigatedLineNumber: Int? = null
-        val line = "./note.md#L2-L6"
-        val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
-            assertEquals(file.path, virtualFile.path)
-            navigatedLineNumber = lineNumber
-        }.apply(line)
-
-        assertNotNull(result)
-        val item = result!!.items.single()
-        assertEquals(0, item.startOffset)
         assertEquals(line.length, item.endOffset)
         item.linkInfo.navigate()
         assertEquals(2, navigatedLineNumber)

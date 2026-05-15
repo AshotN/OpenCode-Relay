@@ -15,10 +15,19 @@ import com.jediterm.terminal.model.hyperlinks.TextProcessing
 import java.io.File
 import java.net.URI
 
-// Adds clickable local file links for Markdown links and bare #L references in embedded JediTerm output.
+// Adds clickable local file links in embedded JediTerm output. Supported examples:
+// - Markdown links: [File.kt](./src/File.kt), [File.kt:42](src/main/File.kt#L42)
+// - Bare paths: ./src/File.kt, ../src/File.kt, /abs/path/File.kt, src/main/File.kt
+// - Line anchors: ./src/File.kt#L42, src/main/File.kt#L42-L48, note.md#L2
+// - Line suffixes: ./src/File.kt:42, src/main/File.kt:42-48, /abs/path/File.kt:42
+// Candidates only become links after resolving to real local files; URI-like targets are ignored.
 private val markdownLinkRegex = Regex("""\[([^\]\r\n]+)]\(([^)\s]+)\)""")
 private val lineAnchorReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/)?[^\s()<>"]+?#L\d+(?:-L\d+)?)(?![\w./-])""")
+private val lineSuffixReferenceRegex =
+    Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+?:\d+(?:-\d+)?)(?![\w./-])""")
+private val localFileReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+)(?![\w./-])""")
 private val lineAnchorRegex = Regex("""^(.*)#L(\d+)(?:-L\d+)?$""")
+private val lineSuffixRegex = Regex("""^(.*):(\d+)(?:-\d+)?$""")
 private val logger = Logger.getInstance(MarkdownTerminalHyperlinkFilter::class.java)
 
 internal fun installMarkdownTerminalHyperlinkFilter(project: Project, panel: JBTerminalPanel) {
@@ -57,30 +66,51 @@ internal class MarkdownTerminalHyperlinkFilter(
     override fun apply(line: String): LinkResult? {
         val hasMarkdownCandidate = '[' in line
         val hasLineAnchorCandidate = "#L" in line
-        if (!hasMarkdownCandidate && !hasLineAnchorCandidate) return null
+        val hasLocalFileCandidate = '/' in line
+        val hasLineSuffixCandidate = ':' in line
+        if (!hasMarkdownCandidate && !hasLineAnchorCandidate && !hasLocalFileCandidate && !hasLineSuffixCandidate) return null
 
         val items = mutableListOf<LinkResultItem>()
         val consumedRanges = mutableListOf<IntRange>()
 
+        fun createLinkForMatch(matchRange: IntRange, target: String): LinkResultItem? {
+            if (consumedRanges.any { range ->
+                    rangesOverlap(
+                        matchRange.first,
+                        matchRange.last + 1,
+                        range.first,
+                        range.last + 1
+                    )
+                }) {
+                return null
+            }
+
+            val resolvedTarget = resolveTerminalLinkTarget(target) ?: return null
+            consumedRanges.add(matchRange)
+            return createLinkResultItem(matchRange.first, matchRange.last + 1, resolvedTarget)
+        }
+
         if (hasMarkdownCandidate) {
             markdownLinkRegex.findAll(line).mapNotNullTo(items) { match ->
-                val target = match.groupValues[2]
-                val resolvedTarget = resolveTerminalLinkTarget(target) ?: return@mapNotNullTo null
-                consumedRanges.add(match.range)
-                val labelStart = match.range.first + 1
-                val labelEnd = labelStart + match.groupValues[1].length
-                createLinkResultItem(labelStart, labelEnd, resolvedTarget)
+                createLinkForMatch(match.range, match.groupValues[2])
             }
         }
 
         if (hasLineAnchorCandidate) {
             lineAnchorReferenceRegex.findAll(line).mapNotNullTo(items) { match ->
-                if (consumedRanges.any { range -> rangesOverlap(match.range.first, match.range.last + 1, range.first, range.last + 1) }) {
-                    return@mapNotNullTo null
-                }
-                val target = match.groupValues[1]
-                val resolvedTarget = resolveTerminalLinkTarget(target) ?: return@mapNotNullTo null
-                createLinkResultItem(match.range.first, match.range.last + 1, resolvedTarget)
+                createLinkForMatch(match.range, match.groupValues[1])
+            }
+        }
+
+        if (hasLineSuffixCandidate) {
+            lineSuffixReferenceRegex.findAll(line).mapNotNullTo(items) { match ->
+                createLinkForMatch(match.range, match.groupValues[1])
+            }
+        }
+
+        if (hasLocalFileCandidate) {
+            localFileReferenceRegex.findAll(line).mapNotNullTo(items) { match ->
+                createLinkForMatch(match.range, match.groupValues[1])
             }
         }
 
@@ -92,6 +122,7 @@ internal class MarkdownTerminalHyperlinkFilter(
 
     private fun resolveTerminalLinkTarget(target: String): ResolvedTerminalLink? {
         val parsedTarget = parseLineAnchor(target)
+        // Exclude URIs
         if (parsedTarget.path.contains("://")) return null
 
         val basePath = project.basePath ?: return null
@@ -109,7 +140,12 @@ internal class MarkdownTerminalHyperlinkFilter(
         return if (anchor != null) {
             ParsedTerminalLinkTarget(anchor.groupValues[1], anchor.groupValues[2].toIntOrNull()?.coerceAtLeast(1))
         } else {
-            ParsedTerminalLinkTarget(target, null)
+            val suffix = lineSuffixRegex.matchEntire(target)
+            if (suffix != null) {
+                ParsedTerminalLinkTarget(suffix.groupValues[1], suffix.groupValues[2].toIntOrNull()?.coerceAtLeast(1))
+            } else {
+                ParsedTerminalLinkTarget(target, null)
+            }
         }
     }
 
@@ -117,7 +153,7 @@ internal class MarkdownTerminalHyperlinkFilter(
         start < otherEnd && otherStart < end
 
     private fun decodePath(path: String): String =
-        runCatching { URI(null, null, path, null).path }.getOrDefault(path)
+        runCatching { URI(null, null, path, null).path ?: path }.getOrDefault(path)
 }
 
 private data class ParsedTerminalLinkTarget(
