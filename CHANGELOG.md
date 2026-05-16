@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-05-16
+
 <p><strong>Added</strong></p>
 <ul>
   <li>Inject JetBrains IDE guidance into OpenCode's system prompt for plugin-launched servers, with a settings toggle to disable it.</li>
