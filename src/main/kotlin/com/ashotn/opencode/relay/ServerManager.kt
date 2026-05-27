@@ -386,6 +386,7 @@ class ServerManager(
 
     private fun buildWindowsCommand(executablePath: String, vararg args: String): String =
         buildString {
+            append("call ")
             append("\"")
             append(executablePath)
             append("\"")
