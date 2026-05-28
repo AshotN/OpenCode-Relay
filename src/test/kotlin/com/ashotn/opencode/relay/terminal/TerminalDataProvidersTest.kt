@@ -251,6 +251,84 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
         }
     }
 
+    fun `test markdown terminal hyperlink filter excludes trailing punctuation from bare file links`() {
+        data class Case(
+            val name: String,
+            val text: String,
+            val target: String,
+            val file: File,
+            val lineNumber: Int? = null,
+        )
+
+        val cases = listOf(
+            Case(
+                "trailing period",
+                "src/main/FileTrailingPeriod.kt.",
+                "src/main/FileTrailingPeriod.kt",
+                File(project.basePath, "src/main/FileTrailingPeriod.kt"),
+            ),
+            Case(
+                "trailing comma",
+                "src/main/FileTrailingComma.kt,",
+                "src/main/FileTrailingComma.kt",
+                File(project.basePath, "src/main/FileTrailingComma.kt"),
+            ),
+            Case(
+                "trailing colon",
+                "src/main/FileTrailingColon.kt:",
+                "src/main/FileTrailingColon.kt",
+                File(project.basePath, "src/main/FileTrailingColon.kt"),
+            ),
+            Case(
+                "trailing semicolon",
+                "src/main/FileTrailingSemicolon.kt;",
+                "src/main/FileTrailingSemicolon.kt",
+                File(project.basePath, "src/main/FileTrailingSemicolon.kt"),
+            ),
+            Case(
+                "line suffix trailing period",
+                "src/main/FileLineSuffixTrailingPeriod.kt:42.",
+                "src/main/FileLineSuffixTrailingPeriod.kt:42",
+                File(project.basePath, "src/main/FileLineSuffixTrailingPeriod.kt"),
+                lineNumber = 42,
+            ),
+            Case(
+                "line anchor trailing period",
+                "note.md#L2.",
+                "note.md#L2",
+                File(project.basePath, "note.md"),
+                lineNumber = 2,
+            ),
+        )
+
+        cases.forEach { case ->
+            case.file.apply {
+                parentFile?.mkdirs()
+                writeText((1..60).joinToString("\n") { "line $it" } + "\n")
+            }
+            VfsRootAccess.allowRootAccess(testRootDisposable, case.file.parentFile.canonicalPath)
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(case.file)
+
+            var navigatedPath: String? = null
+            var navigatedLineNumber: Int? = null
+            val line = "See ${case.text}"
+            val result = MarkdownTerminalHyperlinkFilter(project) { virtualFile, lineNumber ->
+                navigatedPath = virtualFile.path
+                navigatedLineNumber = lineNumber
+            }.apply(line)
+
+            assertNotNull(case.name, result)
+            val item = result!!.items.single()
+            val targetStart = line.indexOf(case.target)
+            assertEquals(case.name, targetStart, item.startOffset)
+            assertEquals(case.name, targetStart + case.target.length, item.endOffset)
+
+            item.linkInfo.navigate()
+            assertEquals(case.name, case.file.canonicalPath, File(navigatedPath!!).canonicalPath)
+            assertEquals(case.name, case.lineNumber, navigatedLineNumber)
+        }
+    }
+
     fun `test markdown terminal hyperlink filter resolves wrapped markdown label path with line suffix`() {
         val file = File(project.basePath, "src/main/resources/opencode-relay/plugins/opencode-relay-prompt.js").apply {
             parentFile.mkdirs()

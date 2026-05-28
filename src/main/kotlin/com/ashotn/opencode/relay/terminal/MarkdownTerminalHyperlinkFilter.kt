@@ -22,12 +22,13 @@ import java.net.URI
 // - Line suffixes: ./src/File.kt:42, src/main/File.kt:42-48, /abs/path/File.kt:42
 // Candidates only become links after resolving to real local files; URI-like targets are ignored.
 private val markdownLinkRegex = Regex("""\[([^\]\r\n]+)]\(([^)\s]+)\)""")
-private val lineAnchorReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/)?[^\s()<>"]+?#L\d+(?:-L\d+)?)(?![\w./-])""")
+private val lineAnchorReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/)?[^\s()<>"]+?#L\d+(?:-L\d+)?)(?!(?:[\w/-]|\.\w))""")
 private val lineSuffixReferenceRegex =
-    Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+?:\d+(?:-\d+)?)(?![\w./-])""")
+    Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+?:\d+(?:-\d+)?)(?!(?:[\w/-]|\.\w))""")
 private val localFileReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+)(?![\w./-])""")
 private val lineAnchorRegex = Regex("""^(.*)#L(\d+)(?:-L\d+)?$""")
 private val lineSuffixRegex = Regex("""^(.*):(\d+)(?:-\d+)?$""")
+private val trailingReferencePunctuation = setOf('.', ',', ':', ';')
 private val logger = Logger.getInstance(MarkdownTerminalHyperlinkFilter::class.java)
 
 internal fun installMarkdownTerminalHyperlinkFilter(project: Project, panel: JBTerminalPanel) {
@@ -73,11 +74,18 @@ internal class MarkdownTerminalHyperlinkFilter(
         val items = mutableListOf<LinkResultItem>()
         val consumedRanges = mutableListOf<IntRange>()
 
-        fun createLinkForMatch(matchRange: IntRange, target: String): LinkResultItem? {
+        fun createLinkForMatch(
+            matchRange: IntRange,
+            target: String,
+            trimTrailingPunctuation: Boolean = false,
+        ): LinkResultItem? {
+            val linkRange = if (trimTrailingPunctuation) trimTrailingReferencePunctuation(matchRange, target) else matchRange
+            val linkTarget = if (trimTrailingPunctuation) target.take(linkRange.last - matchRange.first + 1) else target
+
             if (consumedRanges.any { range ->
                     rangesOverlap(
-                        matchRange.first,
-                        matchRange.last + 1,
+                        linkRange.first,
+                        linkRange.last + 1,
                         range.first,
                         range.last + 1
                     )
@@ -85,9 +93,9 @@ internal class MarkdownTerminalHyperlinkFilter(
                 return null
             }
 
-            val resolvedTarget = resolveTerminalLinkTarget(target) ?: return null
-            consumedRanges.add(matchRange)
-            return createLinkResultItem(matchRange.first, matchRange.last + 1, resolvedTarget)
+            val resolvedTarget = resolveTerminalLinkTarget(linkTarget) ?: return null
+            consumedRanges.add(linkRange)
+            return createLinkResultItem(linkRange.first, linkRange.last + 1, resolvedTarget)
         }
 
         if (hasMarkdownCandidate) {
@@ -110,7 +118,7 @@ internal class MarkdownTerminalHyperlinkFilter(
 
         if (hasLocalFileCandidate) {
             localFileReferenceRegex.findAll(line).mapNotNullTo(items) { match ->
-                createLinkForMatch(match.range, match.groupValues[1])
+                createLinkForMatch(match.range, match.groupValues[1], trimTrailingPunctuation = true)
             }
         }
 
@@ -151,6 +159,16 @@ internal class MarkdownTerminalHyperlinkFilter(
 
     private fun rangesOverlap(start: Int, end: Int, otherStart: Int, otherEnd: Int): Boolean =
         start < otherEnd && otherStart < end
+
+    private fun trimTrailingReferencePunctuation(matchRange: IntRange, target: String): IntRange {
+        var end = matchRange.last
+        var targetIndex = target.lastIndex
+        while (targetIndex >= 0 && target[targetIndex] in trailingReferencePunctuation) {
+            end--
+            targetIndex--
+        }
+        return matchRange.first..end
+    }
 
     private fun decodePath(path: String): String =
         runCatching { URI(null, null, path, null).path ?: path }.getOrDefault(path)
