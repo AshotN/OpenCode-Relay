@@ -1,9 +1,12 @@
 package com.ashotn.opencode.relay.core
 
+import com.ashotn.opencode.relay.util.createPathIdentityMap
+import com.ashotn.opencode.relay.util.createPathIdentitySet
 import java.util.concurrent.ConcurrentHashMap
 
 internal class StateStore {
     data class SessionDiffComputedState(
+        val projectBase: String,
         val nextAfterByFile: MutableMap<String, String>,
         val processedPaths: Set<String>, // Paths touched by the current apply pass.
         val newHunksByFile: Map<String, List<DiffHunk>>,
@@ -213,6 +216,7 @@ internal class StateStore {
 
         val mergedState = SessionStateSnapshot(
             hunks = mergeMapByProcessedPaths(
+                projectBase = computedState.projectBase,
                 previous = previousState.hunks,
                 processedPaths = computedState.processedPaths,
                 next = computedState.newHunksByFile,
@@ -228,18 +232,21 @@ internal class StateStore {
                 computedState.newHunksByFile
             },
             deleted = mergeSetByProcessedPaths(
+                projectBase = computedState.projectBase,
                 previous = previousState.deleted,
                 processedPaths = computedState.processedPaths,
                 next = computedState.newDeleted,
                 replaceAll = fromHistory,
             ),
             added = mergeSetByProcessedPaths(
+                projectBase = computedState.projectBase,
                 previous = previousState.added,
                 processedPaths = computedState.processedPaths,
                 next = computedState.newAdded,
                 replaceAll = fromHistory,
             ),
             baselines = mergeMapByProcessedPaths(
+                projectBase = computedState.projectBase,
                 previous = previousState.baselines,
                 processedPaths = computedState.processedPaths,
                 next = computedState.newBaselineByFile,
@@ -253,11 +260,22 @@ internal class StateStore {
         addedBySession[sessionId] = mergedState.added
         baselineBeforeBySessionAndFile[sessionId] = mergedState.baselines
 
-        val previousTrackedFiles = previousState.hunks.keys + previousState.added + previousState.deleted
-        val newTrackedFiles = mergedState.hunks.keys + mergedState.added + mergedState.deleted
+        val previousTrackedFiles = createPathIdentitySet(computedState.projectBase).apply {
+            addAll(previousState.hunks.keys)
+            addAll(previousState.added)
+            addAll(previousState.deleted)
+        }
+        val newTrackedFiles = createPathIdentitySet(computedState.projectBase).apply {
+            addAll(mergedState.hunks.keys)
+            addAll(mergedState.added)
+            addAll(mergedState.deleted)
+        }
 
         SessionDiffCommitResult(
-            changedFiles = previousTrackedFiles + newTrackedFiles,
+            changedFiles = createPathIdentitySet(computedState.projectBase).apply {
+                addAll(previousTrackedFiles)
+                addAll(newTrackedFiles)
+            },
         )
     }
 
@@ -290,23 +308,31 @@ internal class StateStore {
     }
 
     private fun <T> mergeMapByProcessedPaths(
+        projectBase: String,
         previous: Map<String, T>,
         processedPaths: Set<String>,
         next: Map<String, T>,
         replaceAll: Boolean,
     ): Map<String, T> {
         if (replaceAll) return next
-        return previous.filterKeys { it !in processedPaths } + next
+        return createPathIdentityMap<T>(projectBase).apply {
+            previous.filterTo(this) { (path, _) -> path !in processedPaths }
+            putAll(next)
+        }
     }
 
     private fun mergeSetByProcessedPaths(
+        projectBase: String,
         previous: Set<String>,
         processedPaths: Set<String>,
         next: Set<String>,
         replaceAll: Boolean,
     ): Set<String> {
         if (replaceAll) return next
-        return (previous - processedPaths) + next
+        return createPathIdentitySet(projectBase).apply {
+            addAll(previous.filter { it !in processedPaths })
+            addAll(next)
+        }
     }
 
     fun resetState() {

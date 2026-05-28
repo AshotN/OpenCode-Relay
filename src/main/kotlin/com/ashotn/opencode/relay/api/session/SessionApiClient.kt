@@ -13,6 +13,7 @@ import com.ashotn.opencode.relay.ipc.PatchDiffTextParser
 import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
+import com.ashotn.opencode.relay.util.pathsEqual
 import com.ashotn.opencode.relay.util.toAbsolutePath
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -120,7 +121,7 @@ class SessionApiClient(
             is ApiResult.Failure -> snapshot
             is ApiResult.Success -> {
                 val match = snapshot.value.files.firstOrNull { diffFile ->
-                    toAbsolutePath(projectBase, diffFile.file) == absFilePath
+                    pathsEqual(projectBase, toAbsolutePath(projectBase, diffFile.file), absFilePath)
                 } ?: return ApiResult.Success(null)
 
                 ApiResult.Success(FileDiffPreview(before = match.before, after = match.after))

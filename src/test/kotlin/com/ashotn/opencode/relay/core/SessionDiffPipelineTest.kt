@@ -146,6 +146,116 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
+    // On Windows, turn.patch reports absolute paths such as C:\project\src\Main.kt,
+    // while session.diff may report project-relative paths such as src/Main.kt.
+    // The normalized turn scope must match the normalized session.diff file;
+    // otherwise the file is treated as out-of-scope and the UI never updates.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `windows absolute turn patch scopes relative session diff`() {
+        val projectBase = "C:/Users/VM/project"
+        val generation = 1L
+        val sessionId = "ses_test"
+        val file = "src/Main.kt"
+        val absFile = "$projectBase/$file"
+        val lowerAbsFile = "$projectBase/src/main.kt"
+        val disk = mutableMapOf(absFile to "fun main() {}\n")
+        val stateStore = StateStore()
+        val stateLock = Any()
+        val eventReducer = EventReducer()
+
+        val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(
+            projectBase = projectBase,
+            files = listOf("c:\\users\\vm\\project\\src\\main.kt"),
+        )
+        assertTrue(absFile in touchedPaths, "Windows turn.patch scope should match post-root casing differences")
+        eventReducer.commitTurnPatch(
+            stateStore = stateStore,
+            stateLock = stateLock,
+            sessionId = sessionId,
+            touchedPaths = touchedPaths,
+            generation = generation,
+            currentGeneration = { generation },
+        )
+
+        val decision = eventReducer.beginSessionDiffApply(
+            stateStore = stateStore,
+            stateLock = stateLock,
+            sessionId = sessionId,
+            fromHistory = false,
+            generation = generation,
+            currentGeneration = { generation },
+        )
+        assertTrue(decision.shouldApply, "Windows turn.patch should create a usable turn scope")
+
+        val revision = decision.revision!!
+        val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
+            stateLock = stateLock,
+            sessionId = sessionId,
+            expectedGeneration = generation,
+            currentGeneration = { generation },
+        )!!
+
+        val computer = SessionDiffApplyComputer(
+            contentReader = { absPath -> disk[absPath] ?: "" },
+            hunkComputer = { fileDiff, sid ->
+                if (fileDiff.before == fileDiff.after) emptyList()
+                else listOf(DiffHunk(fileDiff.file, 0, emptyList(), listOf(fileDiff.after), sid))
+            },
+            log = NoOpLogger,
+            tracer = NoOpDiffTracer,
+        )
+
+        val computedState = computer.compute(
+            projectBase = projectBase,
+            event = OpenCodeEvent.SessionDiff(
+                sessionId = sessionId,
+                files = listOf(
+                    OpenCodeEvent.SessionDiffFile(
+                        file = file,
+                        before = "",
+                        after = "fun main() {}\n",
+                        additions = 1,
+                        deletions = 0,
+                        status = SessionDiffStatus.MODIFIED,
+                    )
+                ),
+            ),
+            fromHistory = false,
+            turnScope = decision.turnScope,
+            previousAfterByFile = prepareSnapshot.previousAfterByFile,
+        )
+
+        val result = stateStore.commitSessionDiffApply(
+            stateLock = stateLock,
+            sessionId = sessionId,
+            revision = revision,
+            fromHistory = false,
+            computedState = computedState,
+            nowMillis = 0L,
+            expectedGeneration = generation,
+            currentGeneration = { generation },
+        )
+
+        assertEquals(setOf(absFile), result?.changedFiles, "Windows turn.patch scope should match relative session.diff file")
+        assertTrue(lowerAbsFile in (result?.changedFiles ?: emptySet()), "changedFiles should use Windows path identity")
+        assertEquals(
+            setOf(absFile),
+            stateStore.hunksBySessionAndFile[sessionId]?.keys,
+            "file should be tracked after scoped Windows diff",
+        )
+        assertTrue(
+            stateStore.liveHunksBySessionAndFile[sessionId]?.get(lowerAbsFile)?.isNotEmpty() == true,
+            "live hunk lookup should match Windows post-root casing differences",
+        )
+        assertEquals(
+            "",
+            stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(lowerAbsFile),
+            "baseline lookup should match Windows post-root casing differences",
+        )
+    }
+
+    // -------------------------------------------------------------------------
     // When a root session delegates work to parallel sub-agents, all files
     // touched by those sub-agents count as part of the same logical turn of the
     // root session. All files must appear as live (inline-highlightable) at the

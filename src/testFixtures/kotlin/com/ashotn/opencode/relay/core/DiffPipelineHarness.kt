@@ -4,6 +4,7 @@ import com.ashotn.opencode.relay.api.session.FileDiff
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.util.TextUtil
+import com.ashotn.opencode.relay.util.createPathIdentityMap
 import com.ashotn.opencode.relay.util.toProjectRelativePath
 import com.intellij.openapi.diagnostic.Logger
 
@@ -29,7 +30,7 @@ class DiffPipelineHarness(
     )
 
     /** Simulated disk: keyed by absolute path. */
-    val disk = mutableMapOf<String, String>()
+    val disk = createPathIdentityMap<String>(projectBase)
 
     private val stateStore = StateStore()
     private val stateLock = Any()
@@ -61,7 +62,7 @@ class DiffPipelineHarness(
             stateStore = stateStore,
             stateLock = stateLock,
             sessionId = sessionId,
-            touchedPaths = relPaths.map { abs(it) }.toSet(),
+            touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(projectBase, relPaths),
             generation = generation,
             currentGeneration = { generation },
         )

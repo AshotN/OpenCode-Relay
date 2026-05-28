@@ -1,6 +1,7 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.util.TextUtil
+import com.ashotn.opencode.relay.util.createPathIdentitySet
 import com.ashotn.opencode.relay.util.toAbsolutePath
 
 internal class EventReducer {
@@ -29,7 +30,7 @@ internal class EventReducer {
     )
 
     fun reduceTurnPatchTouchedPaths(projectBase: String, files: List<String>): Set<String> =
-        files.map { path -> toAbsolutePath(projectBase, path) }.toSet()
+        createPathIdentitySet(projectBase, files.map { path -> toAbsolutePath(projectBase, path) })
 
     fun commitTurnPatch(
         stateStore: StateStore,

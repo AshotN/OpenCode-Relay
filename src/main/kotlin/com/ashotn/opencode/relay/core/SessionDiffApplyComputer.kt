@@ -4,6 +4,8 @@ import com.ashotn.opencode.relay.api.session.FileDiff
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.util.TextUtil
+import com.ashotn.opencode.relay.util.createPathIdentityMap
+import com.ashotn.opencode.relay.util.createPathIdentitySet
 import com.ashotn.opencode.relay.util.toAbsolutePath
 import com.intellij.openapi.diagnostic.Logger
 
@@ -21,12 +23,13 @@ internal class SessionDiffApplyComputer(
         turnScope: Set<String>?,
         previousAfterByFile: Map<String, String>,
     ): StateStore.SessionDiffComputedState {
-        val newHunksByFile = HashMap<String, List<DiffHunk>>()
-        val newDeleted = HashSet<String>()
-        val newAdded = HashSet<String>()
-        val newBaselineByFile = HashMap<String, String>()
-        val processedPaths = HashSet<String>()
-        val nextAfterByFile = previousAfterByFile.toMutableMap()
+        val newHunksByFile = createPathIdentityMap<List<DiffHunk>>(projectBase)
+        val newDeleted = createPathIdentitySet(projectBase)
+        val newAdded = createPathIdentitySet(projectBase)
+        val newBaselineByFile = createPathIdentityMap<String>(projectBase)
+        val processedPaths = createPathIdentitySet(projectBase)
+        val previousAfterByPath = createPathIdentityMap<String>(projectBase).apply { putAll(previousAfterByFile) }
+        val nextAfterByFile = createPathIdentityMap<String>(projectBase).apply { putAll(previousAfterByFile) }
         var outOfScopeCount = 0
         var baselineMatchCount = 0
         var zeroHunkCount = 0
@@ -57,7 +60,7 @@ internal class SessionDiffApplyComputer(
             val effectiveBefore = if (fromHistory) {
                 diffFile.before
             } else {
-                previousAfterByFile[absPath] ?: diffFile.before
+                previousAfterByPath[absPath] ?: diffFile.before
             }
 
             val hasContentChange =
@@ -75,7 +78,7 @@ internal class SessionDiffApplyComputer(
                         "absPath" to absPath,
                         "status" to diffFile.status.name,
                         "inScope" to true,
-                        "previousAfterSize" to previousAfterByFile[absPath]?.length,
+                        "previousAfterSize" to previousAfterByPath[absPath]?.length,
                         "effectiveBeforeSize" to effectiveBefore.length,
                         "actualAfterSize" to actualAfter.length,
                         "contentChanged" to false,
@@ -109,7 +112,7 @@ internal class SessionDiffApplyComputer(
                         "absPath" to absPath,
                         "status" to diffFile.status.name,
                         "inScope" to true,
-                        "previousAfterSize" to previousAfterByFile[absPath]?.length,
+                        "previousAfterSize" to previousAfterByPath[absPath]?.length,
                         "effectiveBeforeSize" to effectiveBefore.length,
                         "actualAfterSize" to actualAfter.length,
                         "contentChanged" to true,
@@ -135,7 +138,7 @@ internal class SessionDiffApplyComputer(
                     "absPath" to absPath,
                     "status" to diffFile.status.name,
                     "inScope" to true,
-                    "previousAfterSize" to previousAfterByFile[absPath]?.length,
+                    "previousAfterSize" to previousAfterByPath[absPath]?.length,
                     "effectiveBeforeSize" to effectiveBefore.length,
                     "actualAfterSize" to actualAfter.length,
                     "contentChanged" to true,
@@ -185,6 +188,7 @@ internal class SessionDiffApplyComputer(
         }
 
         return StateStore.SessionDiffComputedState(
+            projectBase = projectBase,
             nextAfterByFile = nextAfterByFile,
             processedPaths = processedPaths,
             newHunksByFile = newHunksByFile,

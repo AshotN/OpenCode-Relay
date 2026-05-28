@@ -85,6 +85,9 @@ intellijPlatform {
 
 val sandboxProject = layout.buildDirectory.dir("sandbox-project").get().asFile
 
+fun mainOutputFriendPaths(): String =
+    sourceSets["main"].output.classesDirs.files.joinToString(",") { it.absolutePath }
+
 tasks {
     runIde {
         // Open a blank project automatically, bypassing the welcome screen
@@ -115,13 +118,13 @@ tasks {
 
     named("compileLiveTestKotlin", org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class) {
         compilerOptions.freeCompilerArgs.add(
-            "-Xfriend-paths=${sourceSets["main"].output.classesDirs.asPath}",
+            "-Xfriend-paths=${mainOutputFriendPaths()}",
         )
     }
 
     named("compileTestFixturesKotlin", org.jetbrains.kotlin.gradle.tasks.KotlinCompile::class) {
         compilerOptions.freeCompilerArgs.add(
-            "-Xfriend-paths=${sourceSets["main"].output.classesDirs.asPath}",
+            "-Xfriend-paths=${mainOutputFriendPaths()}",
         )
     }
 }
