@@ -13,7 +13,23 @@ fun extractReleasedChangeNotes(changelog: String, version: String): String {
 }
 
 group = "com.ashotn"
-version = providers.gradleProperty("pluginVersion").get()
+val pluginVersion = providers.gradleProperty("pluginVersion").get()
+val isCiBuild = providers.environmentVariable("CI")
+    .map { it.equals("true", ignoreCase = true) }
+    .orElse(false)
+    .get()
+val isReleaseBuild = providers.environmentVariable("GITHUB_REF_TYPE")
+    .map { it == "tag" }
+    .orElse(false)
+    .get()
+val githubSha = providers.environmentVariable("GITHUB_SHA").orNull
+
+version = when {
+    isReleaseBuild -> pluginVersion
+    isCiBuild && githubSha != null -> "$pluginVersion-${githubSha.takeLast(7)}"
+    isCiBuild -> pluginVersion
+    else -> "$pluginVersion-local"
+}
 
 repositories {
     mavenCentral()
@@ -56,7 +72,7 @@ intellijPlatform {
         changeNotes = providers
             .fileContents(layout.projectDirectory.file("CHANGELOG.md"))
             .asText
-            .map { changelog -> extractReleasedChangeNotes(changelog, project.version.toString()) }
+            .map { changelog -> extractReleasedChangeNotes(changelog, pluginVersion) }
 
         vendor {
             name = "Ashot Nazaryan"
