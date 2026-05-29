@@ -54,10 +54,9 @@ class SendFileAction : AnAction(), DumbAware {
             ApplicationManager.getApplication().invokeLater {
                 if (success) {
                     val label = if (files.size == 1) "File reference" else "${files.size} file references"
-                    project.showNotification(
+                    project.showSendReferenceSuccessNotification(
                         "File sent to OpenCode",
                         "$label appended to the active session's prompt.",
-                        NotificationType.INFORMATION,
                     )
                 } else {
                     project.showNotification(

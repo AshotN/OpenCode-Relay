@@ -56,10 +56,9 @@ class SendFolderAction : AnAction(), DumbAware {
             ApplicationManager.getApplication().invokeLater {
                 if (success) {
                     val label = if (folders.size == 1) "Folder reference" else "${folders.size} folder references"
-                    project.showNotification(
+                    project.showSendReferenceSuccessNotification(
                         "Folder sent to OpenCode",
                         "$label appended to the active session's prompt.",
-                        NotificationType.INFORMATION,
                     )
                 } else {
                     project.showNotification(

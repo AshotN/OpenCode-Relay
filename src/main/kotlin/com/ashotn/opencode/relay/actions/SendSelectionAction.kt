@@ -75,10 +75,9 @@ class SendSelectionAction : AnAction(), DumbAware {
         OpenCodeTuiClient.getInstance(project).appendToTuiPrompt(ref) { success, error ->
             ApplicationManager.getApplication().invokeLater {
                 if (success) {
-                    project.showNotification(
+                    project.showSendReferenceSuccessNotification(
                         "Selection sent to OpenCode",
                         "File reference appended to the active session's prompt.",
-                        NotificationType.INFORMATION,
                     )
                 } else {
                     project.showNotification(
