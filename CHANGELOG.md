@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-02
+
 <p><strong>Added</strong></p>
 <ul>
   <li>Allow the success notifications shown after sending file, folder, or selection references to OpenCode to be disabled via the IDE notification's <code>Do not ask again</code> option.</li>
