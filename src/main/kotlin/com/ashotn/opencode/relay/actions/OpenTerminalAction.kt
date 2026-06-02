@@ -33,15 +33,9 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
 
     override fun actionPerformed(e: AnActionEvent) {
         val settings = OpenCodeSettings.getInstance(project)
-        val executablePath = OpenCodePlugin.getInstance(project).openCodeInfo?.path
-        if (executablePath.isNullOrBlank()) {
-            project.showNotification(
-                "Cannot open terminal",
-                "OpenCode executable is not resolved. Configure a valid executable path in settings.",
-                NotificationType.WARNING,
-            )
-            return
-        }
+        val plugin = OpenCodePlugin.getInstance(project)
+        if (plugin.serverState != ServerState.READY) return
+        val executablePath = plugin.openCodeInfo?.path ?: return
 
         val url = serverUrl(settings.serverPort)
         launchExternalTerminal(executablePath, url)
