@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+<p><strong>Added</strong></p>
+<ul>
+  <li>Allow the success notifications shown after sending file, folder, or selection references to OpenCode to be disabled via the IDE notification's <code>Do not ask again</code> option.</li>
+  <li>Add a GitHub Actions workflow that builds the plugin ZIP and uploads it as a CI artifact for pushes to <code>master</code>.</li>
+</ul>
+
+<p><strong>Changed</strong></p>
+<ul>
+  <li>Mark non-release builds with clearer versions: CI builds include the short commit hash and local builds include a <code>-local</code> suffix, while tagged release builds keep the published plugin version.</li>
+  <li>Refine the injected IDE guidance to prefer relative file references instead of full paths.</li>
+</ul>
+
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Improve Windows support by launching OpenCode commands through <code>call</code> and normalizing Windows paths case-insensitively across prompt injection, diff previews, turn patch scopes, and session diff state.</li>
+  <li>Exclude trailing punctuation such as periods, commas, colons, and semicolons from terminal file hyperlinks, including line references like <code>src/File.kt:42.</code> and <code>note.md#L2.</code>.</li>
+</ul>
+
 ## [1.3.0] - 2026-05-16
 
 <p><strong>Added</strong></p>
