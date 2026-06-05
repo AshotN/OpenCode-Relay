@@ -105,6 +105,12 @@ fun mainOutputFriendPaths(): String =
     sourceSets["main"].output.classesDirs.files.joinToString(",") { it.absolutePath }
 
 tasks {
+    processResources {
+        filesMatching("opencode-relay/plugin.properties") {
+            expand("pluginVersion" to project.version.toString())
+        }
+    }
+
     runIde {
         // Open a blank project automatically, bypassing the welcome screen
         doFirst { sandboxProject.mkdirs() }

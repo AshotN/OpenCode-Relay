@@ -1,23 +1,23 @@
 package com.ashotn.opencode.relay
 
-import com.intellij.ide.plugins.PluginManagerCore
 import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.PathManager
 import com.intellij.openapi.diagnostic.logger
-import com.intellij.openapi.extensions.PluginId
 import com.google.gson.GsonBuilder
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import java.util.Properties
 
 internal object OpenCodeRelayPromptPlugin {
 
     internal const val CONFIG_DIR_ENV = "OPENCODE_CONFIG_DIR"
     private const val RESOURCE_PATH = "/opencode-relay/plugins/opencode-relay-prompt.js"
+    private const val VERSION_RESOURCE_PATH = "/opencode-relay/plugin.properties"
+    private const val VERSION_PROPERTY = "pluginVersion"
     private const val PLUGIN_RELATIVE_PATH = "plugins/opencode-relay-prompt.js"
     private const val IDE_GUIDANCE_PLACEHOLDER = "__OPENCODE_RELAY_IDE_GUIDANCE__"
-    private const val PLUGIN_ID = "com.ashotn.opencode-relay"
 
     internal var configDirectoryProvider: () -> Path = {
         Path.of(PathManager.getSystemPath(), "opencode-relay", "opencode-config")
@@ -85,7 +85,12 @@ When you would normally cite a file, use clickable local paths. Prefer visible b
     }
 
     private fun currentPluginVersion(): String =
-        PluginManagerCore.getPlugin(PluginId.getId(PLUGIN_ID))?.version ?: "unknown"
+        OpenCodeRelayPromptPlugin::class.java.getResourceAsStream(VERSION_RESOURCE_PATH)
+            ?.use { stream ->
+                Properties().apply { load(stream) }.getProperty(VERSION_PROPERTY)
+            }
+            ?.takeIf { it.isNotBlank() }
+            ?: "unknown"
 
     private fun bundledPluginText(): String {
         val stream = OpenCodeRelayPromptPlugin::class.java.getResourceAsStream(RESOURCE_PATH)
