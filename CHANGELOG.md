@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Improve plugin performance when using OpenCode server authentication passwords.</li>
+  <li>Remove internal IntelliJ Platform API usage from OpenCode Relay prompt metadata generation by injecting the plugin version at build time.</li>
+</ul>
+
 ## [1.3.1] - 2026-06-02
 
 <p><strong>Added</strong></p>
