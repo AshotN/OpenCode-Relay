@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.3.2] - 2026-06-04
+
 <p><strong>Fixed</strong></p>
 <ul>
   <li>Improve plugin performance when using OpenCode server authentication passwords.</li>
