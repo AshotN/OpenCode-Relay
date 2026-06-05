@@ -89,20 +89,42 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
         }
     }
 
+    fun setPasswordAndWait(password: String): Boolean {
+        val revision = passwordRevision.incrementAndGet()
+        passwordLoaded.countDown()
+        val stored = try {
+            passwordStoreExecutor.submit<Boolean> {
+                storePassword(password)
+            }.get()
+        } catch (e: InterruptedException) {
+            Thread.currentThread().interrupt()
+            logger.warn("Interrupted while storing OpenCode server authentication password", e)
+            false
+        } catch (e: Exception) {
+            logger.warn("Failed to store OpenCode server authentication password", e)
+            false
+        }
+        if (stored && passwordRevision.get() == revision) {
+            cachedPassword = password
+        }
+        return stored
+    }
+
     override fun dispose() {
         passwordStoreExecutor.shutdown()
     }
 
-    private fun storePassword(password: String) {
+    private fun storePassword(password: String): Boolean =
         try {
             val credentials = password.takeIf { it.isNotEmpty() }?.let {
                 Credentials(credentialUserName(), it)
             }
             PasswordSafe.instance.set(attributes(), credentials)
+            true
         } catch (e: Exception) {
             logger.warn("Failed to store OpenCode server authentication password", e)
+            false
         }
-    }
 
     fun connectionCredentials(): BasicAuthCredentials? {
         val password = password()

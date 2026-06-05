@@ -40,6 +40,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
     private val pendingState = OpenCodeSettings.State()
     private var persistedServerAuthPassword = ""
+    private var serverAuthPasswordLoading = true
     internal lateinit var serverCorsOriginsModel: ListTableModel<CorsOriginRow>
     internal lateinit var serverEnvironmentVariablesModel: ListTableModel<OpenCodeSettings.EnvironmentVariable>
     internal lateinit var serverCorsOriginsTable: TableView<CorsOriginRow>
@@ -155,7 +156,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 row("Password:") {
                     val field = JBPasswordField()
                     serverAuthPasswordField = field
-                    syncServerAuthPasswordField(overwrite = false)
+                    loadServerAuthPasswordField()
                     cell(field)
                         .comment("Stored securely in the IDE password safe.")
                         .align(AlignX.FILL)
@@ -165,6 +166,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindSelected(pendingState::protectPluginLaunchedServerWithAuth)
                         .comment("When enabled, the plugin will use these credentials for plugin-launched OpenCode servers.")
                     protectPluginLaunchedServerWithAuthCheckBox = cell.component
+                    updateServerAuthPasswordLoadingUi()
                 }
             }
             group("Environment") {
@@ -247,7 +249,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         syncServerCorsOriginsModel(pendingState.serverCorsOrigins)
         syncServerEnvironmentVariablesModel(pendingState.serverEnvironmentVariables)
         super.reset()
-        syncServerAuthPasswordField(overwrite = true)
+        loadServerAuthPasswordField()
     }
 
     override fun isModified(): Boolean {
@@ -262,7 +264,9 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settings = OpenCodeSettings.getInstance(project)
         val serverAuth = OpenCodeServerAuth.getInstance(project)
         val plugin = OpenCodePlugin.getInstance(project)
-        syncServerAuthPasswordField(overwrite = false)
+        if (serverAuthPasswordLoading || !serverAuth.isPasswordLoaded()) {
+            throw ConfigurationException("Server authentication password is still loading. Try again.")
+        }
         val oldSettings = settings.state.toSnapshot()
         val oldPassword = persistedServerAuthPassword
         val oldResolutionState = plugin.executableResolutionState
@@ -328,11 +332,13 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             return
         }
 
-        persistPendingToSettings(settings)
         if (passwordChanged) {
-            serverAuth.setPassword(newPassword)
+            if (!saveServerAuthPassword(serverAuth, newPassword)) {
+                throw ConfigurationException("Could not store server authentication password")
+            }
             persistedServerAuthPassword = newPassword
         }
+        persistPendingToSettings(settings)
 
         when {
             mustConfirmStop -> plugin.stopServer()
@@ -423,22 +429,53 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         serverEnvironmentVariablesModel.setItems(entries.map { it.copy() })
     }
 
-    private fun syncServerAuthPasswordField(overwrite: Boolean) {
+    private fun loadServerAuthPasswordField() {
         if (!::serverAuthPasswordField.isInitialized) return
         val serverAuth = OpenCodeServerAuth.getInstance(project)
         if (!serverAuth.isPasswordLoaded()) {
-            persistedServerAuthPassword = ""
-            if (overwrite) {
-                serverAuthPasswordField.text = ""
+            serverAuthPasswordLoading = true
+            updateServerAuthPasswordLoadingUi()
+            ApplicationManager.getApplication().executeOnPooledThread {
+                serverAuth.awaitPasswordLoaded()
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) {
+                        setLoadedServerAuthPassword(serverAuth.password())
+                    }
+                }
             }
             return
         }
 
-        val shouldOverwrite = overwrite || currentServerAuthPassword() == persistedServerAuthPassword
-        persistedServerAuthPassword = serverAuth.password()
-        if (shouldOverwrite) {
-            serverAuthPasswordField.text = persistedServerAuthPassword
+        setLoadedServerAuthPassword(serverAuth.password())
+    }
+
+    private fun setLoadedServerAuthPassword(password: String) {
+        serverAuthPasswordLoading = false
+        persistedServerAuthPassword = password
+        serverAuthPasswordField.text = password
+        updateServerAuthPasswordLoadingUi()
+    }
+
+    private fun updateServerAuthPasswordLoadingUi() {
+        if (::serverAuthPasswordField.isInitialized) {
+            serverAuthPasswordField.isEnabled = !serverAuthPasswordLoading
         }
+        if (::protectPluginLaunchedServerWithAuthCheckBox.isInitialized) {
+            protectPluginLaunchedServerWithAuthCheckBox.isEnabled = !serverAuthPasswordLoading
+        }
+    }
+
+    private fun saveServerAuthPassword(serverAuth: OpenCodeServerAuth, password: String): Boolean {
+        val storedRef = AtomicReference(false)
+        ProgressManager.getInstance().runProcessWithProgressSynchronously(
+            {
+                storedRef.set(serverAuth.setPasswordAndWait(password))
+            },
+            "Saving OpenCode Server Authentication...",
+            false,
+            project,
+        )
+        return storedRef.get()
     }
 
     private fun currentServerAuthPassword(): String =
