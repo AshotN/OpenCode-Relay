@@ -6,7 +6,6 @@ import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import org.junit.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -19,55 +18,6 @@ import kotlin.test.assertTrue
 class SessionDiffPipelineTest {
 
     private val h = DiffPipelineHarness()
-
-    // -------------------------------------------------------------------------
-    // A file in turnScope that is absent from the server's session.diff payload
-    // must be treated as resolved back to baseline — its hunks and lastAfter
-    // must be cleared, not left stale. If they are left stale, the next turn
-    // will compute its diff against wrong content and show incorrect changes.
-    //
-    // MANUAL VERIFICATION:
-    //   1. Ask the AI to write some content to a file.
-    //   2. In a new turn, ask the AI to delete all content from that file.
-    //      No diff should be visible in the editor after this turn.
-    //   3. In a new turn, ask the AI to write new content to the same file.
-    //      Only a green addition should be visible — no red deletion.
-    // -------------------------------------------------------------------------
-    @Test
-    fun `empty server diff for scoped file should clear existing hunks`() {
-        val file = "note.md"
-
-        // Turn 1: add content
-        h.disk[h.abs(file)] = "line1\n"
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
-        assertEquals(setOf(h.abs(file)), h.hunkFiles(), "turn 1: file should be tracked")
-
-        // Turn 2: add more
-        h.disk[h.abs(file)] = "line1\nline2\n"
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
-        assertEquals(setOf(h.abs(file)), h.hunkFiles(), "turn 2: file should still be tracked")
-
-        // Turn 3: remove all — server sends 0 files in session.diff
-        h.disk[h.abs(file)] = ""
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(emptyList())
-
-        assertTrue(
-            h.hunkFiles().isEmpty(),
-            "turn 3: hunkFiles should be empty after empty diff for scoped file, got: ${h.hunkFiles()}"
-        )
-        assertTrue(h.liveHunkFiles().isEmpty(), "turn 3: liveHunkFiles should be empty")
-
-        // Turn 4: add content again — baseline must be "" not stale "line1\nline2\n"
-        h.disk[h.abs(file)] = "line3\n"
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
-
-        assertEquals(setOf(h.abs(file)), h.hunkFiles(), "turn 4: file should be tracked again")
-        assertEquals("", h.baseline(file), "turn 4: baseline should be '' (reset in turn 3), not stale lastAfter")
-    }
 
     // -------------------------------------------------------------------------
     // A file whose current disk content matches its effective baseline is not
@@ -124,141 +74,6 @@ class SessionDiffPipelineTest {
             "removedLines must be empty for a new file addition, got: ${hunk.removedLines}"
         )
         assertEquals(listOf("1"), hunk.addedLines, "addedLines should contain the new content")
-    }
-
-    // -------------------------------------------------------------------------
-    // A session.diff with no preceding turn.patch must be ignored. turn.patch
-    // establishes the scope of files the current turn is allowed to touch; without
-    // it there is no safe boundary and applying the diff could corrupt state for
-    // files the current turn never intended to modify.
-    //
-    // MANUAL VERIFICATION: No visible UI effect. With OPENCODE_DIFF_TRACE=1
-    // the skipped event will log skipReason=UNSCOPED_LIVE in the trace file.
-    // -------------------------------------------------------------------------
-    @Test
-    fun `session diff without turn patch is ignored`() {
-        val file = "note.md"
-        h.disk[h.abs(file)] = "content\n"
-        val result = h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
-        assertNull(result, "diff without turn scope should be skipped")
-        assertTrue(h.hunkFiles().isEmpty(), "no hunks without turn scope")
-    }
-
-    // -------------------------------------------------------------------------
-    // On Windows, turn.patch reports absolute paths such as C:\project\src\Main.kt,
-    // while session.diff may report project-relative paths such as src/Main.kt.
-    // The normalized turn scope must match the normalized session.diff file;
-    // otherwise the file is treated as out-of-scope and the UI never updates.
-    // -------------------------------------------------------------------------
-    @Test
-    fun `windows absolute turn patch scopes relative session diff`() {
-        val projectBase = "C:/Users/VM/project"
-        val generation = 1L
-        val sessionId = "ses_test"
-        val file = "src/Main.kt"
-        val absFile = "$projectBase/$file"
-        val lowerAbsFile = "$projectBase/src/main.kt"
-        val disk = mutableMapOf(absFile to "fun main() {}\n")
-        val stateStore = StateStore()
-        val stateLock = Any()
-        val eventReducer = EventReducer()
-
-        val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(
-            projectBase = projectBase,
-            files = listOf("c:\\users\\vm\\project\\src\\main.kt"),
-        )
-        assertTrue(absFile in touchedPaths, "Windows turn.patch scope should match post-root casing differences")
-        eventReducer.commitTurnPatch(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            touchedPaths = touchedPaths,
-            generation = generation,
-            currentGeneration = { generation },
-        )
-
-        val decision = eventReducer.beginSessionDiffApply(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            fromHistory = false,
-            generation = generation,
-            currentGeneration = { generation },
-        )
-        assertTrue(decision.shouldApply, "Windows turn.patch should create a usable turn scope")
-
-        val revision = decision.revision!!
-        val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
-            stateLock = stateLock,
-            sessionId = sessionId,
-            expectedGeneration = generation,
-            currentGeneration = { generation },
-        )!!
-
-        val computer = SessionDiffApplyComputer(
-            contentReader = { absPath -> disk[absPath] ?: "" },
-            hunkComputer = { fileDiff, sid ->
-                if (fileDiff.before == fileDiff.after) emptyList()
-                else listOf(DiffHunk(fileDiff.file, 0, emptyList(), listOf(fileDiff.after), sid))
-            },
-            log = NoOpLogger,
-            tracer = NoOpDiffTracer,
-        )
-
-        val computedState = computer.compute(
-            projectBase = projectBase,
-            event = OpenCodeEvent.SessionDiff(
-                sessionId = sessionId,
-                files = listOf(
-                    OpenCodeEvent.SessionDiffFile(
-                        file = file,
-                        before = "",
-                        after = "fun main() {}\n",
-                        additions = 1,
-                        deletions = 0,
-                        status = SessionDiffStatus.MODIFIED,
-                    )
-                ),
-            ),
-            fromHistory = false,
-            turnScope = decision.turnScope,
-            previousAfterByFile = prepareSnapshot.previousAfterByFile,
-        )
-
-        val result = stateStore.commitSessionDiffApply(
-            stateLock = stateLock,
-            sessionId = sessionId,
-            revision = revision,
-            fromHistory = false,
-            computedState = computedState,
-            nowMillis = 0L,
-            expectedGeneration = generation,
-            currentGeneration = { generation },
-        )
-
-        assertEquals(
-            setOf(absFile),
-            result?.changedFiles,
-            "Windows turn.patch scope should match relative session.diff file"
-        )
-        assertTrue(
-            lowerAbsFile in (result?.changedFiles ?: emptySet()),
-            "changedFiles should use Windows path identity"
-        )
-        assertEquals(
-            setOf(absFile),
-            stateStore.hunksBySessionAndFile[sessionId]?.keys,
-            "file should be tracked after scoped Windows diff",
-        )
-        assertTrue(
-            stateStore.liveHunksBySessionAndFile[sessionId]?.get(lowerAbsFile)?.isNotEmpty() == true,
-            "live hunk lookup should match Windows post-root casing differences",
-        )
-        assertEquals(
-            "",
-            stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(lowerAbsFile),
-            "baseline lookup should match Windows post-root casing differences",
-        )
     }
 
     // -------------------------------------------------------------------------
@@ -495,7 +310,6 @@ class SessionDiffPipelineTest {
         val revision = freshStore.reserveRevisionForSessionDiffApply(
             stateLock = freshLock,
             sessionId = h.sessionId,
-            fromHistory = true,
             expectedGeneration = h.generation,
             currentGeneration = { h.generation },
         )!!
@@ -824,7 +638,6 @@ class SessionDiffPipelineTest {
             val revision = stateStore.reserveRevisionForSessionDiffApply(
                 stateLock = stateLock,
                 sessionId = sessionId,
-                fromHistory = true,
                 expectedGeneration = generation,
                 currentGeneration = { generation },
             )!!

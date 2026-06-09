@@ -108,7 +108,6 @@ class SessionOrderingTest {
             val revision = store.reserveRevisionForSessionDiffApply(
                 stateLock = stateLock,
                 sessionId = sid,
-                fromHistory = true,
                 expectedGeneration = generation,
                 currentGeneration = { generation },
             )!!
@@ -379,7 +378,6 @@ class SessionOrderingTest {
         val revision = store.reserveRevisionForSessionDiffApply(
             stateLock = stateLock,
             sessionId = sessionId,
-            fromHistory = false,
             expectedGeneration = generation,
             currentGeneration = { generation },
         )!!

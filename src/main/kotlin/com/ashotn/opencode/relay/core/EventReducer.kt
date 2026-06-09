@@ -117,7 +117,6 @@ internal class EventReducer {
         val revision = stateStore.reserveRevisionForSessionDiffApply(
             stateLock = stateLock,
             sessionId = sessionId,
-            fromHistory = fromHistory,
             expectedGeneration = generation,
             currentGeneration = currentGeneration,
         )

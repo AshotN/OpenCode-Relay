@@ -41,7 +41,6 @@ internal class StateStore {
     fun reserveRevisionForSessionDiffApply(
         stateLock: Any,
         sessionId: String,
-        fromHistory: Boolean,
         expectedGeneration: Long,
         currentGeneration: () -> Long,
     ): Long? = synchronized(stateLock) {
