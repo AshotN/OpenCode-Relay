@@ -1,7 +1,6 @@
 package com.ashotn.opencode.relay.ipc
 
 import com.ashotn.opencode.relay.api.event.EventStreamClient
-import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
 import com.google.gson.JsonObject
@@ -144,15 +143,10 @@ class SseClient(
             val event: OpenCodeEvent? = when (type) {
                 "server.connected" -> OpenCodeEvent.ServerConnected
                 "server.heartbeat", "sync", "project.updated" -> null
-                "session.diff" -> parseSessionDiff(properties)
-                "session.idle" -> null
-                // OpenCode >= 1.16 exposes turn diffs through user message summaries.
                 "message.updated" -> parseMessageUpdated(properties)
                 // Any lifecycle change can alter the session list/order/title, so all refresh the hierarchy.
                 "session.created", "session.updated", "session.deleted" -> parseSessionLifecycleChanged(properties)
                 "session.status" -> parseSessionStatus(properties)
-                // OpenCode < 1.16 emitted patch parts that scoped touched files for session.diff.
-                "message.part.updated" -> parseMessagePartUpdated(properties)
                 "mcp.tools.changed" -> parseMcpToolsChanged(properties)
                 "permission.asked" -> parsePermissionAsked(properties)
                 "permission.replied" -> parsePermissionReplied(properties)
@@ -194,38 +188,6 @@ class SseClient(
     private fun normalizeDirectoryPath(directory: String): Path =
         runCatching { Path.of(directory).toRealPath() }
             .getOrElse { Path.of(directory).toAbsolutePath().normalize() }
-
-    private fun parseSessionDiff(props: JsonObject): OpenCodeEvent.SessionDiff? {
-        val sessionId = props.getStringOrNull("sessionID")
-        if (sessionId == null) {
-            log.debug("SseClient: skip session.diff reason=missingSessionId")
-            return null
-        }
-        val diffArray = props.getAsJsonArray("diff")
-        if (diffArray == null) {
-            log.debug("SseClient: skip session.diff reason=missingDiffArray session=$sessionId")
-            return null
-        }
-        val files = diffArray.mapNotNull { elem ->
-            if (!elem.isJsonObject) return@mapNotNull null
-            val obj = elem.asJsonObject
-
-            val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-            val diffText = PatchDiffTextParser.parse(obj)
-            val additions = obj.getIntOrNull("additions") ?: 0
-            val deletions = obj.getIntOrNull("deletions") ?: 0
-            val statusRaw = obj.getStringOrNull("status") ?: "modified"
-            val status = SessionDiffStatus.fromWire(statusRaw)
-            if (status == SessionDiffStatus.UNKNOWN) {
-                log.warn("SseClient: unknown session.diff status '$statusRaw' for file=$file")
-            }
-
-            OpenCodeEvent.SessionDiffFile(file, diffText.before, diffText.after, additions, deletions, status)
-        }
-
-        log.debug("SseClient: parsed session.diff session=$sessionId fileCount=${files.size}")
-        return OpenCodeEvent.SessionDiff(sessionId, files)
-    }
 
     private fun parsePermissionReplied(props: JsonObject): OpenCodeEvent.PermissionReplied? {
         val requestId = props.getStringOrNull("requestID") ?: return null
@@ -295,22 +257,7 @@ class SseClient(
         return OpenCodeEvent.SessionLifecycleChanged(sessionId)
     }
 
-    private fun parseMessagePartUpdated(props: JsonObject): OpenCodeEvent.TurnPatch? {
-        val part = props.getObjectOrNull("part") ?: return null
-        if (part.getStringOrNull("type") != "patch") return null
-
-        val sessionId = part.getStringOrNull("sessionID") ?: return null
-        val files = part.getAsJsonArray("files")
-            ?.mapNotNull { element ->
-                if (!element.isJsonPrimitive) return@mapNotNull null
-                element.asString
-            }
-            ?: emptyList()
-
-        return OpenCodeEvent.TurnPatch(sessionId, files)
-    }
-
-    // OpenCode >= 1.16: message.updated only tells us which user message has diffs;
+    // message.updated only tells us which user message has diffs;
     // the actual patch content is fetched later via /session/{id}/diff?messageID=...
     private fun parseMessageUpdated(props: JsonObject): OpenCodeEvent.MessageDiffAvailable? {
         val info = props.getObjectOrNull("info") ?: return null

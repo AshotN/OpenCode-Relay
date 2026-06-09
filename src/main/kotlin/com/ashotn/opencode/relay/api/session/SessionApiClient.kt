@@ -86,6 +86,10 @@ class SessionApiClient(
         sessionId: String,
         messageId: String? = null,
     ): ApiResult<OpenCodeEvent.SessionDiff> {
+        if (messageId == null) {
+            return fetchSessionMessageDiffSnapshot(port, sessionId)
+        }
+
         val endpoint = SessionEndpoints.diff(sessionId, messageId)
         return when (val response = transport.get(port = port, path = endpoint.path)) {
             is ApiResult.Failure -> response
@@ -97,23 +101,7 @@ class SessionApiClient(
                     transport.mapJsonArrayResponse(ApiResult.Success(body)) { diffArray ->
                         val files =
                             diffArray.mapNotNull { element -> parseSessionDiffFile(element.asJsonObjectOrNull()) }
-                        // OpenCode < 1.16 returns session-level diffs here. OpenCode >= 1.16 returns []
-                        // unless a messageID is provided, so fall back to per-message diffs for callers.
-                        if (messageId == null && files.isEmpty()) {
-                            when (val messageDiff = fetchSessionMessageDiffSnapshot(port, sessionId)) {
-                                is ApiResult.Failure -> {
-                                    if (messageDiff.error.isUnsupportedMessageFallback()) {
-                                        ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
-                                    } else {
-                                        messageDiff
-                                    }
-                                }
-
-                                is ApiResult.Success -> messageDiff
-                            }
-                        } else {
-                            ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, files))
-                        }
+                        ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, files))
                     }.withParseContext(endpoint)
                 }
             }
@@ -121,7 +109,6 @@ class SessionApiClient(
     }
 
     fun fetchSessionMessageDiffSnapshot(port: Int, sessionId: String): ApiResult<OpenCodeEvent.SessionDiff> {
-        // OpenCode >= 1.16 stores diffs on message summaries instead of the session.
         return when (val refsResult = fetchSessionMessageDiffRefs(port, sessionId)) {
             is ApiResult.Failure -> refsResult
             is ApiResult.Success -> {
@@ -243,9 +230,6 @@ class SessionApiClient(
         existing == SessionDiffStatus.ADDED && next != SessionDiffStatus.DELETED -> SessionDiffStatus.ADDED
         else -> next
     }
-
-    private fun ApiError.isUnsupportedMessageFallback(): Boolean =
-        this is ApiError.HttpError && (statusCode == 404 || statusCode == 405)
 
     private fun com.google.gson.JsonElement?.asJsonObjectOrNull(): JsonObject? =
         this?.takeIf { it.isJsonObject }?.asJsonObject

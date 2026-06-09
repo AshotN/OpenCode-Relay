@@ -166,13 +166,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 refreshSessionHierarchyAsync(generation)
             }
 
-            is OpenCodeEvent.TurnPatch -> {
-                // OpenCode < 1.16 path: patch parts only scope files; session.diff carries the content.
-                recordTurnFiles(event.sessionId, event.files, generation, "turn.patch.committed")
-            }
-
             is OpenCodeEvent.MessageDiffAvailable -> {
-                // OpenCode >= 1.16 path: fetch the message-specific diff, then use the same apply pipeline.
                 handleMessageDiffAvailable(event, generation)
             }
 

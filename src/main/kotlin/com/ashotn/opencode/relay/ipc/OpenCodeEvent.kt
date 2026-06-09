@@ -28,12 +28,6 @@ sealed class OpenCodeEvent {
     /** session lifecycle changed — refresh session hierarchy metadata. */
     data class SessionLifecycleChanged(val sessionId: String) : OpenCodeEvent()
 
-    /** message.part.updated with type == "patch". */
-    data class TurnPatch(
-        val sessionId: String,
-        val files: List<String>,   // absolute paths
-    ) : OpenCodeEvent()
-
     /** message.updated for a user message whose summary contains per-message diffs. */
     data class MessageDiffAvailable(
         val sessionId: String,
@@ -53,9 +47,9 @@ sealed class OpenCodeEvent {
     ) : OpenCodeEvent()
 
     /**
-     * session.diff — fired after every tool execution with the cumulative diff
-     * for the session. The payload contains patch-based entries; the plugin
-     * reconstructs before/after text and stores a typed [SessionDiffStatus].
+     * Diff snapshot fetched from the OpenCode HTTP API. The payload contains
+     * patch-based entries; the plugin reconstructs before/after text and stores
+     * a typed [SessionDiffStatus].
      */
     data class SessionDiff(
         val sessionId: String,
