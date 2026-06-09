@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-06-09
+
 <p><strong>Changed</strong></p>
 <ul>
   <li>Support OpenCode 1.16+ message-scoped diffs by aggregating per-message diff snapshots when session-level diffs are empty, while keeping compatibility with older session-level diff events.</li>
