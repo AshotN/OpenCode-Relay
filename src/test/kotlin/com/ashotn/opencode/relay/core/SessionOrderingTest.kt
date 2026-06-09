@@ -6,6 +6,7 @@ import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import org.junit.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -247,6 +248,7 @@ class SessionOrderingTest {
             hunksBySessionAndFile = emptyMap(),
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
+            messageSummaryFileCountBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
         )
 
@@ -325,6 +327,7 @@ class SessionOrderingTest {
             hunksBySessionAndFile = emptyMap(),
             addedBySession = emptyMap(),
             deletedBySession = emptyMap(),
+            messageSummaryFileCountBySession = emptyMap(),
             updatedAtBySession = store.updatedAtBySession,
         )
 
@@ -334,5 +337,108 @@ class SessionOrderingTest {
             "busy session must sort first, got ${sessions.map { it.sessionId }}"
         )
         assertEquals(sessionA, sessions[1].sessionId)
+    }
+
+    // -------------------------------------------------------------------------
+    // session.status is the authoritative busy/idle signal. A late diff event can
+    // arrive after session.status idle, but it must not re-mark the session busy.
+    //
+    // REGRESSION: live diff commits wrote busyBySession[sessionId] = true. If the
+    // final idle status was already processed, a subsequent session.diff/message
+    // diff apply left the session list stuck showing "running...".
+    // -------------------------------------------------------------------------
+    @Test
+    fun `late live diff apply after idle status does not mark session busy again`() {
+        val store = StateStore()
+        val stateLock = Any()
+        val generation = 1L
+        val sessionId = "ses_late_diff"
+        val projectBase = "/project"
+        val filePath = "$projectBase/hello.txt"
+
+        val eventReducer = EventReducer()
+        eventReducer.commitSessionBusy(
+            stateStore = store,
+            stateLock = stateLock,
+            sessionId = sessionId,
+            isBusy = true,
+            nowMillis = 1_000L,
+            generation = generation,
+            currentGeneration = { generation },
+        )
+        eventReducer.commitSessionBusy(
+            stateStore = store,
+            stateLock = stateLock,
+            sessionId = sessionId,
+            isBusy = false,
+            nowMillis = 2_000L,
+            generation = generation,
+            currentGeneration = { generation },
+        )
+
+        val revision = store.reserveRevisionForSessionDiffApply(
+            stateLock = stateLock,
+            sessionId = sessionId,
+            fromHistory = false,
+            expectedGeneration = generation,
+            currentGeneration = { generation },
+        )!!
+
+        store.commitSessionDiffApply(
+            stateLock = stateLock,
+            sessionId = sessionId,
+            revision = revision,
+            fromHistory = false,
+            computedState = StateStore.SessionDiffComputedState(
+                projectBase = projectBase,
+                nextAfterByFile = mutableMapOf(filePath to "Goodbye World\n"),
+                processedPaths = setOf(filePath),
+                newHunksByFile = mapOf(
+                    filePath to listOf(
+                        DiffHunk(
+                            filePath = filePath,
+                            startLine = 0,
+                            removedLines = listOf("Hello World"),
+                            addedLines = listOf("Goodbye World"),
+                            sessionId = sessionId,
+                        )
+                    )
+                ),
+                newDeleted = emptySet(),
+                newAdded = emptySet(),
+                newBaselineByFile = mapOf(filePath to "Hello World\n"),
+            ),
+            nowMillis = 3_000L,
+            expectedGeneration = generation,
+            currentGeneration = { generation },
+        )
+
+        val sessions = QueryService().listSessions(
+            knownSessionIds = setOf(sessionId),
+            sessions = mapOf(
+                sessionId to Session(
+                    id = sessionId,
+                    projectID = null,
+                    directory = null,
+                    parentID = null,
+                    title = "Late diff session",
+                    version = null,
+                    time = SessionTime(0L, 2_000L, null),
+                    summary = null,
+                    share = null,
+                )
+            ),
+            busyBySession = store.busyBySession,
+            hunksBySessionAndFile = store.hunksBySessionAndFile,
+            addedBySession = store.addedBySession,
+            deletedBySession = store.deletedBySession,
+            messageSummaryFileCountBySession = emptyMap(),
+            updatedAtBySession = store.updatedAtBySession,
+        )
+
+        assertFalse(
+            sessions.single().isBusy,
+            "late diff apply after idle must not make the session appear running again",
+        )
     }
 }

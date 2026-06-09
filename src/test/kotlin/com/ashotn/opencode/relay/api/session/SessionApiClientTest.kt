@@ -110,6 +110,86 @@ class SessionApiClientTest {
         }
     }
 
+    @Test
+    fun `fetchSessionDiffSnapshot keeps old session diff compatibility before message diff fallback`() {
+        withTestServer { server, port ->
+            val diffQueries = mutableListOf<String?>()
+            server.createContext("/session/ses_1/diff") { exchange ->
+                diffQueries.add(exchange.requestURI.rawQuery)
+                val body = if (exchange.requestURI.rawQuery == null) {
+                    "[]"
+                } else {
+                    """
+                        [
+                          {
+                            "file": "a.txt",
+                            "patch": "Index: a.txt\n===================================================================\n--- a.txt\t\n+++ a.txt\t\n@@ -1 +1 @@\n-old\n+new\n",
+                            "additions": 1,
+                            "deletions": 1,
+                            "status": "modified"
+                          }
+                        ]
+                    """.trimIndent()
+                }
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            server.createContext("/session/ses_1/message") { exchange ->
+                val body = """
+                    [
+                      {
+                        "info": {
+                          "id": "msg_user",
+                          "role": "user",
+                          "summary": { "diffs": [{ "file": "a.txt" }] }
+                        }
+                      },
+                      {
+                        "info": {
+                          "id": "msg_assistant",
+                          "role": "assistant",
+                          "summary": { "diffs": [{ "file": "assistant.txt" }] }
+                        }
+                      }
+                    ]
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+
+            val client = SessionApiClient()
+            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+
+            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+            assertEquals(listOf(null, "messageID=msg_user"), diffQueries)
+            assertEquals(listOf("a.txt"), success.value.files.map { it.file })
+        }
+    }
+
+    @Test
+    fun `fetchSessionDiffSnapshot returns empty diff when message fallback is unsupported`() {
+        for (statusCode in listOf(404, 405)) {
+            withTestServer { server, port ->
+                server.createContext("/session/ses_1/diff") { exchange ->
+                    val body = "[]"
+                    exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                    exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+                }
+                server.createContext("/session/ses_1/message") { exchange ->
+                    exchange.sendResponseHeaders(statusCode, -1)
+                    exchange.close()
+                }
+
+                val client = SessionApiClient()
+                val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+
+                val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+                assertEquals("ses_1", success.value.sessionId)
+                assertEquals(emptyList(), success.value.files)
+            }
+        }
+    }
+
     // -------------------------------------------------------------------------
     // When the user opens the 3-panel diff viewer for a file the AI changed,
     // the "Before AI" and "After AI" panels must show the AI's actual change.

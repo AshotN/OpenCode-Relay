@@ -30,6 +30,12 @@ class SessionApiClient(
         val after: String,
     )
 
+    data class SessionMessageDiffSummary(
+        val messageId: String?,
+        val role: String?,
+        val files: List<String>,
+    )
+
     fun createSession(port: Int): ApiResult<CreatedSession> {
         val endpoint = SessionEndpoints.create()
         val response = transport.post(port = port, path = endpoint.path, payload = JsonObject().toString())
@@ -75,8 +81,12 @@ class SessionApiClient(
         }.withParseContext(endpoint)
     }
 
-    fun fetchSessionDiffSnapshot(port: Int, sessionId: String): ApiResult<OpenCodeEvent.SessionDiff> {
-        val endpoint = SessionEndpoints.diff(sessionId)
+    fun fetchSessionDiffSnapshot(
+        port: Int,
+        sessionId: String,
+        messageId: String? = null,
+    ): ApiResult<OpenCodeEvent.SessionDiff> {
+        val endpoint = SessionEndpoints.diff(sessionId, messageId)
         return when (val response = transport.get(port = port, path = endpoint.path)) {
             is ApiResult.Failure -> response
             is ApiResult.Success -> {
@@ -85,28 +95,47 @@ class SessionApiClient(
                     ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
                 } else {
                     transport.mapJsonArrayResponse(ApiResult.Success(body)) { diffArray ->
-                        val files = diffArray.mapNotNull { element ->
-                            if (!element.isJsonObject) return@mapNotNull null
-                            val obj = element.asJsonObject
+                        val files =
+                            diffArray.mapNotNull { element -> parseSessionDiffFile(element.asJsonObjectOrNull()) }
+                        // OpenCode < 1.16 returns session-level diffs here. OpenCode >= 1.16 returns []
+                        // unless a messageID is provided, so fall back to per-message diffs for callers.
+                        if (messageId == null && files.isEmpty()) {
+                            when (val messageDiff = fetchSessionMessageDiffSnapshot(port, sessionId)) {
+                                is ApiResult.Failure -> {
+                                    if (messageDiff.error.isUnsupportedMessageFallback()) {
+                                        ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
+                                    } else {
+                                        messageDiff
+                                    }
+                                }
 
-                            val file = obj.getStringOrNull("file") ?: return@mapNotNull null
-                            val diffText = PatchDiffTextParser.parse(obj)
-                            val additions = obj.getIntOrNull("additions") ?: 0
-                            val deletions = obj.getIntOrNull("deletions") ?: 0
-                            val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
-
-                            OpenCodeEvent.SessionDiffFile(
-                                file = file,
-                                before = diffText.before,
-                                after = diffText.after,
-                                additions = additions,
-                                deletions = deletions,
-                                status = status,
-                            )
+                                is ApiResult.Success -> messageDiff
+                            }
+                        } else {
+                            ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, files))
                         }
-                        ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, files))
                     }.withParseContext(endpoint)
                 }
+            }
+        }
+    }
+
+    fun fetchSessionMessageDiffSnapshot(port: Int, sessionId: String): ApiResult<OpenCodeEvent.SessionDiff> {
+        // OpenCode >= 1.16 stores diffs on message summaries instead of the session.
+        return when (val refsResult = fetchSessionMessageDiffRefs(port, sessionId)) {
+            is ApiResult.Failure -> refsResult
+            is ApiResult.Success -> {
+                val messageIds = refsResult.value
+                if (messageIds.isEmpty()) return ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
+
+                val mergedFilesByPath = linkedMapOf<String, OpenCodeEvent.SessionDiffFile>()
+                for (messageId in messageIds) {
+                    when (val diffResult = fetchSessionDiffSnapshot(port, sessionId, messageId)) {
+                        is ApiResult.Failure -> return diffResult
+                        is ApiResult.Success -> mergeDiffFiles(mergedFilesByPath, diffResult.value.files)
+                    }
+                }
+                ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, mergedFilesByPath.values.toList()))
             }
         }
     }
@@ -128,6 +157,98 @@ class SessionApiClient(
             }
         }
     }
+
+    private fun fetchSessionMessageDiffRefs(port: Int, sessionId: String): ApiResult<List<String>> {
+        return when (val summariesResult = fetchSessionMessageDiffSummaries(port, sessionId)) {
+            is ApiResult.Failure -> summariesResult
+            is ApiResult.Success -> ApiResult.Success(
+                summariesResult.value.mapNotNull { summary ->
+                    summary.messageId?.takeIf { summary.role == "user" && summary.files.isNotEmpty() }
+                },
+            )
+        }
+    }
+
+    fun fetchSessionMessageDiffSummaries(port: Int, sessionId: String): ApiResult<List<SessionMessageDiffSummary>> {
+        val endpoint = SessionEndpoints.messages(sessionId)
+        val response = transport.get(port = port, path = endpoint.path)
+        return transport.mapJsonArrayResponse(response) { messagesArray ->
+            val summaries = messagesArray.mapNotNull { element ->
+                val messageObj = element.asJsonObjectOrNull() ?: return@mapNotNull null
+                val info = messageObj.getObjectOrNull("info") ?: return@mapNotNull null
+                parseMessageDiffSummary(info)
+            }
+            ApiResult.Success(summaries)
+        }.withParseContext(endpoint)
+    }
+
+    private fun parseMessageDiffSummary(info: JsonObject): SessionMessageDiffSummary? {
+        val diffs = info.getObjectOrNull("summary")
+            ?.get("diffs")
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?: return null
+        val files = diffs.mapNotNull { diffElement ->
+            diffElement.asJsonObjectOrNull()?.getStringOrNull("file")
+        }
+        if (files.isEmpty()) return null
+        return SessionMessageDiffSummary(
+            messageId = info.getStringOrNull("id"),
+            role = info.getStringOrNull("role"),
+            files = files,
+        )
+    }
+
+    private fun parseSessionDiffFile(obj: JsonObject?): OpenCodeEvent.SessionDiffFile? {
+        if (obj == null) return null
+        val file = obj.getStringOrNull("file") ?: return null
+        val diffText = PatchDiffTextParser.parse(obj)
+        val additions = obj.getIntOrNull("additions") ?: 0
+        val deletions = obj.getIntOrNull("deletions") ?: 0
+        val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
+
+        return OpenCodeEvent.SessionDiffFile(
+            file = file,
+            before = diffText.before,
+            after = diffText.after,
+            additions = additions,
+            deletions = deletions,
+            status = status,
+        )
+    }
+
+    private fun mergeDiffFiles(
+        mergedFilesByPath: MutableMap<String, OpenCodeEvent.SessionDiffFile>,
+        files: List<OpenCodeEvent.SessionDiffFile>,
+    ) {
+        for (file in files) {
+            val existing = mergedFilesByPath[file.file]
+            if (existing == null) {
+                mergedFilesByPath[file.file] = file
+                continue
+            }
+            mergedFilesByPath[file.file] = existing.copy(
+                after = file.after,
+                additions = existing.additions + file.additions,
+                deletions = existing.deletions + file.deletions,
+                status = mergeStatus(existing.status, file.status),
+            )
+        }
+    }
+
+    // Build one final status from multiple message diffs for the same file.
+    // Example: ADDED in turn 1 + MODIFIED in turn 2 should still show as ADDED.
+    private fun mergeStatus(existing: SessionDiffStatus, next: SessionDiffStatus): SessionDiffStatus = when {
+        next == SessionDiffStatus.UNKNOWN -> existing
+        existing == SessionDiffStatus.ADDED && next != SessionDiffStatus.DELETED -> SessionDiffStatus.ADDED
+        else -> next
+    }
+
+    private fun ApiError.isUnsupportedMessageFallback(): Boolean =
+        this is ApiError.HttpError && (statusCode == 404 || statusCode == 405)
+
+    private fun com.google.gson.JsonElement?.asJsonObjectOrNull(): JsonObject? =
+        this?.takeIf { it.isJsonObject }?.asJsonObject
 
     fun fetchSessionHierarchy(port: Int): ApiResult<List<Session>> {
         val endpoint = SessionEndpoints.list()

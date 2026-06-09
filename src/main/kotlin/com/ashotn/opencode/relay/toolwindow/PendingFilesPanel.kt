@@ -89,7 +89,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         val sessionId: String,
         val title: String,
         val isBusy: Boolean,
-        val trackedFileCount: Int,
+        val trackedFileCount: Int?,
     )
 
     private val fileListModel = DefaultListModel<PendingFileRow>()
@@ -594,8 +594,9 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
             }
             val titleHex = String.format("%06x", titleColor.rgb and 0xFFFFFF)
             val statusText = if (row.isBusy) "&nbsp;<font color='#$dimHex'>running...</font>" else ""
+            val countText = row.trackedFileCount?.let { "&nbsp;<font color='#$dimHex'>($it)</font>" } ?: ""
             text =
-                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText&nbsp;<font color='#$dimHex'>(${row.trackedFileCount})</font></html>"
+                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText$countText</html>"
             border = JBUI.Borders.empty(4, 8)
             return this
         }

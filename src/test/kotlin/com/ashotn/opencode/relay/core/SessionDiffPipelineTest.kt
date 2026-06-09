@@ -1,7 +1,7 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.Session
-import com.ashotn.opencode.relay.core.session.SessionScopeResolver
+import com.ashotn.opencode.relay.api.session.SessionTime
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import org.junit.Test
@@ -70,25 +70,24 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
-    // trackedFileCount must reflect all files the session has touched —
-    // including ADDED and DELETED files that carry no hunks. Hunks only exist
-    // for files with content changes; a newly created empty file has no hunks
-    // but is still a tracked file and must be counted.
+    // A file whose current disk content matches its effective baseline is not
+    // a live AI change, even if the server reports it as ADDED. It must not be
+    // tracked through the ADDED set alone.
     //
     // MANUAL VERIFICATION:
     //   1. Ask the AI to create a new empty file.
-    //   2. The session in the tool window should show (1), not (0).
+    //   2. The session in the tool window should show (0), not (1).
     // -------------------------------------------------------------------------
     @Test
-    fun `added file with no content should count toward trackedFileCount`() {
+    fun `baseline matching added file with no content should not count toward trackedFileCount`() {
         val file = "note.md"
         h.disk[h.abs(file)] = ""
         h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.ADDED))
 
-        assertEquals(setOf(h.abs(file)), h.addedFiles(), "file should be in addedFiles")
+        assertTrue(h.addedFiles().isEmpty(), "baseline-matching file should not be in addedFiles")
         assertTrue(h.hunkFiles().isEmpty(), "no hunks for empty new file")
-        assertEquals(1, h.trackedFileCount(), "trackedFileCount must count added files, not just hunk files")
+        assertEquals(0, h.trackedFileCount(), "baseline-matching file must not be tracked")
     }
 
     // -------------------------------------------------------------------------
@@ -237,8 +236,15 @@ class SessionDiffPipelineTest {
             currentGeneration = { generation },
         )
 
-        assertEquals(setOf(absFile), result?.changedFiles, "Windows turn.patch scope should match relative session.diff file")
-        assertTrue(lowerAbsFile in (result?.changedFiles ?: emptySet()), "changedFiles should use Windows path identity")
+        assertEquals(
+            setOf(absFile),
+            result?.changedFiles,
+            "Windows turn.patch scope should match relative session.diff file"
+        )
+        assertTrue(
+            lowerAbsFile in (result?.changedFiles ?: emptySet()),
+            "changedFiles should use Windows path identity"
+        )
         assertEquals(
             setOf(absFile),
             stateStore.hunksBySessionAndFile[sessionId]?.keys,
@@ -252,163 +258,6 @@ class SessionDiffPipelineTest {
             "",
             stateStore.baselineBeforeBySessionAndFile[sessionId]?.get(lowerAbsFile),
             "baseline lookup should match Windows post-root casing differences",
-        )
-    }
-
-    // -------------------------------------------------------------------------
-    // When a root session delegates work to parallel sub-agents, all files
-    // touched by those sub-agents count as part of the same logical turn of the
-    // root session. All files must appear as live (inline-highlightable) at the
-    // same time — not just the file from the last sub-agent to finish.
-    //
-    // This aligns with Rule 2 of the inline diff policy: sub-agents running
-    // under a single root session represent one turn from the user's perspective.
-    //
-    // MANUAL VERIFICATION:
-    //   1. Ask the AI to spin up 5 sub-agents, each creating a different file with some content.
-    //   2. All 5 files should show a green addition highlight simultaneously.
-    //   3. If only one file shows green, this invariant is violated.
-    // -------------------------------------------------------------------------
-    @Test
-    fun `parallel sub-agent files are all visible simultaneously`() {
-        val projectBase = "/project"
-        val generation = 1L
-        val rootSession = "ses_root"
-        val childSessions = (1..5).map { "ses_child$it" }
-        val files = childSessions.mapIndexed { i, sid -> sid to "notes/note${i + 1}.md" }
-
-        val stateStore = StateStore()
-        val stateLock = Any()
-        val disk = mutableMapOf<String, String>()
-
-        val computer = SessionDiffApplyComputer(
-            contentReader = { absPath -> disk[absPath] ?: "" },
-            hunkComputer = { fileDiff, sid ->
-                if (fileDiff.before == fileDiff.after) emptyList()
-                else listOf(
-                    DiffHunk(
-                        fileDiff.file, 0,
-                        emptyList(),
-                        if (fileDiff.after.isEmpty()) emptyList() else listOf(fileDiff.after),
-                        sid
-                    )
-                )
-            },
-            log = NoOpLogger,
-            tracer = NoOpDiffTracer,
-        )
-
-        // Each child session does its own turn.patch + session.diff for its one file.
-        for ((childSessionId, relPath) in files) {
-            val absPath = "$projectBase/$relPath"
-            disk[absPath] = "# Note\n"
-
-            val touchedPaths = setOf(absPath)
-            stateStore.commitTurnPatch(
-                stateLock = stateLock,
-                sessionId = childSessionId,
-                touchedPaths = touchedPaths,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )
-
-            val revision = stateStore.reserveRevisionForSessionDiffApply(
-                stateLock = stateLock,
-                sessionId = childSessionId,
-                fromHistory = false,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )!!
-
-            val turnScope = stateStore.consumeTurnScopeForDiff(
-                stateLock = stateLock,
-                sessionId = childSessionId,
-                fromHistory = false,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )
-
-            val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
-                stateLock = stateLock,
-                sessionId = childSessionId,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )!!
-
-            val event = OpenCodeEvent.SessionDiff(
-                sessionId = childSessionId,
-                files = listOf(
-                    OpenCodeEvent.SessionDiffFile(
-                        file = absPath,
-                        before = "",
-                        after = "",
-                        additions = 1,
-                        deletions = 0,
-                        status = SessionDiffStatus.ADDED,
-                    )
-                ),
-            )
-
-            val computedState = computer.compute(
-                projectBase = projectBase,
-                event = event,
-                fromHistory = false,
-                turnScope = turnScope,
-                previousAfterByFile = prepareSnapshot.previousAfterByFile,
-            )
-
-            stateStore.commitSessionDiffApply(
-                stateLock = stateLock,
-                sessionId = childSessionId,
-                revision = revision,
-                fromHistory = false,
-                computedState = computedState,
-                nowMillis = 0L,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )
-        }
-
-        val allExpectedFiles = files.map { (_, rel) -> "$projectBase/$rel" }.toSet()
-
-        // Simulate: hierarchy refresh has NOT returned yet — sessions map is empty.
-        // With no hierarchy, the root session has no children, so its family = {root} only,
-        // and root has no liveHunks. The selected child session family = {child} only,
-        // so only that child's one file is visible.
-        val emptySessions = emptyMap<String, Session>() // empty — race condition
-
-        val scopeResolver = SessionScopeResolver()
-        val queryService = QueryService()
-
-        // Select the root session (user is viewing the parent conversation).
-        stateStore.commitSelectedSession(
-            stateLock = stateLock,
-            requestedSessionId = rootSession,
-            sessionExists = { true },
-        )
-
-        val familyWithoutHierarchy = scopeResolver.familySessionIds(
-            selectedSessionId = rootSession,
-            sessions = emptySessions,
-            knownSessionIds = (childSessions + rootSession).toSet(),
-            busyBySession = stateStore.busyBySession,
-            updatedAtBySession = stateStore.updatedAtBySession,
-            hunksBySessionAndFile = stateStore.hunksBySessionAndFile,
-            nowMillis = 0L,
-        )
-
-        val liveVisibleWithoutHierarchy = queryService.liveVisibleFiles(
-            familySessionIds = { familyWithoutHierarchy },
-            liveHunksBySessionAndFile = stateStore.liveHunksBySessionAndFile,
-            addedBySession = stateStore.addedBySession,
-            deletedBySession = stateStore.deletedBySession,
-        )
-
-        // All 5 child files must be visible even before hierarchy refresh completes.
-        assertEquals(
-            allExpectedFiles,
-            liveVisibleWithoutHierarchy,
-            "All child-session files must be visible under the root session even before hierarchy refresh, got: $liveVisibleWithoutHierarchy",
         )
     }
 
@@ -467,12 +316,9 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
-    // Once the AI has modified a file in a session, that file must remain
-    // visible in the session's file list permanently — even if the user
-    // manually reverts the file back to its original content. The user should
-    // always be able to open the 3-panel diff viewer to see what the AI did
-    // and restore it if they want. Removing the file from the list takes away
-    // that option with no way to get it back.
+    // Once the user manually reverts a file back to its original content, the
+    // AI change is resolved. The file should be removed from the session file
+    // list and inline hunk state instead of remaining as an empty hunk entry.
     //
     // MANUAL VERIFICATION:
     //   1. Create an empty note.md.
@@ -480,11 +326,11 @@ class SessionDiffPipelineTest {
     //      note.md appears in the session's file list.
     //   3. Manually delete the AI's content so note.md is empty again.
     //   4. Restart the IDE.
-    //      note.md must still appear in the session's file list after the reset.
-    //      If it disappears, this invariant is violated.
+    //      note.md must not appear in the session's file list after the reset.
+    //      If it remains visible, this invariant is violated.
     // -------------------------------------------------------------------------
     @Test
-    fun `file must remain in session list after user reverts it to original content`() {
+    fun `file is removed from session list after user reverts it to original content`() {
         val file = "note.md"
         val original = ""   // file was empty before the AI touched it
         val aiContent = "Why do Java developers wear glasses? Because they can't C#.\n"
@@ -493,9 +339,10 @@ class SessionDiffPipelineTest {
         h.disk[h.abs(file)] = aiContent
         h.commitTurnPatch(listOf(file))
         h.applySessionDiff(
-            files = listOf(file to SessionDiffStatus.MODIFIED),
+            files = listOf(file to SessionDiffStatus.ADDED),
         )
         assertEquals(1, h.trackedFileCount(), "file should be tracked after AI wrote to it")
+        assertEquals(setOf(h.abs(file)), h.addedFiles(), "file should be in addedFiles after AI wrote it")
 
         // User reverts the file back to original — disk now matches baseline
         h.disk[h.abs(file)] = original
@@ -503,14 +350,117 @@ class SessionDiffPipelineTest {
         // Reconciler runs (simulated by running it directly)
         h.reconcileCurrentState()
 
-        // The file must still be in the list — the user needs to be able to
-        // open the diff viewer to see and restore what the AI did.
-        // Currently fails: reconciler removes the file from hunksBySessionAndFile
-        // entirely when disk matches baseline.
+        // The file must be removed from all tracked state.
+        assertEquals(
+            0,
+            h.trackedFileCount(),
+            "file must be removed from session list after user reverts it, got: ${h.trackedFileCount()}",
+        )
+        assertTrue(h.hunkFiles().isEmpty(), "reverted file should be removed from hunkFiles")
+        assertTrue(h.liveHunkFiles().isEmpty(), "reverted file should be removed from liveHunkFiles")
+        assertTrue(h.addedFiles().isEmpty(), "reverted file should be removed from addedFiles")
+    }
+
+    // -------------------------------------------------------------------------
+    // Historical reloads compare the server-provided baseline to current disk.
+    // If the user already reverted the file to that baseline before restore,
+    // the file should not be restored as an empty tracked entry.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `historical baseline matching file is removed from restored state`() {
+        val file = "note.md"
+        val original = "Original content\n"
+        val aiContent = "AI content\n"
+
+        h.disk[h.abs(file)] = original
+        h.applyHistoricalSessionDiffFiles(
+            listOf(
+                OpenCodeEvent.SessionDiffFile(
+                    file = h.abs(file),
+                    before = original,
+                    after = aiContent,
+                    additions = 1,
+                    deletions = 1,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
+
+        assertEquals(0, h.trackedFileCount(), "historical baseline match should not be restored")
+        assertTrue(h.hunkFiles().isEmpty(), "historical baseline match should not create empty hunk entry")
+    }
+
+    // -------------------------------------------------------------------------
+    // If the AI adds content in one turn and removes it in a later AI turn, the
+    // later live diff is computed against the start of that AI turn. It must
+    // still show a red deletion even though the disk now matches the original
+    // session baseline.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `later AI deletion is diffed against turn baseline not original baseline`() {
+        val file = "note.md"
+        val aiContent = "hello\n"
+
+        h.disk[h.abs(file)] = aiContent
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+
+        h.disk[h.abs(file)] = ""
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+
+        val hunks = h.hunksFor(file)
+        assertEquals(1, hunks.size, "later AI deletion should produce a deletion hunk")
+        assertEquals(listOf(aiContent), hunks.single().removedLines)
+        assertTrue(hunks.single().addedLines.isEmpty(), "later AI deletion should not produce added lines")
+        assertEquals(setOf(h.abs(file)), h.liveHunkFiles(), "later AI deletion should remain live")
+    }
+
+    // -------------------------------------------------------------------------
+    // Once a file is visible in a session's file list, a later AI turn that
+    // reports the same file must not make it disappear just because the file on
+    // disk already matches the latest known AI content. The user still expects
+    // the file to remain listed for review and for the 3-panel diff viewer.
+    //
+    // MANUAL VERIFICATION:
+    //   1. Select a session where plan.md appears in the Files list.
+    //   2. Ask the AI to make a small edit to plan.md.
+    //   3. plan.md must remain visible in the Files list after the edit finishes.
+    //      If it disappears until plugin state is reset, this invariant is violated.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `file reported by live diff must remain in session list when content matches latest AI state`() {
+        val file = "plan.md"
+        val original = "# Plan\n"
+        val aiContent = "# Plan\n\nTrace reproduction marker: test.\n"
+
+        // Initial AI turn makes the file visible in the session list.
+        h.disk[h.abs(file)] = aiContent
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        assertEquals(1, h.trackedFileCount(), "file should be tracked after the first AI edit")
+
+        // A later live message diff reports the same file, but local disk already
+        // matches the latest AI content known to the plugin.
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiffFiles(
+            listOf(
+                OpenCodeEvent.SessionDiffFile(
+                    file = h.abs(file),
+                    before = original,
+                    after = aiContent,
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            ),
+            isMessageScoped = true,
+        )
+
         assertEquals(
             1,
             h.trackedFileCount(),
-            "file must remain in session list after user reverts it, got: ${h.trackedFileCount()}",
+            "file reported by a live diff must remain in the session list, got: ${h.trackedFileCount()}",
         )
     }
 
@@ -666,6 +616,135 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
+    // A historical snapshot may load after a live turn, for example after the live
+    // apply triggers a hierarchy refresh. That snapshot must update cumulative
+    // file state without clearing the current turn's inline highlights.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `historical diff apply preserves existing live hunks`() {
+        val file = "note.md"
+        h.disk[h.abs(file)] = "line1\n"
+        h.commitTurnPatch(listOf(file))
+        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        assertEquals(setOf(h.abs(file)), h.liveHunkFiles(), "live turn should create inline hunks")
+
+        h.applyHistoricalSessionDiffFiles(
+            listOf(
+                OpenCodeEvent.SessionDiffFile(
+                    file = h.abs(file),
+                    before = "",
+                    after = "line1\n",
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
+
+        assertEquals(
+            setOf(h.abs(file)),
+            h.liveHunkFiles(),
+            "historical load after a live turn must not clear current inline hunks",
+        )
+    }
+
+    // -------------------------------------------------------------------------
+    // Editor inline rendering asks QueryService for live hunks. When the root
+    // session is selected, live hunks from child/sub-agent sessions must be
+    // returned as part of the selected root family.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `root session inline hunk lookup includes child session live hunks`() {
+        val file = "/project/live-subagents/alpha.txt"
+        val hunk = DiffHunk(
+            filePath = file,
+            startLine = 0,
+            removedLines = emptyList(),
+            addedLines = listOf("alpha from sub-agent"),
+            sessionId = "ses_child",
+        )
+
+        val hunks = QueryService().liveHunks(
+            filePath = file,
+            familySessionIds = { setOf("ses_root", "ses_child") },
+            liveHunksBySessionAndFile = mapOf("ses_child" to mapOf(file to listOf(hunk))),
+        )
+
+        assertEquals(listOf(hunk), hunks)
+    }
+
+    // -------------------------------------------------------------------------
+    // A sub-agent live diff can arrive before the session hierarchy refresh that
+    // tells the plugin child.parentID == root. While root is selected, that diff
+    // is not part of the strict root family yet. Once hierarchy metadata arrives,
+    // the same live files and inline hunks must become visible without requiring
+    // another child diff event.
+    // -------------------------------------------------------------------------
+    @Test
+    fun `root selected child live diff becomes visible after hierarchy parent metadata arrives`() {
+        val projectBase = "/project"
+        val rootSessionId = "ses_root"
+        val childSessionId = "ses_child"
+        val file = "live-subagents/alpha.txt"
+        val absFile = "$projectBase/$file"
+        val content = "alpha from sub-agent"
+        val harness = CoreDiffStateHarness(projectBase)
+
+        harness.applyLiveMessageDiff(
+            sessionId = childSessionId,
+            diff = OpenCodeEvent.SessionDiff(
+                sessionId = childSessionId,
+                files = listOf(
+                    OpenCodeEvent.SessionDiffFile(
+                        file = file,
+                        before = "",
+                        after = content,
+                        additions = 1,
+                        deletions = 0,
+                        status = SessionDiffStatus.MODIFIED,
+                    )
+                ),
+            ),
+            readContent = { path -> if (path == absFile) content else "" },
+        )
+
+        val beforeHierarchy = harness.selectRootAndVisibleState(
+            rootSessionId = rootSessionId,
+            sessions = listOf(session(rootSessionId)),
+        )
+        assertTrue(
+            absFile !in beforeHierarchy.liveVisibleFiles,
+            "child live file should not be visible before hierarchy provides parentID",
+        )
+        assertTrue(
+            beforeHierarchy.liveHunksByFile[absFile].orEmpty().isEmpty(),
+            "child live hunks should not be visible before hierarchy provides parentID",
+        )
+
+        val afterHierarchy = harness.selectRootAndVisibleState(
+            rootSessionId = rootSessionId,
+            sessions = listOf(
+                session(rootSessionId),
+                session(childSessionId, parentId = rootSessionId),
+            ),
+        )
+
+        assertEquals(
+            setOf(absFile),
+            afterHierarchy.visibleFiles.intersect(setOf(absFile)),
+            "root file list should include child diff after hierarchy provides parentID",
+        )
+        assertEquals(
+            setOf(absFile),
+            afterHierarchy.liveVisibleFiles.intersect(setOf(absFile)),
+            "root live-visible files should include child diff after hierarchy provides parentID",
+        )
+        val liveHunk = afterHierarchy.liveHunksByFile[absFile]?.singleOrNull()
+        assertEquals(childSessionId, liveHunk?.sessionId)
+        assertEquals(listOf(content), liveHunk?.addedLines)
+    }
+
+    // -------------------------------------------------------------------------
     // Each turn's diff must be computed relative to the file content at the
     // start of that turn, not the original file. The pipeline advances the
     // baseline (effectiveBefore) to lastAfter after each turn. If it does not,
@@ -807,4 +886,16 @@ class SessionDiffPipelineTest {
                     "(afterPoem.length=${afterPoem.length}, originalContent.length=${originalContent.length})",
         )
     }
+
+    private fun session(id: String, parentId: String? = null): Session = Session(
+        id = id,
+        projectID = null,
+        directory = null,
+        parentID = parentId,
+        title = id,
+        version = null,
+        time = SessionTime(created = 0L, updated = 0L, compacting = null),
+        summary = null,
+        share = null,
+    )
 }

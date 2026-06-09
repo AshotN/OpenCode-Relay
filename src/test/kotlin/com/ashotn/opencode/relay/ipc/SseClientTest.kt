@@ -170,4 +170,45 @@ class SseClientTest {
             assertEquals(listOf("ses_created", "ses_updated", "ses_deleted"), sessionIds)
         }
     }
+
+    @Test
+    fun `parses message diff availability with summary files`() {
+        withTestServer { server, port ->
+            server.createContext("/global/event") { exchange ->
+                val body = """
+                    data: {"directory":"/project","payload":{"type":"message.updated","properties":{"sessionID":"ses_1","info":{"id":"msg_1","role":"user","summary":{"diffs":[{"file":"pkg/alpha.py"},{"file":"pkg/bravo.py"}]}}}}}
+
+                """.trimIndent()
+                val bytes = body.toByteArray(Charsets.UTF_8)
+                exchange.responseHeaders.add("Content-Type", "text/event-stream")
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+
+            val received = mutableListOf<OpenCodeEvent.MessageDiffAvailable>()
+            val latch = CountDownLatch(1)
+            val client = SseClient(
+                port = port,
+                directory = "/project",
+                onEvent = { event ->
+                    synchronized(received) {
+                        received.add(assertIs<OpenCodeEvent.MessageDiffAvailable>(event))
+                    }
+                    latch.countDown()
+                },
+            )
+
+            try {
+                client.start()
+                assertTrue(latch.await(2, TimeUnit.SECONDS), "expected message diff event")
+            } finally {
+                client.stop()
+            }
+
+            val event = synchronized(received) { received.single() }
+            assertEquals("ses_1", event.sessionId)
+            assertEquals("msg_1", event.messageId)
+            assertEquals(listOf("pkg/alpha.py", "pkg/bravo.py"), event.files)
+        }
+    }
 }

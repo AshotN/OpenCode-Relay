@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+<p><strong>Changed</strong></p>
+<ul>
+  <li>Support OpenCode 1.16+ message-scoped diffs by aggregating per-message diff snapshots when session-level diffs are empty, while keeping compatibility with older session-level diff events.</li>
+  <li>Limit background message-summary file-count loading to a small recent batch to avoid excessive API requests on large session histories.</li>
+</ul>
+
 ## [1.3.2] - 2026-06-04
 
 <p><strong>Fixed</strong></p>

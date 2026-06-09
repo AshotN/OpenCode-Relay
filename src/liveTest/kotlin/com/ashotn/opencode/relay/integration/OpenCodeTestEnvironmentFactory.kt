@@ -15,7 +15,7 @@ object OpenCodeTestEnvironmentFactory {
 
     private const val AUTH_JSON_ENV = "OPENCODE_TEST_AUTH_JSON"
 
-    fun create(version: String): OpenCodeTestEnvironment {
+    fun create(version: String, allowTask: Boolean = false): OpenCodeTestEnvironment {
         val projectRoot = Path.of("").toAbsolutePath().normalize()
         val opencodeBin = resolveOpenCodeBinary(projectRoot, version)
 
@@ -53,6 +53,12 @@ object OpenCodeTestEnvironmentFactory {
         authPath.parent.createDirectories()
         authPath.writeText(authJson)
 
+        val permission = if (allowTask) {
+            "{\"edit\":\"allow\",\"bash\":\"deny\",\"task\":\"allow\",\"webfetch\":\"deny\",\"doom_loop\":\"deny\",\"external_directory\":\"deny\"}"
+        } else {
+            "{\"edit\":\"allow\",\"bash\":\"deny\",\"webfetch\":\"deny\",\"doom_loop\":\"deny\",\"external_directory\":\"deny\"}"
+        }
+
         val env = linkedMapOf(
             "HOME" to homeRoot.toString(),
             "XDG_CONFIG_HOME" to xdgConfigHome.toString(),
@@ -62,7 +68,7 @@ object OpenCodeTestEnvironmentFactory {
             "OPENCODE_TEST_HOME" to homeRoot.toString(),
             "OPENCODE_DISABLE_AUTOUPDATE" to "true",
             "OPENCODE_DISABLE_LSP_DOWNLOAD" to "true",
-            "OPENCODE_PERMISSION" to "{\"edit\":\"allow\",\"bash\":\"deny\",\"webfetch\":\"deny\",\"doom_loop\":\"deny\",\"external_directory\":\"deny\"}",
+            "OPENCODE_PERMISSION" to permission,
         )
 
         return OpenCodeTestEnvironment(

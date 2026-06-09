@@ -6,6 +6,7 @@ import com.ashotn.opencode.relay.ipc.SseClient
 class OpenCodeTestEventCollector(
     port: Int,
     directory: String? = null,
+    private val onCollectedEvent: (OpenCodeEvent) -> Unit = {},
 ) : AutoCloseable {
 
     @Suppress("PLATFORM_CLASS_MAPPED_TO_KOTLIN")
@@ -19,6 +20,7 @@ class OpenCodeTestEventCollector(
                 events.add(event)
                 lock.notifyAll()
             }
+            onCollectedEvent(event)
         },
     )
 
@@ -42,6 +44,18 @@ class OpenCodeTestEventCollector(
 
     fun sessionDiffCount(sessionId: String): Int = synchronized(lock) {
         events.count { it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId }
+    }
+
+    fun diffSignalCount(sessionId: String): Int = synchronized(lock) {
+        events.count {
+            (it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId) ||
+                    (it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId)
+        }
+    }
+
+    fun messageDiffEvents(sessionId: String): List<OpenCodeEvent.MessageDiffAvailable> = synchronized(lock) {
+        events.filterIsInstance<OpenCodeEvent.MessageDiffAvailable>()
+            .filter { it.sessionId == sessionId }
     }
 
     fun awaitIdleStatus(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionStatus =
@@ -80,6 +94,15 @@ class OpenCodeTestEventCollector(
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
+    fun awaitDiffSignal(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent =
+        awaitEvent(timeoutMs, "diff signal for $sessionId count >= $atLeastCount") { recordedEvents ->
+            val matching = recordedEvents.filter {
+                (it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId) ||
+                        (it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId)
+            }
+            if (matching.size >= atLeastCount) matching.last() else null
+        }
+
     fun recentEventSummary(limit: Int = 10): String = synchronized(lock) {
         if (events.isEmpty()) return@synchronized "<none>"
         events.takeLast(limit).joinToString(separator = " | ") { event ->
@@ -92,6 +115,11 @@ class OpenCodeTestEventCollector(
                 is OpenCodeEvent.SessionDiff -> {
                     val files = event.files.joinToString(",") { it.file.substringAfterLast('/') }
                     "session.diff(sessionId=${event.sessionId}, files=$files)"
+                }
+
+                is OpenCodeEvent.MessageDiffAvailable -> {
+                    val files = event.files.joinToString(",") { it.substringAfterLast('/') }
+                    "message.diff(sessionId=${event.sessionId}, messageId=${event.messageId}, files=$files)"
                 }
 
                 is OpenCodeEvent.SessionLifecycleChanged -> "session.lifecycle(sessionId=${event.sessionId})"

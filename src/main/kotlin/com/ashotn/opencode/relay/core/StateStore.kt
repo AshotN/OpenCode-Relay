@@ -33,6 +33,8 @@ internal class StateStore {
     val baselineBeforeBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
     val lastAfterBySessionAndFile = ConcurrentHashMap<String, MutableMap<String, String>>()
     val pendingTurnFilesBySession = ConcurrentHashMap<String, Set<String>>()
+    val messageSummaryFileCountBySession = ConcurrentHashMap<String, Int>()
+    val messageSummaryFileCountUpdatedAtBySession = ConcurrentHashMap<String, Long>()
 
     private val diffApplyRevisionBySession = ConcurrentHashMap<String, Long>()
 
@@ -47,9 +49,6 @@ internal class StateStore {
             return@synchronized null
         }
         val currentRevision = diffApplyRevisionBySession[sessionId] ?: 0L
-        if (fromHistory && currentRevision > 0L) {
-            return@synchronized null
-        }
         val nextRevision = currentRevision + 1
         diffApplyRevisionBySession[sessionId] = nextRevision
         nextRevision
@@ -210,7 +209,6 @@ internal class StateStore {
         )
 
         if (!fromHistory) {
-            busyBySession[sessionId] = true
             updatedAtBySession[sessionId] = nowMillis
         }
 
@@ -223,7 +221,7 @@ internal class StateStore {
                 replaceAll = fromHistory,
             ),
             liveHunks = if (fromHistory) {
-                emptyMap()
+                previousState.liveHunks
             } else {
                 // Live hunks always replace entirely — they represent only the current turn's
                 // changes. Files from previous turns must not carry over here, otherwise the
@@ -345,6 +343,8 @@ internal class StateStore {
         baselineBeforeBySessionAndFile.clear()
         lastAfterBySessionAndFile.clear()
         pendingTurnFilesBySession.clear()
+        messageSummaryFileCountBySession.clear()
+        messageSummaryFileCountUpdatedAtBySession.clear()
         diffApplyRevisionBySession.clear()
         selectedSessionId = null
     }

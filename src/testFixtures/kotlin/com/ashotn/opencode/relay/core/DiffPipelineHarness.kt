@@ -86,12 +86,27 @@ class DiffPipelineHarness(
 
     fun applySessionDiffFiles(
         files: List<OpenCodeEvent.SessionDiffFile>,
+        isMessageScoped: Boolean = false,
+    ): ApplySessionDiffResult? {
+        return applySessionDiffFiles(files, fromHistory = false, isMessageScoped = isMessageScoped)
+    }
+
+    fun applyHistoricalSessionDiffFiles(
+        files: List<OpenCodeEvent.SessionDiffFile>,
+    ): ApplySessionDiffResult? {
+        return applySessionDiffFiles(files, fromHistory = true, isMessageScoped = false)
+    }
+
+    private fun applySessionDiffFiles(
+        files: List<OpenCodeEvent.SessionDiffFile>,
+        fromHistory: Boolean,
+        isMessageScoped: Boolean,
     ): ApplySessionDiffResult? {
         val decision = eventReducer.beginSessionDiffApply(
             stateStore = stateStore,
             stateLock = stateLock,
             sessionId = sessionId,
-            fromHistory = false,
+            fromHistory = fromHistory,
             generation = generation,
             currentGeneration = { generation },
         )
@@ -113,12 +128,13 @@ class DiffPipelineHarness(
                     file = diffFile.file.toProjectRelativePath(projectBase),
                 )
             },
+            isMessageScoped = isMessageScoped,
         )
 
         val computedState = computer.compute(
             projectBase = projectBase,
             event = event,
-            fromHistory = false,
+            fromHistory = fromHistory,
             turnScope = turnScope,
             previousAfterByFile = prepareSnapshot.previousAfterByFile,
         )
@@ -127,7 +143,7 @@ class DiffPipelineHarness(
             stateLock = stateLock,
             sessionId = sessionId,
             revision = revision,
-            fromHistory = false,
+            fromHistory = fromHistory,
             computedState = computedState,
             nowMillis = 0L,
             expectedGeneration = generation,

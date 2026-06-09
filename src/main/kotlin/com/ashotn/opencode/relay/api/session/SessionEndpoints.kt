@@ -2,6 +2,8 @@ package com.ashotn.opencode.relay.api.session
 
 import com.ashotn.opencode.relay.api.transport.ApiEndpoint
 import com.ashotn.opencode.relay.api.transport.HttpMethod
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 internal object SessionEndpoints {
     fun create(): ApiEndpoint = ApiEndpoint(method = HttpMethod.POST, path = "/session")
@@ -12,7 +14,14 @@ internal object SessionEndpoints {
 
     fun list(): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session")
 
-    fun diff(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session/$sessionId/diff")
+    fun diff(sessionId: String, messageId: String? = null): ApiEndpoint {
+        val query = messageId
+            ?.let { "?messageID=${URLEncoder.encode(it, StandardCharsets.UTF_8)}" }
+            ?: ""
+        return ApiEndpoint(method = HttpMethod.GET, path = "/session/$sessionId/diff$query")
+    }
+
+    fun messages(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session/$sessionId/message")
 
     fun delete(sessionId: String): ApiEndpoint = ApiEndpoint(method = HttpMethod.DELETE, path = "/session/$sessionId")
 

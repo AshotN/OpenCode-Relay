@@ -146,9 +146,12 @@ class SseClient(
                 "server.heartbeat", "sync", "project.updated" -> null
                 "session.diff" -> parseSessionDiff(properties)
                 "session.idle" -> null
+                // OpenCode >= 1.16 exposes turn diffs through user message summaries.
+                "message.updated" -> parseMessageUpdated(properties)
                 // Any lifecycle change can alter the session list/order/title, so all refresh the hierarchy.
                 "session.created", "session.updated", "session.deleted" -> parseSessionLifecycleChanged(properties)
                 "session.status" -> parseSessionStatus(properties)
+                // OpenCode < 1.16 emitted patch parts that scoped touched files for session.diff.
                 "message.part.updated" -> parseMessagePartUpdated(properties)
                 "mcp.tools.changed" -> parseMcpToolsChanged(properties)
                 "permission.asked" -> parsePermissionAsked(properties)
@@ -305,6 +308,30 @@ class SseClient(
             ?: emptyList()
 
         return OpenCodeEvent.TurnPatch(sessionId, files)
+    }
+
+    // OpenCode >= 1.16: message.updated only tells us which user message has diffs;
+    // the actual patch content is fetched later via /session/{id}/diff?messageID=...
+    private fun parseMessageUpdated(props: JsonObject): OpenCodeEvent.MessageDiffAvailable? {
+        val info = props.getObjectOrNull("info") ?: return null
+        if (info.getStringOrNull("role") != "user") return null
+
+        val sessionId = props.getStringOrNull("sessionID")
+            ?: info.getStringOrNull("sessionID")
+            ?: return null
+        val messageId = info.getStringOrNull("id") ?: return null
+        val diffs = info.getObjectOrNull("summary")
+            ?.get("diffs")
+            ?.takeIf { it.isJsonArray }
+            ?.asJsonArray
+            ?: return null
+        val files = diffs.mapNotNull { element ->
+            if (!element.isJsonObject) return@mapNotNull null
+            element.asJsonObject.getStringOrNull("file")?.takeIf { it.isNotBlank() }
+        }
+        if (files.isEmpty()) return null
+
+        return OpenCodeEvent.MessageDiffAvailable(sessionId, messageId, files)
     }
 
     private fun parseMcpToolsChanged(props: JsonObject): OpenCodeEvent.McpToolsChanged? {

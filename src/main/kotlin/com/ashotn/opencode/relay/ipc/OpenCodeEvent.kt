@@ -34,6 +34,13 @@ sealed class OpenCodeEvent {
         val files: List<String>,   // absolute paths
     ) : OpenCodeEvent()
 
+    /** message.updated for a user message whose summary contains per-message diffs. */
+    data class MessageDiffAvailable(
+        val sessionId: String,
+        val messageId: String,
+        val files: List<String> = emptyList(),
+    ) : OpenCodeEvent()
+
     /**
      * permission.replied — fired when any client (plugin, TUI, CLI) resolves a
      * pending permission request. Lets us drain the queue even when the reply
@@ -53,6 +60,8 @@ sealed class OpenCodeEvent {
     data class SessionDiff(
         val sessionId: String,
         val files: List<SessionDiffFile>,
+        /** OpenCode >= 1.16 diff fetched with messageID; use server `before` as the live turn baseline. */
+        val isMessageScoped: Boolean = false,
     ) : OpenCodeEvent()
 
     data class SessionDiffFile(

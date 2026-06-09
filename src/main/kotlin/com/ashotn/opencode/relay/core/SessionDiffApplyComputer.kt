@@ -57,7 +57,7 @@ internal class SessionDiffApplyComputer(
             }
 
             val actualAfter = contentReader(absPath)
-            val effectiveBefore = if (fromHistory) {
+            val effectiveBefore = if (fromHistory || event.isMessageScoped) {
                 diffFile.before
             } else {
                 previousAfterByPath[absPath] ?: diffFile.before
@@ -67,9 +67,6 @@ internal class SessionDiffApplyComputer(
                 TextUtil.normalizeContent(effectiveBefore) != TextUtil.normalizeContent(actualAfter)
 
             nextAfterByFile[absPath] = actualAfter
-
-            if (diffFile.status == SessionDiffStatus.DELETED) newDeleted.add(absPath)
-            if (diffFile.status == SessionDiffStatus.ADDED) newAdded.add(absPath)
 
             if (!hasContentChange) {
                 baselineMatchCount += 1
@@ -84,18 +81,11 @@ internal class SessionDiffApplyComputer(
                         "contentChanged" to false,
                     ),
                 )
-                // On a historical load the server is the authority on whether a file
-                // was touched in this session. Even if disk currently matches the
-                // baseline (e.g. the user reverted the file), we must still record it
-                // so it appears in the file list and the 3-panel diff viewer remains
-                // accessible. For live turns we keep the existing behaviour: a file
-                // that matches baseline is considered resolved and not shown.
-                if (fromHistory && diffFile.status == SessionDiffStatus.MODIFIED) {
-                    newHunksByFile[absPath] = emptyList()
-                    newBaselineByFile[absPath] = effectiveBefore
-                }
                 continue
             }
+
+            if (diffFile.status == SessionDiffStatus.DELETED) newDeleted.add(absPath)
+            if (diffFile.status == SessionDiffStatus.ADDED) newAdded.add(absPath)
 
             val fileDiff = FileDiff(
                 file = absPath,
