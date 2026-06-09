@@ -1,6 +1,8 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.Session
+import com.ashotn.opencode.relay.api.session.SessionDiffFile
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.api.session.SessionTime
 import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
@@ -112,17 +114,10 @@ class SessionOrderingTest {
                 currentGeneration = { generation },
             )!!
 
-            val prepareSnapshot = store.snapshotSessionDiffPrepareState(
-                stateLock = stateLock,
-                sessionId = sid,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )!!
-
-            val event = OpenCodeEvent.SessionDiff(
+            val event = SessionDiffSnapshot(
                 sessionId = sid,
                 files = listOf(
-                    OpenCodeEvent.SessionDiffFile(
+                    SessionDiffFile(
                         file = absPath,
                         before = "",
                         after = "ai content",
@@ -137,8 +132,6 @@ class SessionOrderingTest {
                 projectBase = projectBase,
                 event = event,
                 fromHistory = true,
-                turnScope = null,
-                previousAfterByFile = prepareSnapshot.previousAfterByFile,
             )
 
             store.commitSessionDiffApply(
@@ -343,7 +336,7 @@ class SessionOrderingTest {
     // arrive after session.status idle, but it must not re-mark the session busy.
     //
     // REGRESSION: live diff commits wrote busyBySession[sessionId] = true. If the
-    // final idle status was already processed, a subsequent session.diff/message
+    // final idle status was already processed, a subsequent message diff apply
     // diff apply left the session list stuck showing "running...".
     // -------------------------------------------------------------------------
     @Test
@@ -389,7 +382,6 @@ class SessionOrderingTest {
             fromHistory = false,
             computedState = StateStore.SessionDiffComputedState(
                 projectBase = projectBase,
-                nextAfterByFile = mutableMapOf(filePath to "Goodbye World\n"),
                 processedPaths = setOf(filePath),
                 newHunksByFile = mapOf(
                     filePath to listOf(

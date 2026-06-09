@@ -1,7 +1,7 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.FileDiff
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.util.TextUtil
 import com.ashotn.opencode.relay.util.createPathIdentityMap
@@ -18,38 +18,20 @@ internal class SessionDiffApplyComputer(
 ) {
     fun compute(
         projectBase: String,
-        event: OpenCodeEvent.SessionDiff,
+        event: SessionDiffSnapshot,
         fromHistory: Boolean,
-        turnScope: Set<String>?,
-        previousAfterByFile: Map<String, String>,
     ): StateStore.SessionDiffComputedState {
         val newHunksByFile = createPathIdentityMap<List<DiffHunk>>(projectBase)
         val newDeleted = createPathIdentitySet(projectBase)
         val newAdded = createPathIdentitySet(projectBase)
         val newBaselineByFile = createPathIdentityMap<String>(projectBase)
         val processedPaths = createPathIdentitySet(projectBase)
-        val previousAfterByPath = createPathIdentityMap<String>(projectBase).apply { putAll(previousAfterByFile) }
-        val nextAfterByFile = createPathIdentityMap<String>(projectBase).apply { putAll(previousAfterByFile) }
-        var outOfScopeCount = 0
         var baselineMatchCount = 0
         var zeroHunkCount = 0
         val analyses = if (tracer.enabled) mutableListOf<Map<String, Any?>>() else null
 
         for (diffFile in event.files) {
             val absPath = toAbsolutePath(projectBase, diffFile.file)
-
-            if (!fromHistory && turnScope != null && absPath !in turnScope) {
-                outOfScopeCount += 1
-                analyses?.add(
-                    mapOf(
-                        "absPath" to absPath,
-                        "status" to diffFile.status.name,
-                        "inScope" to false,
-                    ),
-                )
-                continue
-            }
-
             processedPaths.add(absPath)
 
             if (!fromHistory) {
@@ -57,16 +39,10 @@ internal class SessionDiffApplyComputer(
             }
 
             val actualAfter = contentReader(absPath)
-            val effectiveBefore = if (fromHistory || event.isMessageScoped) {
-                diffFile.before
-            } else {
-                previousAfterByPath[absPath] ?: diffFile.before
-            }
+            val effectiveBefore = diffFile.before
 
             val hasContentChange =
                 TextUtil.normalizeContent(effectiveBefore) != TextUtil.normalizeContent(actualAfter)
-
-            nextAfterByFile[absPath] = actualAfter
 
             if (!hasContentChange) {
                 baselineMatchCount += 1
@@ -74,8 +50,6 @@ internal class SessionDiffApplyComputer(
                     mapOf(
                         "absPath" to absPath,
                         "status" to diffFile.status.name,
-                        "inScope" to true,
-                        "previousAfterSize" to previousAfterByPath[absPath]?.length,
                         "effectiveBeforeSize" to effectiveBefore.length,
                         "actualAfterSize" to actualAfter.length,
                         "contentChanged" to false,
@@ -101,8 +75,6 @@ internal class SessionDiffApplyComputer(
                     mapOf(
                         "absPath" to absPath,
                         "status" to diffFile.status.name,
-                        "inScope" to true,
-                        "previousAfterSize" to previousAfterByPath[absPath]?.length,
                         "effectiveBeforeSize" to effectiveBefore.length,
                         "actualAfterSize" to actualAfter.length,
                         "contentChanged" to true,
@@ -127,8 +99,6 @@ internal class SessionDiffApplyComputer(
                 mapOf(
                     "absPath" to absPath,
                     "status" to diffFile.status.name,
-                    "inScope" to true,
-                    "previousAfterSize" to previousAfterByPath[absPath]?.length,
                     "effectiveBeforeSize" to effectiveBefore.length,
                     "actualAfterSize" to actualAfter.length,
                     "contentChanged" to true,
@@ -137,41 +107,19 @@ internal class SessionDiffApplyComputer(
             )
         }
 
-        // Any file that was in turnScope but absent from the server diff has been resolved back to
-        // baseline. Mark it as processed (with no hunks) so that mergeMapByProcessedPaths evicts
-        // the stale state rather than preserving it.
-        if (!fromHistory && turnScope != null) {
-            for (scopedPath in turnScope) {
-                if (scopedPath !in processedPaths) {
-                    processedPaths.add(scopedPath)
-                    nextAfterByFile[scopedPath] = contentReader(scopedPath)
-                    analyses?.add(
-                        mapOf(
-                            "absPath" to scopedPath,
-                            "status" to "CLEARED",
-                            "inScope" to true,
-                            "absentFromServerDiff" to true,
-                        ),
-                    )
-                }
-            }
-        }
-
         log.debug(
-            "SessionDiffApplyComputer: compute session.diff session=${event.sessionId} fileCount=${event.files.size} emittedFileCount=${newHunksByFile.size} baselineMatchedFileCount=$baselineMatchCount zeroHunkFileCount=$zeroHunkCount outOfScopeFileCount=$outOfScopeCount fromHistory=$fromHistory",
+            "SessionDiffApplyComputer: compute diff.apply session=${event.sessionId} fileCount=${event.files.size} emittedFileCount=${newHunksByFile.size} baselineMatchedFileCount=$baselineMatchCount zeroHunkFileCount=$zeroHunkCount fromHistory=$fromHistory",
         )
         if (tracer.enabled && (!fromHistory || tracer.includeHistory)) {
             tracer.record(
-                kind = "session.diff.compute",
+                kind = "diff.apply.compute",
                 fields = mapOf(
                     "sessionId" to event.sessionId,
                     "fromHistory" to fromHistory,
-                    "turnScope" to turnScope?.toList(),
                     "inputFileCount" to event.files.size,
                     "emittedFileCount" to newHunksByFile.size,
                     "baselineMatchCount" to baselineMatchCount,
                     "zeroHunkCount" to zeroHunkCount,
-                    "outOfScopeCount" to outOfScopeCount,
                     "analyses" to (analyses ?: emptyList()),
                 ),
             )
@@ -179,7 +127,6 @@ internal class SessionDiffApplyComputer(
 
         return StateStore.SessionDiffComputedState(
             projectBase = projectBase,
-            nextAfterByFile = nextAfterByFile,
             processedPaths = processedPaths,
             newHunksByFile = newHunksByFile,
             newDeleted = newDeleted,

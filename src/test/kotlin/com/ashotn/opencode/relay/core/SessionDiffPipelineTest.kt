@@ -1,8 +1,9 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.Session
+import com.ashotn.opencode.relay.api.session.SessionDiffFile
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.api.session.SessionTime
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import org.junit.Test
 import kotlin.test.assertEquals
@@ -12,7 +13,7 @@ import kotlin.test.assertTrue
  * End-to-end tests for the diff pipeline using [DiffPipelineHarness].
  *
  * Each test covers a distinct behaviour or regression. The harness simulates the full
- * pipeline (turn.patch → session.diff → state commit) without requiring the IntelliJ
+ * pipeline (message-scoped diff → state commit) without requiring the IntelliJ
  * platform — disk content is a plain in-memory map and hunk computation is a fake.
  */
 class SessionDiffPipelineTest {
@@ -32,7 +33,6 @@ class SessionDiffPipelineTest {
     fun `baseline matching added file with no content should not count toward trackedFileCount`() {
         val file = "note.md"
         h.disk[h.abs(file)] = ""
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.ADDED))
 
         assertTrue(h.addedFiles().isEmpty(), "baseline-matching file should not be in addedFiles")
@@ -57,13 +57,11 @@ class SessionDiffPipelineTest {
 
         // Turn 1: file created empty — no hunk expected
         h.disk[h.abs(file)] = ""
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.ADDED))
         assertTrue(h.hunksFor(file).isEmpty(), "turn 1: no hunk for empty file")
 
         // Turn 2: content written — hunk must have no removedLines
         h.disk[h.abs(file)] = "1"
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.ADDED))
 
         val hunks = h.hunksFor(file)
@@ -117,7 +115,6 @@ class SessionDiffPipelineTest {
         )
 
         zeroHunkHarness.disk[zeroHunkHarness.abs(file)] = "line1\n"
-        zeroHunkHarness.commitTurnPatch(listOf(file))
         zeroHunkHarness.applySessionDiff(
             files = listOf(file to SessionDiffStatus.MODIFIED),
         )
@@ -152,7 +149,6 @@ class SessionDiffPipelineTest {
 
         // AI writes content to the previously empty file
         h.disk[h.abs(file)] = aiContent
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(
             files = listOf(file to SessionDiffStatus.ADDED),
         )
@@ -190,7 +186,7 @@ class SessionDiffPipelineTest {
         h.disk[h.abs(file)] = original
         h.applyHistoricalSessionDiffFiles(
             listOf(
-                OpenCodeEvent.SessionDiffFile(
+                SessionDiffFile(
                     file = h.abs(file),
                     before = original,
                     after = aiContent,
@@ -217,12 +213,32 @@ class SessionDiffPipelineTest {
         val aiContent = "hello\n"
 
         h.disk[h.abs(file)] = aiContent
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        h.applySessionDiffFiles(
+            listOf(
+                SessionDiffFile(
+                    file = h.abs(file),
+                    before = "",
+                    after = aiContent,
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
 
         h.disk[h.abs(file)] = ""
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        h.applySessionDiffFiles(
+            listOf(
+                SessionDiffFile(
+                    file = h.abs(file),
+                    before = aiContent,
+                    after = "",
+                    additions = 0,
+                    deletions = 1,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
 
         val hunks = h.hunksFor(file)
         assertEquals(1, hunks.size, "later AI deletion should produce a deletion hunk")
@@ -251,16 +267,14 @@ class SessionDiffPipelineTest {
 
         // Initial AI turn makes the file visible in the session list.
         h.disk[h.abs(file)] = aiContent
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
         assertEquals(1, h.trackedFileCount(), "file should be tracked after the first AI edit")
 
         // A later live message diff reports the same file, but local disk already
         // matches the latest AI content known to the plugin.
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiffFiles(
             listOf(
-                OpenCodeEvent.SessionDiffFile(
+                SessionDiffFile(
                     file = h.abs(file),
                     before = original,
                     after = aiContent,
@@ -269,7 +283,6 @@ class SessionDiffPipelineTest {
                     status = SessionDiffStatus.MODIFIED,
                 )
             ),
-            isMessageScoped = true,
         )
 
         assertEquals(
@@ -298,7 +311,6 @@ class SessionDiffPipelineTest {
 
         // Simulate a live turn that produced inline highlights before restart.
         h.disk[h.abs(file)] = "line1\n"
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
         assertEquals(setOf(h.abs(file)), h.liveHunkFiles(), "pre-restart: live highlights present")
 
@@ -313,12 +325,6 @@ class SessionDiffPipelineTest {
             expectedGeneration = h.generation,
             currentGeneration = { h.generation },
         )!!
-        val prepareSnapshot = freshStore.snapshotSessionDiffPrepareState(
-            stateLock = freshLock,
-            sessionId = h.sessionId,
-            expectedGeneration = h.generation,
-            currentGeneration = { h.generation },
-        )!!
         val computer = SessionDiffApplyComputer(
             contentReader = { absPath -> h.disk[absPath] ?: "" },
             hunkComputer = { fileDiff, sid ->
@@ -328,10 +334,10 @@ class SessionDiffPipelineTest {
             log = NoOpLogger,
             tracer = NoOpDiffTracer,
         )
-        val event = OpenCodeEvent.SessionDiff(
+        val event = SessionDiffSnapshot(
             sessionId = h.sessionId,
             files = listOf(
-                OpenCodeEvent.SessionDiffFile(
+                SessionDiffFile(
                     file = h.abs(file),
                     before = "",
                     after = "line1\n",
@@ -345,8 +351,6 @@ class SessionDiffPipelineTest {
             projectBase = h.projectBase,
             event = event,
             fromHistory = true,
-            turnScope = null,
-            previousAfterByFile = prepareSnapshot.previousAfterByFile,
         )
         freshStore.commitSessionDiffApply(
             stateLock = freshLock,
@@ -393,16 +397,13 @@ class SessionDiffPipelineTest {
 
         // Turn 1: touch note1.md
         h.disk[h.abs(file1)] = "line1\n"
-        h.commitTurnPatch(listOf(file1))
         h.applySessionDiff(listOf(file1 to SessionDiffStatus.MODIFIED))
         assertEquals(setOf(h.abs(file1)), h.liveHunkFiles(), "after turn 1: only note1.md should be live")
 
-        // Turn 2: touch note2.md only — server diff now reports both files cumulatively
+        // Turn 2: message diff reports note2.md only.
         h.disk[h.abs(file2)] = "line2\n"
-        h.commitTurnPatch(listOf(file2))
         h.applySessionDiff(
             listOf(
-                file1 to SessionDiffStatus.MODIFIED,
                 file2 to SessionDiffStatus.MODIFIED,
             )
         )
@@ -411,14 +412,12 @@ class SessionDiffPipelineTest {
             h.liveHunkFiles(),
             "after turn 2: only note2.md should be live — note1.md was not touched this turn",
         )
+        assertEquals(2, h.trackedFileCount(), "after turn 2: cumulative file state should retain note1.md")
 
-        // Turn 3: touch note3.md only — server diff now reports all three files cumulatively
+        // Turn 3: message diff reports note3.md only.
         h.disk[h.abs(file3)] = "line3\n"
-        h.commitTurnPatch(listOf(file3))
         h.applySessionDiff(
             listOf(
-                file1 to SessionDiffStatus.MODIFIED,
-                file2 to SessionDiffStatus.MODIFIED,
                 file3 to SessionDiffStatus.ADDED,
             )
         )
@@ -427,6 +426,7 @@ class SessionDiffPipelineTest {
             h.liveHunkFiles(),
             "after turn 3: only note3.md should be live — note1.md and note2.md were not touched this turn",
         )
+        assertEquals(3, h.trackedFileCount(), "after turn 3: cumulative file state should retain older files")
     }
 
     // -------------------------------------------------------------------------
@@ -438,13 +438,12 @@ class SessionDiffPipelineTest {
     fun `historical diff apply preserves existing live hunks`() {
         val file = "note.md"
         h.disk[h.abs(file)] = "line1\n"
-        h.commitTurnPatch(listOf(file))
         h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
         assertEquals(setOf(h.abs(file)), h.liveHunkFiles(), "live turn should create inline hunks")
 
         h.applyHistoricalSessionDiffFiles(
             listOf(
-                OpenCodeEvent.SessionDiffFile(
+                SessionDiffFile(
                     file = h.abs(file),
                     before = "",
                     after = "line1\n",
@@ -506,10 +505,10 @@ class SessionDiffPipelineTest {
 
         harness.applyLiveMessageDiff(
             sessionId = childSessionId,
-            diff = OpenCodeEvent.SessionDiff(
+            diff = SessionDiffSnapshot(
                 sessionId = childSessionId,
                 files = listOf(
-                    OpenCodeEvent.SessionDiffFile(
+                    SessionDiffFile(
                         file = file,
                         before = "",
                         after = content,
@@ -559,9 +558,8 @@ class SessionDiffPipelineTest {
     }
 
     // -------------------------------------------------------------------------
-    // Each turn's diff must be computed relative to the file content at the
-    // start of that turn, not the original file. The pipeline advances the
-    // baseline (effectiveBefore) to lastAfter after each turn. If it does not,
+    // Each turn's diff must be computed relative to the server-provided file
+    // content at the start of that turn, not the original file. If it does not,
     // lines changed in earlier turns will appear highlighted in later turns.
     //
     // MANUAL VERIFICATION:
@@ -574,13 +572,33 @@ class SessionDiffPipelineTest {
         val file = "note.md"
 
         h.disk[h.abs(file)] = "line1\n"
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        h.applySessionDiffFiles(
+            listOf(
+                SessionDiffFile(
+                    file = h.abs(file),
+                    before = "",
+                    after = "line1\n",
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
         assertEquals("", h.baseline(file), "turn 1 baseline should be empty (file was new)")
 
         h.disk[h.abs(file)] = "line1\nline2\n"
-        h.commitTurnPatch(listOf(file))
-        h.applySessionDiff(listOf(file to SessionDiffStatus.MODIFIED))
+        h.applySessionDiffFiles(
+            listOf(
+                SessionDiffFile(
+                    file = h.abs(file),
+                    before = "line1\n",
+                    after = "line1\nline2\n",
+                    additions = 1,
+                    deletions = 0,
+                    status = SessionDiffStatus.MODIFIED,
+                )
+            )
+        )
         assertEquals("line1\n", h.baseline(file), "turn 2 baseline should be turn 1's final content")
     }
 
@@ -641,16 +659,10 @@ class SessionDiffPipelineTest {
                 expectedGeneration = generation,
                 currentGeneration = { generation },
             )!!
-            val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
-                stateLock = stateLock,
-                sessionId = sessionId,
-                expectedGeneration = generation,
-                currentGeneration = { generation },
-            )!!
-            val event = OpenCodeEvent.SessionDiff(
+            val event = SessionDiffSnapshot(
                 sessionId = sessionId,
                 files = listOf(
-                    OpenCodeEvent.SessionDiffFile(
+                    SessionDiffFile(
                         file = absFile,
                         before = serverBefore, // server's authoritative original
                         after = currentContent,
@@ -664,8 +676,6 @@ class SessionDiffPipelineTest {
                 projectBase = projectBase,
                 event = event,
                 fromHistory = true,
-                turnScope = null,
-                previousAfterByFile = prepareSnapshot.previousAfterByFile,
             )
             stateStore.commitSessionDiffApply(
                 stateLock = stateLock,

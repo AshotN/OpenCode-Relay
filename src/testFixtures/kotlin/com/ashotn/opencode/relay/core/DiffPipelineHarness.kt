@@ -1,9 +1,9 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.FileDiff
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
+import com.ashotn.opencode.relay.api.session.SessionDiffFile
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
-import com.ashotn.opencode.relay.util.TextUtil
 import com.ashotn.opencode.relay.util.createPathIdentityMap
 import com.ashotn.opencode.relay.util.toProjectRelativePath
 import com.intellij.openapi.diagnostic.Logger
@@ -15,7 +15,6 @@ import com.intellij.openapi.diagnostic.Logger
  * ```
  * val h = DiffPipelineHarness()
  * h.disk[h.abs("note.md")] = "content\n"
- * h.commitTurnPatch(listOf("note.md"))
  * h.applySessionDiff(listOf("note.md" to SessionDiffStatus.MODIFIED))
  * ```
  */
@@ -57,22 +56,11 @@ class DiffPipelineHarness(
     /** Converts a relative path to an absolute path under [projectBase]. */
     fun abs(relPath: String): String = "$projectBase/$relPath"
 
-    fun commitTurnPatch(relPaths: List<String>) {
-        eventReducer.commitTurnPatch(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(projectBase, relPaths),
-            generation = generation,
-            currentGeneration = { generation },
-        )
-    }
-
     fun applySessionDiff(
         files: List<Pair<String, SessionDiffStatus>>,
     ): ApplySessionDiffResult? {
         val eventFiles = files.map { (relPath, status) ->
-            OpenCodeEvent.SessionDiffFile(
+            SessionDiffFile(
                 file = abs(relPath),
                 before = "",
                 after = "",
@@ -85,58 +73,42 @@ class DiffPipelineHarness(
     }
 
     fun applySessionDiffFiles(
-        files: List<OpenCodeEvent.SessionDiffFile>,
-        isMessageScoped: Boolean = false,
+        files: List<SessionDiffFile>,
     ): ApplySessionDiffResult? {
-        return applySessionDiffFiles(files, fromHistory = false, isMessageScoped = isMessageScoped)
+        return applySessionDiffFiles(files, fromHistory = false)
     }
 
     fun applyHistoricalSessionDiffFiles(
-        files: List<OpenCodeEvent.SessionDiffFile>,
+        files: List<SessionDiffFile>,
     ): ApplySessionDiffResult? {
-        return applySessionDiffFiles(files, fromHistory = true, isMessageScoped = false)
+        return applySessionDiffFiles(files, fromHistory = true)
     }
 
     private fun applySessionDiffFiles(
-        files: List<OpenCodeEvent.SessionDiffFile>,
+        files: List<SessionDiffFile>,
         fromHistory: Boolean,
-        isMessageScoped: Boolean,
     ): ApplySessionDiffResult? {
-        val decision = eventReducer.beginSessionDiffApply(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            fromHistory = fromHistory,
-            generation = generation,
-            currentGeneration = { generation },
-        )
-        if (!decision.shouldApply) return null
-        val revision = decision.revision!!
-        val turnScope = decision.turnScope
-
-        val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
+        val revision = stateStore.reserveRevisionForSessionDiffApply(
             stateLock = stateLock,
             sessionId = sessionId,
             expectedGeneration = generation,
             currentGeneration = { generation },
-        ) ?: return null
+        )
+        if (revision == null) return null
 
-        val event = OpenCodeEvent.SessionDiff(
+        val event = SessionDiffSnapshot(
             sessionId = sessionId,
             files = files.map { diffFile ->
                 diffFile.copy(
                     file = diffFile.file.toProjectRelativePath(projectBase),
                 )
             },
-            isMessageScoped = isMessageScoped,
         )
 
         val computedState = computer.compute(
             projectBase = projectBase,
             event = event,
             fromHistory = fromHistory,
-            turnScope = turnScope,
-            previousAfterByFile = prepareSnapshot.previousAfterByFile,
         )
 
         return stateStore.commitSessionDiffApply(
@@ -184,8 +156,6 @@ class DiffPipelineHarness(
 
     fun selectedSessionId(): String? = stateStore.selectedSessionId
 
-    fun hasPendingTurnFiles(): Boolean = stateStore.pendingTurnFilesBySession.isNotEmpty()
-
     fun resetState() {
         stateStore.resetState()
     }
@@ -230,5 +200,3 @@ object NoOpLogger : Logger() {
     override fun warn(message: String, t: Throwable?) = Unit
     override fun error(message: String, t: Throwable?, vararg details: String) = Unit
 }
-
-fun normalizeTestContent(content: String): String = TextUtil.normalizeContent(content)

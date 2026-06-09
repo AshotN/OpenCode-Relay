@@ -3,7 +3,6 @@ package com.ashotn.opencode.relay.api.session
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.withTestServer
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -66,7 +65,7 @@ class SessionApiClientTest {
             val client = SessionApiClient()
             val result = client.fetchSessionDiffSnapshot(port, "ses_1", "msg_1")
 
-            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+            val success = assertIs<ApiResult.Success<SessionDiffSnapshot>>(result)
             assertEquals("ses_1", success.value.sessionId)
             assertEquals(1, success.value.files.size)
             assertEquals("a.txt", success.value.files.first().file)
@@ -76,7 +75,7 @@ class SessionApiClientTest {
     }
 
     @Test
-    fun `fetchSessionDiffSnapshot returns empty event for empty body`() {
+    fun `fetchSessionDiffSnapshot returns empty snapshot for empty body`() {
         withTestServer { server, port ->
             server.createContext("/session/ses_1/diff") { exchange ->
                 exchange.sendResponseHeaders(204, -1)
@@ -86,7 +85,7 @@ class SessionApiClientTest {
             val client = SessionApiClient()
             val result = client.fetchSessionDiffSnapshot(port, "ses_1", "msg_1")
 
-            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+            val success = assertIs<ApiResult.Success<SessionDiffSnapshot>>(result)
             assertEquals("ses_1", success.value.sessionId)
             assertEquals(0, success.value.files.size)
         }

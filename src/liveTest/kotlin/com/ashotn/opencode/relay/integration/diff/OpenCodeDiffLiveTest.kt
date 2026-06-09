@@ -7,6 +7,8 @@ import com.ashotn.opencode.relay.integration.OpenCodeTestServer
 import com.ashotn.opencode.relay.integration.OpenCodeTestVersions
 import com.ashotn.opencode.relay.api.session.Session
 import com.ashotn.opencode.relay.api.session.SessionApiClient
+import com.ashotn.opencode.relay.api.session.SessionDiffFile
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.core.CoreDiffStateHarness
 import com.ashotn.opencode.relay.core.DiffPipelineHarness
@@ -34,7 +36,7 @@ class OpenCodeDiffLiveTest(
 
     private data class ChildDiffs(
         val sessions: List<Session>,
-        val diffsBySessionId: Map<String, OpenCodeEvent.SessionDiff>,
+        val diffsBySessionId: Map<String, SessionDiffSnapshot>,
         val fileToChildSessionId: Map<String, String>,
         val diffSummaryRoleByFile: Map<String, String>,
     )
@@ -386,11 +388,15 @@ class OpenCodeDiffLiveTest(
             assertFileText(environment.repoRoot.resolve("pkg/bravo.py"), "def value():\n    return \"bravo-new\"\n")
             assertFileText(environment.repoRoot.resolve("pkg/charlie.py"), "def value():\n    return \"charlie-new\"\n")
 
-            val finalDiff = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(
+            val finalDiff = assertIs<ApiResult.Success<SessionDiffSnapshot>>(
                 sessionClient.fetchSessionDiffSnapshot(server.port, sessionId),
             ).value
             val finalFiles = finalDiff.files.map { normalizeDiffPath(environment.repoRoot, it.file) }.toSet()
-            assertEquals(expectedFiles, finalFiles.intersect(expectedFiles), "final server diff should include all Python files")
+            assertEquals(
+                expectedFiles,
+                finalFiles.intersect(expectedFiles),
+                "final server diff should include all Python files"
+            )
 
             val latestLoadedFiles = snapshots
                 .groupBy { it.messageId }
@@ -441,7 +447,7 @@ class OpenCodeDiffLiveTest(
             )
             assertFileText(file, aiContent)
 
-            val serverDiff = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(
+            val serverDiff = assertIs<ApiResult.Success<SessionDiffSnapshot>>(
                 sessionClient.fetchSessionDiffSnapshot(server.port, sessionId),
             ).value
             assertTrue(
@@ -534,8 +540,8 @@ class OpenCodeDiffLiveTest(
         port: Int,
         sessionId: String,
         relativePath: String,
-    ): OpenCodeEvent.SessionDiffFile {
-        val diff = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(
+    ): SessionDiffFile {
+        val diff = assertIs<ApiResult.Success<SessionDiffSnapshot>>(
             sessionClient.fetchSessionDiffSnapshot(port, sessionId),
         ).value
         val diffFile = diff.files.firstOrNull { it.file == relativePath }
@@ -553,7 +559,7 @@ class OpenCodeDiffLiveTest(
     ): ChildDiffs {
         val deadline = System.currentTimeMillis() + timeoutMs
         var lastSessions: List<Session> = emptyList()
-        var lastDiffsBySessionId: Map<String, OpenCodeEvent.SessionDiff> = emptyMap()
+        var lastDiffsBySessionId: Map<String, SessionDiffSnapshot> = emptyMap()
 
         while (System.currentTimeMillis() < deadline) {
             val sessions = when (val hierarchy = sessionClient.fetchSessionHierarchy(port)) {
@@ -639,7 +645,7 @@ class OpenCodeDiffLiveTest(
         projectBase: String,
         rootSessionId: String,
         sessions: List<Session>,
-        diffsBySessionId: Map<String, OpenCodeEvent.SessionDiff>,
+        diffsBySessionId: Map<String, SessionDiffSnapshot>,
     ): CoreDiffStateHarness.VisibleState {
         val harness = CoreDiffStateHarness(projectBase)
         diffsBySessionId.forEach { (diffSessionId, diff) ->
@@ -684,7 +690,7 @@ class OpenCodeDiffLiveTest(
     private fun assertInlineDiffFromServerPayload(
         repoRoot: String,
         sessionId: String,
-        diffFile: OpenCodeEvent.SessionDiffFile,
+        diffFile: SessionDiffFile,
         expectedRemoved: String,
         expectedAdded: String,
     ) {
@@ -709,8 +715,6 @@ class OpenCodeDiffLiveTest(
                 )
             },
         )
-        harness.disk[harness.abs(relativeFile)] = diffFile.before
-        harness.commitTurnPatch(listOf(relativeFile))
         harness.disk[harness.abs(relativeFile)] = diffFile.after
         harness.applySessionDiffFiles(listOf(diffFile))
 
@@ -724,7 +728,7 @@ class OpenCodeDiffLiveTest(
 
     private fun assertPreviewMatchesServerDiff(
         preview: SessionApiClient.FileDiffPreview,
-        diffFile: OpenCodeEvent.SessionDiffFile,
+        diffFile: SessionDiffFile,
     ) {
         assertEquals(normalizeNewlinesOnly(diffFile.before), normalizeNewlinesOnly(preview.before))
         assertEquals(normalizeNewlinesOnly(diffFile.after), normalizeNewlinesOnly(preview.after))

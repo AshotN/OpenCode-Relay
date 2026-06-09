@@ -47,27 +47,6 @@ sealed class OpenCodeEvent {
     ) : OpenCodeEvent()
 
     /**
-     * Diff snapshot fetched from the OpenCode HTTP API. The payload contains
-     * patch-based entries; the plugin reconstructs before/after text and stores
-     * a typed [SessionDiffStatus].
-     */
-    data class SessionDiff(
-        val sessionId: String,
-        val files: List<SessionDiffFile>,
-        /** OpenCode >= 1.16 diff fetched with messageID; use server `before` as the live turn baseline. */
-        val isMessageScoped: Boolean = false,
-    ) : OpenCodeEvent()
-
-    data class SessionDiffFile(
-        val file: String,       // project-relative path
-        val before: String,
-        val after: String,
-        val additions: Int,
-        val deletions: Int,
-        val status: SessionDiffStatus,
-    )
-
-    /**
      * mcp.tools.changed — fired when an MCP server reports its tool list has changed.
      * Used as a proxy signal that an MCP server's connection status may have changed.
      */

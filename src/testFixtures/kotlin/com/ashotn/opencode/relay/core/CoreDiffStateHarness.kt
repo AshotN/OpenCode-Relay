@@ -1,9 +1,8 @@
 package com.ashotn.opencode.relay.core
 
 import com.ashotn.opencode.relay.api.session.Session
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.core.session.SessionScopeResolver
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
-import com.ashotn.opencode.relay.util.toAbsolutePath
 
 /**
  * JVM-only harness for applying real OpenCode diff payloads to the plugin's core
@@ -47,47 +46,26 @@ class CoreDiffStateHarness(
 
     fun applyLiveMessageDiff(
         sessionId: String,
-        diff: OpenCodeEvent.SessionDiff,
+        diff: SessionDiffSnapshot,
         readContent: (String) -> String,
     ) {
         contentReader = readContent
-        val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(
-            projectBase = projectBase,
-            files = diff.files.map { it.file },
-        )
-        stateStore.commitTurnPatch(
-            stateLock = stateLock,
-            sessionId = sessionId,
-            touchedPaths = touchedPaths,
-            expectedGeneration = generation,
-            currentGeneration = { generation },
-        )
-        val decision = eventReducer.beginSessionDiffApply(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            fromHistory = false,
-            generation = generation,
-            currentGeneration = { generation },
-        )
-        check(decision.shouldApply) { "core reducer skipped live diff for $sessionId: ${decision.skipReason}" }
-        val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
+        val revision = stateStore.reserveRevisionForSessionDiffApply(
             stateLock = stateLock,
             sessionId = sessionId,
             expectedGeneration = generation,
             currentGeneration = { generation },
-        ) ?: error("missing prepare snapshot for $sessionId")
+        )
+        check(revision != null) { "core state skipped live diff for $sessionId" }
         val computedState = computer.compute(
             projectBase = projectBase,
-            event = diff.copy(isMessageScoped = true),
+            event = diff,
             fromHistory = false,
-            turnScope = decision.turnScope,
-            previousAfterByFile = prepareSnapshot.previousAfterByFile,
         )
         val commitResult = stateStore.commitSessionDiffApply(
             stateLock = stateLock,
             sessionId = sessionId,
-            revision = decision.revision ?: error("missing revision for $sessionId"),
+            revision = revision,
             fromHistory = false,
             computedState = computedState,
             nowMillis = System.currentTimeMillis(),
@@ -142,8 +120,6 @@ class CoreDiffStateHarness(
             },
         )
     }
-
-    fun absPath(file: String): String = toAbsolutePath(projectBase, file)
 
     private fun contentLines(content: String): List<String> = if (content.isEmpty()) emptyList() else content.lines()
 }

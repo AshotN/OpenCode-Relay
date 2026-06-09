@@ -7,9 +7,8 @@ import com.ashotn.opencode.relay.api.transport.mapJsonArrayResponse
 import com.ashotn.opencode.relay.api.transport.mapJsonObjectResponse
 import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
 import com.ashotn.opencode.relay.api.transport.withParseContext
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
-import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.ipc.PatchDiffTextParser
+import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import com.ashotn.opencode.relay.util.getIntOrNull
 import com.ashotn.opencode.relay.util.getObjectOrNull
 import com.ashotn.opencode.relay.util.getStringOrNull
@@ -85,7 +84,7 @@ class SessionApiClient(
         port: Int,
         sessionId: String,
         messageId: String? = null,
-    ): ApiResult<OpenCodeEvent.SessionDiff> {
+    ): ApiResult<SessionDiffSnapshot> {
         if (messageId == null) {
             return fetchSessionMessageDiffSnapshot(port, sessionId)
         }
@@ -96,33 +95,33 @@ class SessionApiClient(
             is ApiResult.Success -> {
                 val body = response.value
                 if (body.isNullOrBlank()) {
-                    ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
+                    ApiResult.Success(SessionDiffSnapshot(sessionId, emptyList()))
                 } else {
                     transport.mapJsonArrayResponse(ApiResult.Success(body)) { diffArray ->
                         val files =
                             diffArray.mapNotNull { element -> parseSessionDiffFile(element.asJsonObjectOrNull()) }
-                        ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, files))
+                        ApiResult.Success(SessionDiffSnapshot(sessionId, files))
                     }.withParseContext(endpoint)
                 }
             }
         }
     }
 
-    fun fetchSessionMessageDiffSnapshot(port: Int, sessionId: String): ApiResult<OpenCodeEvent.SessionDiff> {
+    fun fetchSessionMessageDiffSnapshot(port: Int, sessionId: String): ApiResult<SessionDiffSnapshot> {
         return when (val refsResult = fetchSessionMessageDiffRefs(port, sessionId)) {
             is ApiResult.Failure -> refsResult
             is ApiResult.Success -> {
                 val messageIds = refsResult.value
-                if (messageIds.isEmpty()) return ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, emptyList()))
+                if (messageIds.isEmpty()) return ApiResult.Success(SessionDiffSnapshot(sessionId, emptyList()))
 
-                val mergedFilesByPath = linkedMapOf<String, OpenCodeEvent.SessionDiffFile>()
+                val mergedFilesByPath = linkedMapOf<String, SessionDiffFile>()
                 for (messageId in messageIds) {
                     when (val diffResult = fetchSessionDiffSnapshot(port, sessionId, messageId)) {
                         is ApiResult.Failure -> return diffResult
                         is ApiResult.Success -> mergeDiffFiles(mergedFilesByPath, diffResult.value.files)
                     }
                 }
-                ApiResult.Success(OpenCodeEvent.SessionDiff(sessionId, mergedFilesByPath.values.toList()))
+                ApiResult.Success(SessionDiffSnapshot(sessionId, mergedFilesByPath.values.toList()))
             }
         }
     }
@@ -186,7 +185,7 @@ class SessionApiClient(
         )
     }
 
-    private fun parseSessionDiffFile(obj: JsonObject?): OpenCodeEvent.SessionDiffFile? {
+    private fun parseSessionDiffFile(obj: JsonObject?): SessionDiffFile? {
         if (obj == null) return null
         val file = obj.getStringOrNull("file") ?: return null
         val diffText = PatchDiffTextParser.parse(obj)
@@ -194,7 +193,7 @@ class SessionApiClient(
         val deletions = obj.getIntOrNull("deletions") ?: 0
         val status = SessionDiffStatus.fromWire(obj.getStringOrNull("status") ?: "unknown")
 
-        return OpenCodeEvent.SessionDiffFile(
+        return SessionDiffFile(
             file = file,
             before = diffText.before,
             after = diffText.after,
@@ -205,8 +204,8 @@ class SessionApiClient(
     }
 
     private fun mergeDiffFiles(
-        mergedFilesByPath: MutableMap<String, OpenCodeEvent.SessionDiffFile>,
-        files: List<OpenCodeEvent.SessionDiffFile>,
+        mergedFilesByPath: MutableMap<String, SessionDiffFile>,
+        files: List<SessionDiffFile>,
     ) {
         for (file in files) {
             val existing = mergedFilesByPath[file.file]
