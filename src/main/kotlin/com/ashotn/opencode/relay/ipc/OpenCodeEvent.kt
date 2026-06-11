@@ -28,12 +28,6 @@ sealed class OpenCodeEvent {
     /** session lifecycle changed — refresh session hierarchy metadata. */
     data class SessionLifecycleChanged(val sessionId: String) : OpenCodeEvent()
 
-    /** message.part.updated with type == "patch". */
-    data class TurnPatch(
-        val sessionId: String,
-        val files: List<String>,   // absolute paths
-    ) : OpenCodeEvent()
-
     /** message.updated for a user message whose summary contains per-message diffs. */
     data class MessageDiffAvailable(
         val sessionId: String,
@@ -51,27 +45,6 @@ sealed class OpenCodeEvent {
         val sessionId: String,
         val reply: PermissionReply,
     ) : OpenCodeEvent()
-
-    /**
-     * session.diff — fired after every tool execution with the cumulative diff
-     * for the session. The payload contains patch-based entries; the plugin
-     * reconstructs before/after text and stores a typed [SessionDiffStatus].
-     */
-    data class SessionDiff(
-        val sessionId: String,
-        val files: List<SessionDiffFile>,
-        /** OpenCode >= 1.16 diff fetched with messageID; use server `before` as the live turn baseline. */
-        val isMessageScoped: Boolean = false,
-    ) : OpenCodeEvent()
-
-    data class SessionDiffFile(
-        val file: String,       // project-relative path
-        val before: String,
-        val after: String,
-        val additions: Int,
-        val deletions: Int,
-        val status: SessionDiffStatus,
-    )
 
     /**
      * mcp.tools.changed — fired when an MCP server reports its tool list has changed.

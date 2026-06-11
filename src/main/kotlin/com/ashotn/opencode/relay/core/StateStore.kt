@@ -7,7 +7,6 @@ import java.util.concurrent.ConcurrentHashMap
 internal class StateStore {
     data class SessionDiffComputedState(
         val projectBase: String,
-        val nextAfterByFile: MutableMap<String, String>,
         val processedPaths: Set<String>, // Paths touched by the current apply pass.
         val newHunksByFile: Map<String, List<DiffHunk>>,
         val newDeleted: Set<String>,
@@ -31,8 +30,6 @@ internal class StateStore {
     val deletedBySession = ConcurrentHashMap<String, Set<String>>()
     val addedBySession = ConcurrentHashMap<String, Set<String>>()
     val baselineBeforeBySessionAndFile = ConcurrentHashMap<String, Map<String, String>>()
-    val lastAfterBySessionAndFile = ConcurrentHashMap<String, MutableMap<String, String>>()
-    val pendingTurnFilesBySession = ConcurrentHashMap<String, Set<String>>()
     val messageSummaryFileCountBySession = ConcurrentHashMap<String, Int>()
     val messageSummaryFileCountUpdatedAtBySession = ConcurrentHashMap<String, Long>()
 
@@ -41,7 +38,6 @@ internal class StateStore {
     fun reserveRevisionForSessionDiffApply(
         stateLock: Any,
         sessionId: String,
-        fromHistory: Boolean,
         expectedGeneration: Long,
         currentGeneration: () -> Long,
     ): Long? = synchronized(stateLock) {
@@ -61,10 +57,6 @@ internal class StateStore {
         val currentBaselines: Map<String, String>,
     )
 
-    data class SessionDiffPrepareSnapshot(
-        val previousAfterByFile: Map<String, String>,
-    )
-
     private data class SessionStateSnapshot(
         val hunks: Map<String, List<DiffHunk>>,
         val liveHunks: Map<String, List<DiffHunk>>,
@@ -75,20 +67,6 @@ internal class StateStore {
 
     fun currentSessionRevision(stateLock: Any, sessionId: String): Long = synchronized(stateLock) {
         diffApplyRevisionBySession[sessionId] ?: 0L
-    }
-
-    fun snapshotSessionDiffPrepareState(
-        stateLock: Any,
-        sessionId: String,
-        expectedGeneration: Long,
-        currentGeneration: () -> Long,
-    ): SessionDiffPrepareSnapshot? = synchronized(stateLock) {
-        if (expectedGeneration != currentGeneration()) {
-            return@synchronized null
-        }
-        SessionDiffPrepareSnapshot(
-            previousAfterByFile = (lastAfterBySessionAndFile[sessionId] ?: emptyMap()).toMap(),
-        )
     }
 
     fun snapshotSessionReconcileState(
@@ -109,34 +87,6 @@ internal class StateStore {
             currentAdded = (addedBySession[sessionId] ?: emptySet()).toSet(),
             currentBaselines = (baselineBeforeBySessionAndFile[sessionId] ?: emptyMap()).toMap(),
         )
-    }
-
-    fun commitTurnPatch(
-        stateLock: Any,
-        sessionId: String,
-        touchedPaths: Set<String>,
-        expectedGeneration: Long,
-        currentGeneration: () -> Long,
-    ): Boolean = synchronized(stateLock) {
-        if (expectedGeneration != currentGeneration()) {
-            return@synchronized false
-        }
-        pendingTurnFilesBySession[sessionId] = touchedPaths
-        true
-    }
-
-    fun consumeTurnScopeForDiff(
-        stateLock: Any,
-        sessionId: String,
-        fromHistory: Boolean,
-        expectedGeneration: Long,
-        currentGeneration: () -> Long,
-    ): Set<String>? = synchronized(stateLock) {
-        if (expectedGeneration != currentGeneration()) {
-            return@synchronized null
-        }
-        if (fromHistory) return@synchronized null
-        pendingTurnFilesBySession.remove(sessionId)
     }
 
     fun commitSessionBusy(
@@ -199,7 +149,6 @@ internal class StateStore {
             return@synchronized null
         }
 
-        lastAfterBySessionAndFile[sessionId] = computedState.nextAfterByFile
         val previousState = SessionStateSnapshot(
             hunks = hunksBySessionAndFile[sessionId] ?: emptyMap(),
             liveHunks = liveHunksBySessionAndFile[sessionId] ?: emptyMap(),
@@ -341,8 +290,6 @@ internal class StateStore {
         deletedBySession.clear()
         addedBySession.clear()
         baselineBeforeBySessionAndFile.clear()
-        lastAfterBySessionAndFile.clear()
-        pendingTurnFilesBySession.clear()
         messageSummaryFileCountBySession.clear()
         messageSummaryFileCountUpdatedAtBySession.clear()
         diffApplyRevisionBySession.clear()

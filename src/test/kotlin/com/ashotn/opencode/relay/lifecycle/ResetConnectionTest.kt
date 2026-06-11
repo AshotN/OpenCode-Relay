@@ -11,7 +11,7 @@ import kotlin.test.assertTrue
  * Verifies that [StateStore.resetState] — the core of the "Reset Connection"
  * action — clears all accumulated client-side state after real diff activity.
  *
- * The test populates the store via the full pipeline (turn.patch → session.diff)
+ * The test populates the store via the full message-diff pipeline
  * to ensure resetState() is exercised against realistic data, not an empty store.
  */
 class ResetConnectionTest {
@@ -37,7 +37,6 @@ class ResetConnectionTest {
         h.disk[h.abs("src/Util.kt")] = "fun util() {}\n"
         h.disk[h.abs("src/New.kt")] = ""
 
-        h.commitTurnPatch(listOf("src/Main.kt", "src/Util.kt", "src/New.kt"))
         h.applySessionDiff(
             listOf(
                 "src/Main.kt" to SessionDiffStatus.MODIFIED,
@@ -46,17 +45,12 @@ class ResetConnectionTest {
             )
         )
 
-        // Also set a selected session and a pending turn patch to verify those are cleared
+        // Also set a selected session to verify scalar state is cleared.
         h.selectCurrentSession()
-        h.commitTurnPatch(listOf("src/Main.kt"))
 
         // Pre-condition: store has real data
         assertTrue(h.hunkFiles().isNotEmpty(), "pre-condition: hunkFiles should be populated")
         assertEquals(h.sessionId, h.selectedSessionId(), "pre-condition: selectedSessionId should be set")
-        assertTrue(
-            h.hasPendingTurnFiles(),
-            "pre-condition: pendingTurnFilesBySession should be populated"
-        )
 
         // Act: reset (mirrors what stopListening() calls internally)
         h.resetState()
@@ -85,7 +79,6 @@ class ResetConnectionTest {
 
         // First round of activity
         h.disk[h.abs("note.md")] = "original\n"
-        h.commitTurnPatch(listOf("note.md"))
         h.applySessionDiff(listOf("note.md" to SessionDiffStatus.MODIFIED))
         assertEquals(setOf(h.abs("note.md")), h.hunkFiles(), "pre-reset: file should be tracked")
 
@@ -95,7 +88,6 @@ class ResetConnectionTest {
 
         // Second round of activity after reset — must work as if starting fresh
         h.disk[h.abs("note.md")] = "new content\n"
-        h.commitTurnPatch(listOf("note.md"))
         val result = h.applySessionDiff(listOf("note.md" to SessionDiffStatus.MODIFIED))
 
         assertEquals(setOf(h.abs("note.md")), h.hunkFiles(), "post-reset activity: file should be tracked again")

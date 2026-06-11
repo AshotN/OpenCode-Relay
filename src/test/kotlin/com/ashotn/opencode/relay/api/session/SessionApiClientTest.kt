@@ -3,7 +3,6 @@ package com.ashotn.opencode.relay.api.session
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.withTestServer
-import com.ashotn.opencode.relay.ipc.OpenCodeEvent
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
@@ -64,9 +63,9 @@ class SessionApiClientTest {
             }
 
             val client = SessionApiClient()
-            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+            val result = client.fetchSessionDiffSnapshot(port, "ses_1", "msg_1")
 
-            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+            val success = assertIs<ApiResult.Success<SessionDiffSnapshot>>(result)
             assertEquals("ses_1", success.value.sessionId)
             assertEquals(1, success.value.files.size)
             assertEquals("a.txt", success.value.files.first().file)
@@ -76,7 +75,7 @@ class SessionApiClientTest {
     }
 
     @Test
-    fun `fetchSessionDiffSnapshot returns empty event for empty body`() {
+    fun `fetchSessionDiffSnapshot returns empty snapshot for empty body`() {
         withTestServer { server, port ->
             server.createContext("/session/ses_1/diff") { exchange ->
                 exchange.sendResponseHeaders(204, -1)
@@ -84,9 +83,9 @@ class SessionApiClientTest {
             }
 
             val client = SessionApiClient()
-            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+            val result = client.fetchSessionDiffSnapshot(port, "ses_1", "msg_1")
 
-            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
+            val success = assertIs<ApiResult.Success<SessionDiffSnapshot>>(result)
             assertEquals("ses_1", success.value.sessionId)
             assertEquals(0, success.value.files.size)
         }
@@ -102,91 +101,11 @@ class SessionApiClientTest {
             }
 
             val client = SessionApiClient()
-            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+            val result = client.fetchSessionDiffSnapshot(port, "ses_1", "msg_1")
 
             val failure = assertIs<ApiResult.Failure>(result)
             val error = assertIs<ApiError.ParseError>(failure.error)
-            assertEquals("GET /session/ses_1/diff: Expected JSON array", error.message)
-        }
-    }
-
-    @Test
-    fun `fetchSessionDiffSnapshot keeps old session diff compatibility before message diff fallback`() {
-        withTestServer { server, port ->
-            val diffQueries = mutableListOf<String?>()
-            server.createContext("/session/ses_1/diff") { exchange ->
-                diffQueries.add(exchange.requestURI.rawQuery)
-                val body = if (exchange.requestURI.rawQuery == null) {
-                    "[]"
-                } else {
-                    """
-                        [
-                          {
-                            "file": "a.txt",
-                            "patch": "Index: a.txt\n===================================================================\n--- a.txt\t\n+++ a.txt\t\n@@ -1 +1 @@\n-old\n+new\n",
-                            "additions": 1,
-                            "deletions": 1,
-                            "status": "modified"
-                          }
-                        ]
-                    """.trimIndent()
-                }
-                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
-                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            }
-            server.createContext("/session/ses_1/message") { exchange ->
-                val body = """
-                    [
-                      {
-                        "info": {
-                          "id": "msg_user",
-                          "role": "user",
-                          "summary": { "diffs": [{ "file": "a.txt" }] }
-                        }
-                      },
-                      {
-                        "info": {
-                          "id": "msg_assistant",
-                          "role": "assistant",
-                          "summary": { "diffs": [{ "file": "assistant.txt" }] }
-                        }
-                      }
-                    ]
-                """.trimIndent()
-                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
-                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-            }
-
-            val client = SessionApiClient()
-            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
-
-            val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
-            assertEquals(listOf(null, "messageID=msg_user"), diffQueries)
-            assertEquals(listOf("a.txt"), success.value.files.map { it.file })
-        }
-    }
-
-    @Test
-    fun `fetchSessionDiffSnapshot returns empty diff when message fallback is unsupported`() {
-        for (statusCode in listOf(404, 405)) {
-            withTestServer { server, port ->
-                server.createContext("/session/ses_1/diff") { exchange ->
-                    val body = "[]"
-                    exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
-                    exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
-                }
-                server.createContext("/session/ses_1/message") { exchange ->
-                    exchange.sendResponseHeaders(statusCode, -1)
-                    exchange.close()
-                }
-
-                val client = SessionApiClient()
-                val result = client.fetchSessionDiffSnapshot(port, "ses_1")
-
-                val success = assertIs<ApiResult.Success<OpenCodeEvent.SessionDiff>>(result)
-                assertEquals("ses_1", success.value.sessionId)
-                assertEquals(emptyList(), success.value.files)
-            }
+            assertEquals("GET /session/ses_1/diff?messageID=msg_1: Expected JSON array", error.message)
         }
     }
 
@@ -209,6 +128,13 @@ class SessionApiClientTest {
                         "status": "modified"
                       }
                     ]
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            server.createContext("/session/ses_1/message") { exchange ->
+                val body = """
+                    [{"info":{"id":"msg_1","role":"user","summary":{"diffs":[{"file":"a.txt"}]}}}]
                 """.trimIndent()
                 exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
                 exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
@@ -237,6 +163,13 @@ class SessionApiClientTest {
                         "status": "modified"
                       }
                     ]
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            server.createContext("/session/ses_1/message") { exchange ->
+                val body = """
+                    [{"info":{"id":"msg_1","role":"user","summary":{"diffs":[{"file":"a.txt"}]}}}]
                 """.trimIndent()
                 exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
                 exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }

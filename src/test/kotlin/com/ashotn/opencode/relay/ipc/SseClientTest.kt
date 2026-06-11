@@ -5,7 +5,6 @@ import org.junit.Test
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import kotlin.test.assertFalse
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
@@ -95,36 +94,6 @@ class SseClientTest {
                 ),
                 statuses,
             )
-        }
-    }
-
-    @Test
-    fun `ignores deprecated session idle event`() {
-        withTestServer { server, port ->
-            server.createContext("/global/event") { exchange ->
-                val body = """
-                    data: {"directory":"/project","payload":{"type":"session.idle","properties":{"sessionID":"ses_1"}}}
-
-                """.trimIndent()
-                val bytes = body.toByteArray(Charsets.UTF_8)
-                exchange.responseHeaders.add("Content-Type", "text/event-stream")
-                exchange.sendResponseHeaders(200, bytes.size.toLong())
-                exchange.responseBody.use { it.write(bytes) }
-            }
-
-            val eventReceived = CountDownLatch(1)
-            val client = SseClient(
-                port = port,
-                directory = "/project",
-                onEvent = { eventReceived.countDown() },
-            )
-
-            try {
-                client.start()
-                assertFalse(eventReceived.await(400, TimeUnit.MILLISECONDS))
-            } finally {
-                client.stop()
-            }
         }
     }
 

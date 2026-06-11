@@ -42,15 +42,8 @@ class OpenCodeTestEventCollector(
         sessionStatusCountLocked(sessionId, status)
     }
 
-    fun sessionDiffCount(sessionId: String): Int = synchronized(lock) {
-        events.count { it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId }
-    }
-
     fun diffSignalCount(sessionId: String): Int = synchronized(lock) {
-        events.count {
-            (it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId) ||
-                    (it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId)
-        }
+        events.count { it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId }
     }
 
     fun messageDiffEvents(sessionId: String): List<OpenCodeEvent.MessageDiffAvailable> = synchronized(lock) {
@@ -87,19 +80,10 @@ class OpenCodeTestEventCollector(
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
-    fun awaitSessionDiff(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionDiff =
-        awaitEvent(timeoutMs, "session.diff for $sessionId count >= $atLeastCount") { recordedEvents ->
-            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionDiff>()
-                .filter { it.sessionId == sessionId }
-            if (matching.size >= atLeastCount) matching.last() else null
-        }
-
     fun awaitDiffSignal(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent =
         awaitEvent(timeoutMs, "diff signal for $sessionId count >= $atLeastCount") { recordedEvents ->
-            val matching = recordedEvents.filter {
-                (it is OpenCodeEvent.SessionDiff && it.sessionId == sessionId) ||
-                        (it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId)
-            }
+            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.MessageDiffAvailable>()
+                .filter { it.sessionId == sessionId }
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
@@ -110,11 +94,6 @@ class OpenCodeTestEventCollector(
                 is OpenCodeEvent.ServerConnected -> "server.connected"
                 is OpenCodeEvent.SessionStatus -> {
                     "session.status(sessionId=${event.sessionId}, type=${event.status.name.lowercase()})"
-                }
-
-                is OpenCodeEvent.SessionDiff -> {
-                    val files = event.files.joinToString(",") { it.file.substringAfterLast('/') }
-                    "session.diff(sessionId=${event.sessionId}, files=$files)"
                 }
 
                 is OpenCodeEvent.MessageDiffAvailable -> {

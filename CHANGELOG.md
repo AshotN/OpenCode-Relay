@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+<p><strong>Breaking Changes</strong></p>
+<ul>
+  <li>Drop support for OpenCode versions earlier than 1.16.0.</li>
+</ul>
+
 ## [1.4.0] - 2026-06-09
 
 <p><strong>Changed</strong></p>

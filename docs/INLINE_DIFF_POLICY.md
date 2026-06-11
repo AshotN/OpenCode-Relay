@@ -20,9 +20,8 @@ Concurrent sessions show their activity in the session list (busy badge, file co
 Within the selected session, only files touched in the **latest committed turn** are highlighted.
 Files that were modified in earlier turns of the same session must not remain highlighted.
 
-The OpenCode server always returns a cumulative `session.diff` across the entire session. The
-plugin must scope inline rendering to the current turn's file set (`turn.patch` scope), ignoring
-all prior turns.
+OpenCode message diff updates are scoped to the user message that produced them. The plugin must
+use those message-scoped diffs for inline rendering so prior turns do not remain highlighted.
 
 ### Rule 3 — Selecting a session swaps inline context immediately
 

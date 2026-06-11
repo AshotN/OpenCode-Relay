@@ -14,10 +14,8 @@ internal object SessionEndpoints {
 
     fun list(): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/session")
 
-    fun diff(sessionId: String, messageId: String? = null): ApiEndpoint {
-        val query = messageId
-            ?.let { "?messageID=${URLEncoder.encode(it, StandardCharsets.UTF_8)}" }
-            ?: ""
+    fun diff(sessionId: String, messageId: String): ApiEndpoint {
+        val query = "?messageID=${URLEncoder.encode(messageId, StandardCharsets.UTF_8)}"
         return ApiEndpoint(method = HttpMethod.GET, path = "/session/$sessionId/diff$query")
     }
 

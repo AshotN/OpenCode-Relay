@@ -3,6 +3,7 @@ package com.ashotn.opencode.relay.core
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.api.session.Session
 import com.ashotn.opencode.relay.api.session.SessionApiClient
+import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.core.session.PendingSessionSelection
@@ -157,7 +158,6 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         if (generation != lifecycleGeneration.get()) return
         when (event) {
             is OpenCodeEvent.ServerConnected -> Unit
-            is OpenCodeEvent.SessionDiff -> handleSessionDiff(event, fromHistory = false, generation = generation)
             is OpenCodeEvent.SessionStatus -> {
                 applySessionStatus(event.sessionId, event.status, generation)
             }
@@ -166,13 +166,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 refreshSessionHierarchyAsync(generation)
             }
 
-            is OpenCodeEvent.TurnPatch -> {
-                // OpenCode < 1.16 path: patch parts only scope files; session.diff carries the content.
-                recordTurnFiles(event.sessionId, event.files, generation, "turn.patch.committed")
-            }
-
             is OpenCodeEvent.MessageDiffAvailable -> {
-                // OpenCode >= 1.16 path: fetch the message-specific diff, then use the same apply pipeline.
                 handleMessageDiffAvailable(event, generation)
             }
 
@@ -183,39 +177,6 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
             is OpenCodeEvent.PermissionAsked -> permissionService.handlePermissionAsked(event)
             is OpenCodeEvent.PermissionReplied -> permissionService.handlePermissionReplied(event)
         }
-    }
-
-    private fun recordTurnFiles(
-        sessionId: String,
-        files: List<String>,
-        generation: Long,
-        traceKind: String,
-    ): Boolean {
-        val projectBase = project.basePath
-        if (projectBase == null) {
-            log.debug("OpenCodeCoreService: skip turn scope reason=missingProjectBase session=$sessionId generation=$generation")
-            return false
-        }
-        val touchedPaths = eventReducer.reduceTurnPatchTouchedPaths(projectBase, files)
-        if (generation != lifecycleGeneration.get()) return false
-        val committed = eventReducer.commitTurnPatch(
-            stateStore = stateStore,
-            stateLock = stateLock,
-            sessionId = sessionId,
-            touchedPaths = touchedPaths,
-            generation = generation,
-            currentGeneration = { lifecycleGeneration.get() },
-        )
-        if (!committed) return false
-        trace(traceKind) {
-            mapOf(
-                "sessionId" to sessionId,
-                "touchedPaths" to touchedPaths.toList(),
-                "generation" to generation,
-            )
-        }
-        log.debug("OpenCodeCoreService: turn scope recorded session=$sessionId touchedFileCount=${touchedPaths.size} generation=$generation")
-        return true
     }
 
     private fun handleMessageDiffAvailable(event: OpenCodeEvent.MessageDiffAvailable, generation: Long) {
@@ -263,19 +224,10 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                     return@executeOnPooledThread
                 }
 
-                if (!recordTurnFiles(
-                        event.sessionId,
-                        eventDiff.files.map { it.file },
-                        generation,
-                        "message.diff.scope.committed"
-                    )
-                ) {
-                    return@executeOnPooledThread
-                }
                 log.debug(
                     "OpenCodeCoreService: apply message diff session=${event.sessionId} message=${event.messageId} eventFiles=${event.files} fileCount=${eventDiff.files.size} files=${eventDiff.files.map { it.file }} generation=$generation",
                 )
-                handleSessionDiff(eventDiff.copy(isMessageScoped = true), fromHistory = false, generation = generation)
+                handleSessionDiff(eventDiff, fromHistory = false, generation = generation)
             } catch (e: Exception) {
                 log.debug(
                     "OpenCodeCoreService: failed message diff load session=${event.sessionId} message=${event.messageId} port=$currentPort generation=$generation",
@@ -338,56 +290,37 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         refreshSessionHierarchyAsync(generation)
     }
 
-    private fun handleSessionDiff(event: OpenCodeEvent.SessionDiff, fromHistory: Boolean, generation: Long) {
+    private fun handleSessionDiff(event: SessionDiffSnapshot, fromHistory: Boolean, generation: Long) {
         if (generation != lifecycleGeneration.get()) return
         val projectBase = project.basePath
         if (projectBase == null) {
-            log.debug("OpenCodeCoreService: skip session.diff reason=missingProjectBase session=${event.sessionId} generation=$generation")
+            log.debug("OpenCodeCoreService: skip diff.apply reason=missingProjectBase session=${event.sessionId} generation=$generation")
             return
         }
 
         val trackLiveApply = !fromHistory
         if (trackLiveApply) beginLiveSessionDiffApply(event.sessionId)
 
-        val applyDecision = eventReducer.beginSessionDiffApply(
-            stateStore = stateStore,
+        val revision = stateStore.reserveRevisionForSessionDiffApply(
             stateLock = stateLock,
             sessionId = event.sessionId,
-            fromHistory = fromHistory,
-            generation = generation,
+            expectedGeneration = generation,
             currentGeneration = { lifecycleGeneration.get() },
         )
-        trace("session.diff.decision", fromHistory = fromHistory) {
+        trace("diff.apply.decision", fromHistory = fromHistory) {
             mapOf(
                 "sessionId" to event.sessionId,
                 "fromHistory" to fromHistory,
                 "fileCount" to event.files.size,
-                "shouldApply" to applyDecision.shouldApply,
-                "skipReason" to applyDecision.skipReason?.name,
-                "revision" to applyDecision.revision,
-                "turnScope" to applyDecision.turnScope?.toList(),
+                "shouldApply" to (revision != null),
+                "skipReason" to if (revision == null) "staleOrAlreadyLoaded" else null,
+                "revision" to revision,
                 "generation" to generation,
             )
         }
-        if (!applyDecision.shouldApply) {
+        if (revision == null) {
             if (trackLiveApply) finishLiveSessionDiffApply(event.sessionId)
-            when (applyDecision.skipReason) {
-                EventReducer.SessionDiffSkipReason.UNSCOPED_LIVE -> {
-                    log.debug("OpenCodeCoreService: skip session.diff reason=unscopedLive session=${event.sessionId} generation=$generation")
-                }
-
-                EventReducer.SessionDiffSkipReason.STALE_OR_ALREADY_LOADED -> {
-                    log.debug("OpenCodeCoreService: skip session.diff reason=historyAlreadyLoaded session=${event.sessionId} generation=$generation")
-                }
-
-                null -> {
-                }
-            }
-            return
-        }
-        val turnScope = applyDecision.turnScope
-        val revision = applyDecision.revision ?: run {
-            if (trackLiveApply) finishLiveSessionDiffApply(event.sessionId)
+            log.debug("OpenCodeCoreService: skip diff.apply reason=staleOrAlreadyLoaded session=${event.sessionId} generation=$generation")
             return
         }
 
@@ -396,22 +329,13 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
                 log.debug(
-                    "OpenCodeCoreService: apply session.diff session=${event.sessionId} revision=$revision fileCount=${event.files.size} fromHistory=$fromHistory generation=$generation",
+                    "OpenCodeCoreService: apply diff.apply session=${event.sessionId} revision=$revision fileCount=${event.files.size} fromHistory=$fromHistory generation=$generation",
                 )
-
-                val prepareSnapshot = stateStore.snapshotSessionDiffPrepareState(
-                    stateLock = stateLock,
-                    sessionId = event.sessionId,
-                    expectedGeneration = generation,
-                    currentGeneration = { lifecycleGeneration.get() },
-                ) ?: return@executeOnPooledThread
 
                 val computedState = sessionDiffApplyComputer.compute(
                     projectBase = projectBase,
                     event = event,
                     fromHistory = fromHistory,
-                    turnScope = turnScope,
-                    previousAfterByFile = prepareSnapshot.previousAfterByFile,
                 )
 
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
@@ -434,8 +358,8 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                     currentGeneration = { lifecycleGeneration.get() },
                 )
                 if (commitResult == null) {
-                    log.debug("OpenCodeCoreService: skip session.diff reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
-                    trace("session.diff.commitSkipped", fromHistory = fromHistory) {
+                    log.debug("OpenCodeCoreService: skip diff.apply reason=staleApply session=${event.sessionId} revision=$revision generation=$generation")
+                    trace("diff.apply.commitSkipped", fromHistory = fromHistory) {
                         mapOf(
                             "sessionId" to event.sessionId,
                             "revision" to revision,
@@ -463,7 +387,7 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 val filesToRefresh = changedFiles + previousLiveVisibleFiles + nextLiveVisibleFiles
 
                 log.debug(
-                    "OpenCodeCoreService: applied session.diff session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} refreshedFileCount=${filesToRefresh.size} generation=$generation",
+                    "OpenCodeCoreService: applied diff.apply session=${event.sessionId} revision=$revision trackedFileCount=${computedState.newHunksByFile.size} deletedFileCount=${computedState.newDeleted.size} addedFileCount=${computedState.newAdded.size} changedFileCount=${changedFiles.size} refreshedFileCount=${filesToRefresh.size} generation=$generation",
                 )
 
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
@@ -578,14 +502,11 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         fromHistory: Boolean,
         changedFiles: Set<String>,
     ) {
-        trace("session.diff.committed", fromHistory = fromHistory) {
+        trace("diff.apply.committed", fromHistory = fromHistory) {
             // Only record file names and byte-length summaries — never store full file content
             // in a trace field, as that causes unbounded memory growth during active sessions.
             val stateSnapshot = synchronized(stateLock) {
                 val baselineSizes = stateStore.baselineBeforeBySessionAndFile[sessionId]
-                    ?.mapValues { (_, v) -> v.length }
-                    ?: emptyMap()
-                val lastAfterSizes = stateStore.lastAfterBySessionAndFile[sessionId]
                     ?.mapValues { (_, v) -> v.length }
                     ?: emptyMap()
                 mapOf(
@@ -595,7 +516,6 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                     "deletedFiles" to (stateStore.deletedBySession[sessionId]?.sorted() ?: emptyList()),
                     "addedFiles" to (stateStore.addedBySession[sessionId]?.sorted() ?: emptyList()),
                     "baselineBeforeSizeByFile" to baselineSizes,
-                    "lastAfterSizeByFile" to lastAfterSizes,
                 )
             }
             mapOf(
@@ -735,8 +655,6 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
             stateStore.deletedBySession.remove(sessionId)
             stateStore.addedBySession.remove(sessionId)
             stateStore.baselineBeforeBySessionAndFile.remove(sessionId)
-            stateStore.lastAfterBySessionAndFile.remove(sessionId)
-            stateStore.pendingTurnFilesBySession.remove(sessionId)
             stateStore.messageSummaryFileCountBySession.remove(sessionId)
             stateStore.messageSummaryFileCountUpdatedAtBySession.remove(sessionId)
             historicalDiffLoadedSessions.remove(sessionId)
