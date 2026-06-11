@@ -54,13 +54,16 @@ import java.awt.event.ActionEvent
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.font.TextAttribute
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.AbstractAction
 import javax.swing.BorderFactory
+import javax.swing.BoxLayout
 import javax.swing.DefaultListCellRenderer
 import javax.swing.DefaultListModel
 import javax.swing.JButton
 import javax.swing.JList
+import javax.swing.ListCellRenderer
 import javax.swing.JPanel
 import javax.swing.JSplitPane
 import javax.swing.KeyStroke
@@ -424,8 +427,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
                 )
             }
 
-        fileListModel.clear()
-        rows.forEach { fileListModel.addElement(it) }
+        replaceListModelItems(fileListModel, rows)
 
         revalidate()
         repaint()
@@ -452,8 +454,7 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
         isUpdatingSessionSelection = true
         try {
-            sessionListModel.clear()
-            rows.forEach { sessionListModel.addElement(it) }
+            replaceListModelItems(sessionListModel, rows)
 
             if (selectedIndex != null) {
                 sessionList.selectedIndex = selectedIndex
@@ -522,6 +523,22 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         }
     }
 
+    private fun <T> replaceListModelItems(model: DefaultListModel<T>, rows: List<T>) {
+        if (model.matches(rows)) return
+        model.clear()
+        if (rows.isNotEmpty()) {
+            model.addAll(rows)
+        }
+    }
+
+    private fun <T> DefaultListModel<T>.matches(rows: List<T>): Boolean {
+        if (size != rows.size) return false
+        for (i in rows.indices) {
+            if (getElementAt(i) != rows[i]) return false
+        }
+        return true
+    }
+
     private fun permissionButton(
         label: String,
         bg: JBColor,
@@ -576,6 +593,10 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
     }
 
     private inner class SessionRowCellRenderer : DefaultListCellRenderer() {
+        init {
+            putClientProperty("html.disable", true)
+        }
+
         override fun getListCellRendererComponent(
             list: JList<*>, value: Any?, index: Int,
             isSelected: Boolean, cellHasFocus: Boolean,
@@ -585,18 +606,15 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
 
             icon = if (row.isBusy) busySessionIcon else idleSessionIcon
             iconTextGap = JBUI.scale(6)
-            val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
-            val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-            val titleColor = when {
+            foreground = when {
                 isSelected -> foreground
                 row.isBusy -> JBColor(Color(0x1565C0), Color(0x90CAF9))
                 else -> foreground
             }
-            val titleHex = String.format("%06x", titleColor.rgb and 0xFFFFFF)
-            val statusText = if (row.isBusy) "&nbsp;<font color='#$dimHex'>running...</font>" else ""
-            val countText = row.trackedFileCount?.let { "&nbsp;<font color='#$dimHex'>($it)</font>" } ?: ""
-            text =
-                "<html><b><font color='#$titleHex'>${row.title}</font></b>$statusText$countText</html>"
+            font = font.deriveFont(Font.BOLD)
+            val statusText = if (row.isBusy) " running..." else ""
+            val countText = row.trackedFileCount?.let { " ($it)" } ?: ""
+            text = "${row.title}$statusText$countText"
             border = JBUI.Borders.empty(4, 8)
             return this
         }
@@ -607,40 +625,60 @@ class PendingFilesPanel(private val project: Project, parentDisposable: Disposab
         // Message bus connections are closed automatically by Disposer when this is disposed.
     }
 
-    private inner class FilePathCellRenderer : DefaultListCellRenderer() {
+    private inner class FilePathCellRenderer : JPanel(), ListCellRenderer<Any?> {
+        private val nameLabel = JBLabel()
+        private val dirLabel = JBLabel()
+
+        init {
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            border = JBUI.Borders.empty(2, 8)
+            nameLabel.putClientProperty("html.disable", true)
+            dirLabel.putClientProperty("html.disable", true)
+            nameLabel.isOpaque = false
+            dirLabel.isOpaque = false
+            dirLabel.border = JBUI.Borders.emptyLeft(6)
+            add(nameLabel)
+            add(dirLabel)
+        }
+
         override fun getListCellRendererComponent(
             list: JList<*>, value: Any?, index: Int,
             isSelected: Boolean, cellHasFocus: Boolean,
         ): Component {
-            super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus)
+            val row = value as? PendingFileRow
+            if (row == null) {
+                nameLabel.text = ""
+                dirLabel.text = ""
+                return this
+            }
 
-            val row = value as? PendingFileRow ?: return this
+            background = if (isSelected) list.selectionBackground else list.background
+            nameLabel.text = row.name
+            dirLabel.text = row.displayDir
+            nameLabel.font = if (row.isDeleted) {
+                strikethrough(list.font.deriveFont(Font.BOLD))
+            } else {
+                list.font.deriveFont(Font.BOLD)
+            }
+            dirLabel.font = UIUtil.getLabelFont(UIUtil.FontSize.SMALL)
+            dirLabel.foreground = if (isSelected) list.selectionForeground else JBUI.CurrentTheme.Label.disabledForeground()
 
             if (row.isDeleted) {
                 val removedStyle = DiffHighlightStyles.style(DiffHighlightKind.REMOVED)
-                val removedColor = if (isSelected) foreground else (removedStyle.fg ?: JBColor.RED)
-                val removedHex = String.format("%06x", removedColor.rgb and 0xFFFFFF)
-                val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
-                val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text =
-                    "<html><font color='#$removedHex'><s><b>${row.name}</b></s></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
+                nameLabel.foreground = if (isSelected) list.selectionForeground else (removedStyle.fg ?: JBColor.RED)
             } else if (row.isAdded) {
                 val addedStyle = DiffHighlightStyles.style(DiffHighlightKind.ADDED)
-                val addedColor =
-                    if (isSelected) foreground else (addedStyle.fg ?: JBColor(Color(0x2E7D32), Color(0x66BB6A)))
-                val addedHex = String.format("%06x", addedColor.rgb and 0xFFFFFF)
-                val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
-                val dimHex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text =
-                    "<html><font color='#$addedHex'><b>${row.name}</b></font>&nbsp;<font color='#$dimHex'>${row.displayDir}</font></html>"
+                nameLabel.foreground =
+                    if (isSelected) list.selectionForeground else (addedStyle.fg ?: JBColor(Color(0x2E7D32), Color(0x66BB6A)))
             } else {
-                val dimColor = if (isSelected) foreground else JBUI.CurrentTheme.Label.disabledForeground()
-                val hex = String.format("%06x", dimColor.rgb and 0xFFFFFF)
-                text = "<html><b>${row.name}</b>&nbsp;<font color='#$hex'>${row.displayDir}</font></html>"
+                nameLabel.foreground = if (isSelected) list.selectionForeground else list.foreground
             }
 
-            border = JBUI.Borders.empty(2, 8)
             return this
         }
+
+        private fun strikethrough(font: Font): Font = font.deriveFont(
+            mapOf(TextAttribute.STRIKETHROUGH to TextAttribute.STRIKETHROUGH_ON),
+        )
     }
 }
