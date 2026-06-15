@@ -22,7 +22,8 @@ import java.net.URI
 // - Line suffixes: ./src/File.kt:42, src/main/File.kt:42-48, /abs/path/File.kt:42
 // Candidates only become links after resolving to real local files; URI-like targets are ignored.
 private val markdownLinkRegex = Regex("""\[([^\]\r\n]+)]\(([^)\s]+)\)""")
-private val lineAnchorReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/)?[^\s()<>"]+?#L\d+(?:-L\d+)?)(?!(?:[\w/-]|\.\w))""")
+private val lineAnchorReferenceRegex =
+    Regex("""(?<![\w./-])((?:\.{1,2}/|/)?[^\s()<>"]+?#L\d+(?:-L\d+)?)(?!(?:[\w/-]|\.\w))""")
 private val lineSuffixReferenceRegex =
     Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+?:\d+(?:-\d+)?)(?!(?:[\w/-]|\.\w))""")
 private val localFileReferenceRegex = Regex("""(?<![\w./-])((?:\.{1,2}/|/|[\w.-]+/)[^\s\[\]()<>"]+)(?![\w./-])""")
@@ -79,7 +80,8 @@ internal class MarkdownTerminalHyperlinkFilter(
             target: String,
             trimTrailingPunctuation: Boolean = false,
         ): LinkResultItem? {
-            val linkRange = if (trimTrailingPunctuation) trimTrailingReferencePunctuation(matchRange, target) else matchRange
+            val linkRange =
+                if (trimTrailingPunctuation) trimTrailingReferencePunctuation(matchRange, target) else matchRange
             val linkTarget = if (trimTrailingPunctuation) target.take(linkRange.last - matchRange.first + 1) else target
 
             if (consumedRanges.any { range ->
@@ -138,8 +140,10 @@ internal class MarkdownTerminalHyperlinkFilter(
             if (path.isAbsolute) path else File(basePath, decodePath(parsedTarget.path))
         }
 
-        if (!file.isFile) return null
+        // This filter runs while JediTerm holds its text-buffer lock, so avoid any filesystem stat here.
+        // `findFileByIoFile` uses the VFS cache; files become linkable after normal VFS refreshes.
         return LocalFileSystem.getInstance().findFileByIoFile(file)
+            ?.takeUnless { it.isDirectory }
             ?.let { ResolvedTerminalLink(it, parsedTarget.lineNumber) }
     }
 
