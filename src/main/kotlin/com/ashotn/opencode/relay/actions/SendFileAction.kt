@@ -20,9 +20,7 @@ import com.intellij.openapi.vfs.VirtualFile
  * Action that appends an @path file reference to the TUI's prompt input buffer via
  * POST /tui/append-prompt.
  *
- * Works in two contexts:
- *  - Editor: sends a reference to the file currently open in the editor.
- *  - Project View: sends references to all selected files (directories excluded — use SendFolderAction for those).
+ * Editor action that sends a reference to the file currently open in the editor.
  *
  * Sends references only — no file content is embedded in the prompt.
  */
@@ -69,21 +67,10 @@ class SendFileAction : AnAction(), DumbAware {
         }
     }
 
-    /**
-     * Returns the files to reference:
-     *  - In an editor context: the single file open in the editor.
-     *  - In a Project View context: all selected files (non-directory).
-     */
     private fun resolveFiles(e: AnActionEvent): List<VirtualFile> {
-        val editor = e.getData(CommonDataKeys.EDITOR)
-        if (editor != null) {
-            // Editor context — use the file backing the editor
-            val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
-            return if (file != null && !file.isDirectory) listOf(file) else emptyList()
-        }
+        e.getData(CommonDataKeys.EDITOR) ?: return emptyList()
 
-        // Project View context — filter out directories (those go to SendFolderAction)
-        val virtualFiles = e.getData(CommonDataKeys.VIRTUAL_FILE_ARRAY) ?: return emptyList()
-        return virtualFiles.filter { !it.isDirectory }
+        val file = e.getData(CommonDataKeys.VIRTUAL_FILE)
+        return if (file != null && !file.isDirectory) listOf(file) else emptyList()
     }
 }

@@ -60,6 +60,12 @@ enum class ActionStrings(
         description = "Append a folder reference to OpenCode TUI",
         disabledDescription = "OpenCode must be running to send a folder",
     ),
+    SEND_PROJECT_VIEW_SELECTION(
+        text = "Send Selected Items to OpenCode",
+        disabledText = "Send Selected Items to OpenCode (OpenCode must be running)",
+        description = "Append selected file and folder references to OpenCode TUI",
+        disabledDescription = "OpenCode must be running to send selected items",
+    ),
     RESET_PLUGIN(
         text = "Reset OpenCode Relay",
         disabledText = "Reset OpenCode Relay (server must be running or starting)",

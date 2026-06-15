@@ -35,11 +35,12 @@ class SendSelectionAction : AnAction(), DumbAware {
         val project = e.project
         val editor = e.getData(CommonDataKeys.EDITOR)
         val ready = project != null && OpenCodePlugin.getInstance(project).serverState == ServerState.READY
+        val hasEditor = editor != null
 
-        // Hide entirely when invoked outside an editor context (e.g. tool window, global shortcut)
-        e.presentation.isVisible = editor != null
+        // Hide and disable entirely outside editors so Project View actions can use the same shortcut.
+        e.presentation.isVisible = hasEditor
         e.presentation.icon = AllIcons.Actions.Upload
-        e.applyStrings(ActionStrings.SEND_SELECTION, ready)
+        e.applyStrings(ActionStrings.SEND_SELECTION, ready && hasEditor)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
