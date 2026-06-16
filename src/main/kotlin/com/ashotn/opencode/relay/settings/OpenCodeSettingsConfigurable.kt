@@ -6,6 +6,7 @@ import com.ashotn.opencode.relay.OpenCodeInfo
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.core.EditorDiffRenderer
 import com.ashotn.opencode.relay.settings.OpenCodeSettings.TerminalEngine
+import com.intellij.ide.BrowserUtil
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileChooser.FileChooserDescriptorFactory
 import com.intellij.openapi.options.BoundConfigurable
@@ -16,6 +17,7 @@ import com.intellij.openapi.ui.DialogPanel
 import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.ui.TextFieldWithBrowseButton
 import com.intellij.ui.ToolbarDecorator
+import com.intellij.ui.HyperlinkLabel
 import com.intellij.ui.components.JBPasswordField
 import com.intellij.ui.components.JBTextField
 import com.intellij.ui.dsl.builder.*
@@ -238,6 +240,13 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                                     "in the trace. Only relevant when diff trace logging is enabled. " +
                                     "Takes effect after restarting the IDE.",
                         )
+                }
+            }
+            group("Links") {
+                row("GitHub:") {
+                    cell(HyperlinkLabel("https://github.com/AshotN/OpenCode-Relay").apply {
+                        addHyperlinkListener { BrowserUtil.browse("https://github.com/AshotN/OpenCode-Relay") }
+                    })
                 }
             }
         }

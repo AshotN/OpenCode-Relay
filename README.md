@@ -1,5 +1,7 @@
 # OpenCode Relay for JetBrains IDEs
 
+[![JetBrains Marketplace](https://img.shields.io/jetbrains/plugin/v/30674-opencode-relay?label=JetBrains%20Marketplace)](https://plugins.jetbrains.com/plugin/30674-opencode-relay)
+
 Integrates the [OpenCode](https://opencode.ai) AI coding assistant into IntelliJ-based IDEs.
 <table>
   <tr>

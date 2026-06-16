@@ -7,6 +7,12 @@
   <li>Drop support for OpenCode versions earlier than 1.16.0.</li>
 </ul>
 
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Improve responsiveness when working with large pending file and session lists by avoiding unnecessary list model rebuilds and expensive HTML renderer work.</li>
+  <li>Improve embedded terminal performance by avoiding filesystem stat calls while resolving local Markdown and path hyperlinks.</li>
+</ul>
+
 ## [1.4.0] - 2026-06-09
 
 <p><strong>Changed</strong></p>
