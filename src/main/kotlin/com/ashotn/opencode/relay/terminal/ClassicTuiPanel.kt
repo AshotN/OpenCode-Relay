@@ -18,11 +18,13 @@ import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
+import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
 import java.awt.dnd.DnDConstants
 import java.awt.dnd.DropTarget
 import java.awt.dnd.DropTargetAdapter
 import java.awt.dnd.DropTargetDropEvent
+import java.awt.event.KeyEvent
 import java.io.File
 import java.lang.reflect.Proxy
 import javax.swing.JPanel
@@ -101,6 +103,7 @@ class ClassicTuiPanel(
                     ?.also { panel ->
                         installEmbeddedTerminalDataProvider(project, panel)
                         installFileDropTarget(panel)
+                        installClipboardFilePasteHandler(panel)
                     }
 
             // When the shell process exits, clean up and notify the owner.
@@ -182,7 +185,7 @@ class ClassicTuiPanel(
                     }
 
                     panel.requestFocusInWindow()
-                    sendBracketedPaste(panel, files.joinToString(" ") { file -> shellQuoteIfNeeded(file.absolutePath) })
+                    sendFilesAsBracketedPaste(panel, files)
                     event.dropComplete(true)
                 } catch (e: Exception) {
                     logger.warn("Failed to handle dropped file for OpenCode TUI", e)
@@ -192,18 +195,53 @@ class ClassicTuiPanel(
         }, true)
     }
 
+    private fun installClipboardFilePasteHandler(panel: JBTerminalPanel) {
+        panel.addPreKeyEventHandler { event ->
+            if (!event.isPasteShortcutPress()) return@addPreKeyEventHandler
+
+            val files = clipboardFiles()
+            if (files.isEmpty()) return@addPreKeyEventHandler
+
+            event.consume()
+            sendFilesAsBracketedPaste(panel, files)
+        }
+    }
+
+    private fun sendFilesAsBracketedPaste(panel: JBTerminalPanel, files: List<File>) {
+        sendBracketedPaste(panel, files.joinToString(" ") { file -> shellQuoteIfNeeded(file.absolutePath) })
+    }
+
     private fun sendBracketedPaste(panel: JBTerminalPanel, text: String) {
         panel.terminalOutputStream.sendString("\u001b[200~$text\u001b[201~", false)
     }
 
     private fun shellQuoteIfNeeded(path: String): String {
-        if (path.none { it.isWhitespace() }) return path
+        if (path.none { it.isWhitespace() || it in "'\"\\$`;&|<>()[]{}!*?" }) return path
         return "'${path.replace("'", "'\\''")}'"
     }
 
     private fun droppedFiles(event: DropTargetDropEvent): List<File> {
         val data = event.transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*> ?: return emptyList()
         return data.filterIsInstance<File>()
+    }
+
+    private fun clipboardFiles(): List<File> {
+        return try {
+            val clipboard = Toolkit.getDefaultToolkit().systemClipboard
+            if (!clipboard.isDataFlavorAvailable(DataFlavor.javaFileListFlavor)) return emptyList()
+
+            val data = clipboard.getData(DataFlavor.javaFileListFlavor) as? List<*> ?: return emptyList()
+            data.filterIsInstance<File>()
+        } catch (e: Exception) {
+            logger.debug("Failed to read files from clipboard", e)
+            emptyList()
+        }
+    }
+
+    private fun KeyEvent.isPasteShortcutPress(): Boolean {
+        if (id != KeyEvent.KEY_PRESSED) return false
+        if (keyCode != KeyEvent.VK_V) return false
+        return modifiersEx == Toolkit.getDefaultToolkit().menuShortcutKeyMaskEx
     }
 
     companion object {
