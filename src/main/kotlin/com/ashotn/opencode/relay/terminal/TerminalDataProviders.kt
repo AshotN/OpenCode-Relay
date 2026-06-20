@@ -11,7 +11,10 @@ import javax.swing.JComponent
 
 private const val DATA_PROVIDER_CLIENT_PROPERTY = "DataProvider"
 
-internal fun installEmbeddedTerminalDataProvider(project: Project, panel: JBTerminalPanel) {
+internal fun installEmbeddedTerminalDataProvider(
+    project: Project,
+    panel: JBTerminalPanel,
+) {
     // JBTerminalPanel's internal TerminalEscapeKeyListener moves focus back to the editor
     // whenever the terminal reports a ToolWindow in its data context. Our terminal is embedded
     // inside a custom tool window. Install the override on the terminal panel itself so the
@@ -19,6 +22,10 @@ internal fun installEmbeddedTerminalDataProvider(project: Project, panel: JBTerm
     installTerminalToolWindowOverride(panel)
     installEmbeddedTerminalKeyOverrides(panel)
     installMarkdownTerminalHyperlinkFilter(project, panel)
+}
+
+internal fun uninstallEmbeddedTerminalDataProvider(panel: JBTerminalPanel) {
+    uninstallTerminalToolWindowOverride(panel)
 }
 
 internal fun installTerminalToolWindowOverride(component: JComponent) {

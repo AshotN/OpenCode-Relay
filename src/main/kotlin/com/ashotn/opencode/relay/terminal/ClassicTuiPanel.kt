@@ -18,6 +18,12 @@ import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
+import java.awt.datatransfer.DataFlavor
+import java.awt.dnd.DnDConstants
+import java.awt.dnd.DropTarget
+import java.awt.dnd.DropTargetAdapter
+import java.awt.dnd.DropTargetDropEvent
+import java.io.File
 import java.lang.reflect.Proxy
 import javax.swing.JPanel
 
@@ -92,14 +98,17 @@ class ClassicTuiPanel(
             Disposer.register(this, widget)
             terminalPanel =
                 ShellTerminalWidget.asShellJediTermWidget(widget)?.terminalPanel
-                    ?.also { installEmbeddedTerminalDataProvider(project, it) }
+                    ?.also { panel ->
+                        installEmbeddedTerminalDataProvider(project, panel)
+                        installFileDropTarget(panel)
+                    }
 
             // When the shell process exits, clean up and notify the owner.
             widget.addTerminationCallback({
                 ApplicationManager.getApplication().invokeLater {
                     logger.debug("Classic terminal process terminated")
                     if (terminalWidget === widget) {
-                        uninstallEmbeddedTerminalDataProvider()
+                        uninstallEmbeddedTerminalIntegrations()
                         terminalWidget = null
                         remove(widget.component)
                         revalidate()
@@ -133,7 +142,7 @@ class ClassicTuiPanel(
 
     private fun tearDown() {
         val widget = terminalWidget ?: return
-        uninstallEmbeddedTerminalDataProvider()
+        uninstallEmbeddedTerminalIntegrations()
         terminalWidget = null
         remove(widget.component)
         revalidate()
@@ -148,9 +157,53 @@ class ClassicTuiPanel(
 
     override fun dispose() = tearDown()
 
-    private fun uninstallEmbeddedTerminalDataProvider() {
-        terminalPanel?.let(::uninstallTerminalToolWindowOverride)
+    private fun uninstallEmbeddedTerminalIntegrations() {
+        terminalPanel?.let { panel ->
+            uninstallEmbeddedTerminalDataProvider(panel)
+            panel.dropTarget = null
+        }
         terminalPanel = null
+    }
+
+    private fun installFileDropTarget(panel: JBTerminalPanel) {
+        panel.dropTarget = DropTarget(panel, DnDConstants.ACTION_COPY, object : DropTargetAdapter() {
+            override fun drop(event: DropTargetDropEvent) {
+                if (!event.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+                    event.rejectDrop()
+                    return
+                }
+
+                event.acceptDrop(DnDConstants.ACTION_COPY)
+                try {
+                    val files = droppedFiles(event)
+                    if (files.isEmpty()) {
+                        event.dropComplete(false)
+                        return
+                    }
+
+                    panel.requestFocusInWindow()
+                    sendBracketedPaste(panel, files.joinToString(" ") { file -> shellQuoteIfNeeded(file.absolutePath) })
+                    event.dropComplete(true)
+                } catch (e: Exception) {
+                    logger.warn("Failed to handle dropped file for OpenCode TUI", e)
+                    event.dropComplete(false)
+                }
+            }
+        }, true)
+    }
+
+    private fun sendBracketedPaste(panel: JBTerminalPanel, text: String) {
+        panel.terminalOutputStream.sendString("\u001b[200~$text\u001b[201~", false)
+    }
+
+    private fun shellQuoteIfNeeded(path: String): String {
+        if (path.none { it.isWhitespace() }) return path
+        return "'${path.replace("'", "'\\''")}'"
+    }
+
+    private fun droppedFiles(event: DropTargetDropEvent): List<File> {
+        val data = event.transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*> ?: return emptyList()
+        return data.filterIsInstance<File>()
     }
 
     companion object {
