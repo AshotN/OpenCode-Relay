@@ -115,4 +115,41 @@ Responses are sent back to the server immediately.
 ## Requirements
 
 - A JetBrains IDE based on IntelliJ Platform 2024.3.7 or later
-- [OpenCode CLI](https://opencode.ai/docs) version `1.16.0+` installed and on `PATH` (or the path configured in settings)
+- [OpenCode CLI](https://opencode.ai/docs) version `1.16.0+` installed and on `PATH` (or the path configured in
+  settings)
+
+## JetBrains MCP
+
+OpenCode Relay will warn you when JetBrains MCP is disabled or when a running OpenCode server is not connected to it.
+
+**It is highly recommended to enable JetBrains MCP for the best experience.**
+
+To enable JetBrains MCP:
+
+1. Open **Settings | Tools | MCP Server** in your JetBrains
+   IDE and enable the server.
+2. Note the MCP server URL or port shown in the IDE settings.
+3. Add a `jetbrains` MCP server to your `opencode.json`.
+4. Restart the OpenCode server so it reloads the config.
+
+Basic `opencode.json` example:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "jetbrains": {
+      "type": "remote",
+      "url": "http://localhost:64342/sse",
+      "enabled": true
+    }
+  }
+}
+```
+
+Edit `url` to match the host, port, and path from **Settings | Tools | MCP Server**. If your IDE shows a different
+port, replace `64342` with that port.
+
+You may wish to disable some of the tools provided by the MCP - Settings | Tools | MCP Server | Exposed Tools
+You may also want to provide some guidance to the agent in your AGENTS.MD file to use any of the tools you have enabled.
+Models are not likely to use the tools without some guidance.

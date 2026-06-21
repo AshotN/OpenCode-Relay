@@ -198,6 +198,14 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                                     "If OPENCODE_CONFIG_DIR is already set, the plugin leaves it unchanged.",
                         )
                 }
+                row {
+                    checkBox("Show JetBrains MCP availability warning")
+                        .bindSelected(pendingState::jetBrainsMcpWarningEnabled)
+                        .comment(
+                            "Shows a dismissible tool window banner when JetBrains MCP is disabled " +
+                                    "or unavailable to OpenCode.",
+                        )
+                }
             }
             group("Permissions") {
                 row {
@@ -414,6 +422,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.terminalEngine =
             if (settings.terminalEngine == TerminalEngine.REWORKED) TerminalEngine.CLASSIC else settings.terminalEngine
         pendingState.braveModeEnabled = settings.braveModeEnabled
+        pendingState.jetBrainsMcpWarningEnabled = settings.jetBrainsMcpWarningEnabled
     }
 
     private fun syncServerCorsOriginsModel(serializedOrigins: String) {

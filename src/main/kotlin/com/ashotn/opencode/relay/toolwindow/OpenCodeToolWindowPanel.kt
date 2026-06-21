@@ -55,6 +55,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
 
     private val outerCardLayout = CardLayout()
     private val outerCardPanel = JPanel(outerCardLayout)
+    private val mcpWarningPanel = JetBrainsMcpWarningPanel(project)
     private val pendingFilesPanel = PendingFilesPanel(project, this)
     private var tuiPanel: TuiPanel = createTuiPanel()
     private var activeTuiEngine: TerminalEngine =
@@ -83,12 +84,14 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     }
 
     init {
+        add(mcpWarningPanel, BorderLayout.NORTH)
         add(splitPane, BorderLayout.CENTER)
         outerCardPanel.add(JPanel(BorderLayout()), CARD_CONTENT) // placeholder until buildContent runs
         outerCardPanel.add(pendingFilesPanel, CARD_PENDING)
 
         Disposer.register(plugin, this)
         Disposer.register(this, slotDisposable)
+        Disposer.register(this, mcpWarningPanel)
 
         project.messageBus.connect(this).subscribe(
             DiffHunksChangedListener.TOPIC,

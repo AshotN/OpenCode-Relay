@@ -48,6 +48,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var sessionsSectionVisible: Boolean = true,
         var terminalEngine: TerminalEngine = TerminalEngine.CLASSIC,
         var braveModeEnabled: Boolean = false,
+        var jetBrainsMcpWarningEnabled: Boolean = true,
     )
 
     private var state = State()
@@ -160,6 +161,12 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             state.braveModeEnabled = value
         }
 
+    var jetBrainsMcpWarningEnabled: Boolean
+        get() = state.jetBrainsMcpWarningEnabled
+        set(value) {
+            state.jetBrainsMcpWarningEnabled = value
+        }
+
 }
 
 fun OpenCodeSettings.State.deepCopy(): OpenCodeSettings.State = copy(
@@ -186,6 +193,7 @@ fun OpenCodeSettings.State.toSnapshot(): OpenCodeSettingsSnapshot = OpenCodeSett
     sessionsSectionVisible = sessionsSectionVisible,
     terminalEngine = terminalEngine,
     braveModeEnabled = braveModeEnabled,
+    jetBrainsMcpWarningEnabled = jetBrainsMcpWarningEnabled,
 )
 
 fun OpenCodeSettings.processEnvironmentVariables(overrides: Map<String, String> = emptyMap()): Map<String, String> =

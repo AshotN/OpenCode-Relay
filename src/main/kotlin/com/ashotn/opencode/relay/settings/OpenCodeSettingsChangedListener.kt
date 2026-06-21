@@ -20,6 +20,7 @@ data class OpenCodeSettingsSnapshot(
     val sessionsSectionVisible: Boolean,
     val terminalEngine: OpenCodeSettings.TerminalEngine,
     val braveModeEnabled: Boolean,
+    val jetBrainsMcpWarningEnabled: Boolean,
 )
 
 fun interface OpenCodeSettingsChangedListener {

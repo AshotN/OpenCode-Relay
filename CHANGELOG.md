@@ -5,6 +5,7 @@
 <p><strong>Added</strong></p>
 <ul>
   <li>Support dragging, dropping, and pasting files into the embedded TUI.</li>
+  <li>A warning banner when JetBrains MCP is not configured.</li>
 </ul>
 
 ## [2.0.0] - 2026-06-17
