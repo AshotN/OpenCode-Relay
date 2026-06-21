@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-06-20
+
 <p><strong>Added</strong></p>
 <ul>
   <li>Support dragging, dropping, and pasting files into the embedded TUI.</li>
