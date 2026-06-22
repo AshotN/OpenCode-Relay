@@ -11,6 +11,7 @@
 
     <depends>com.intellij.modules.platform</depends>
     <depends optional="true" config-file="withTerminal.xml">org.jetbrains.plugins.terminal</depends>
+    <depends optional="true" config-file="withJetBrainsMcp.xml">com.intellij.mcpServer</depends>
 
     <extensions defaultExtensionNs="com.intellij">
         <toolWindow

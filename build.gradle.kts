@@ -50,6 +50,7 @@ dependencies {
         intellijIdea("2024.3.7")
         pluginVerifier()
         bundledPlugin("org.jetbrains.plugins.terminal")
+        compatiblePlugin("com.intellij.mcpServer")
     }
 
     testImplementation(kotlin("test"))

@@ -150,6 +150,9 @@ Basic `opencode.json` example:
 Edit `url` to match the host, port, and path from **Settings | Tools | MCP Server**. If your IDE shows a different
 port, replace `64342` with that port.
 
-You may wish to disable some of the tools provided by the MCP - Settings | Tools | MCP Server | Exposed Tools
-You may also want to provide some guidance to the agent in your AGENTS.MD file to use any of the tools you have enabled.
-Models are not likely to use the tools without some guidance.
+### MCP Tips
+
+* You may wish to disable some of the tools provided by the MCP - Settings | Tools | MCP Server | Exposed Tools
+* You may also want to provide some guidance to the agent in your AGENTS.MD file to use any of the tools you have
+  enabled.
+* Models are not likely to use the tools without some guidance.

@@ -1,8 +1,5 @@
 package com.ashotn.opencode.relay.util
 
-import com.intellij.ide.plugins.PluginManager
-import com.intellij.openapi.extensions.PluginId
-
 sealed class JetBrainsMcpStatus {
     data object Unknown : JetBrainsMcpStatus()
 
@@ -15,19 +12,13 @@ sealed class JetBrainsMcpStatus {
 }
 
 object JetBrainsMcpDetector {
-    private const val MCP_PLUGIN_ID = "com.intellij.mcpServer"
     private const val MCP_SETTINGS_CLASS = "com.intellij.mcpserver.settings.McpServerSettings"
     private const val MCP_SERVICE_CLASS = "com.intellij.mcpserver.impl.McpServerService"
 
     fun status(): JetBrainsMcpStatus {
-        val pluginId = PluginId.getId(MCP_PLUGIN_ID)
-        val plugin = PluginManager.getInstance().findEnabledPlugin(pluginId)
-            ?: return JetBrainsMcpStatus.Unknown
-
-        val classLoader = plugin.pluginClassLoader ?: return JetBrainsMcpStatus.Unknown
-
         return runCatching {
-            val settingsClass = classLoader.loadClass(MCP_SETTINGS_CLASS)
+            val classLoader = JetBrainsMcpDetector::class.java.classLoader
+            val settingsClass = Class.forName(MCP_SETTINGS_CLASS, false, classLoader)
             val settings = settingsClass.getMethod("getInstance").invoke(null)
             val state = settingsClass.getMethod("getState").invoke(settings)
             val enabled = state.javaClass.getMethod("getEnableMcpServer").invoke(state) as Boolean
@@ -41,7 +32,7 @@ object JetBrainsMcpDetector {
                 )
             }
 
-            val serviceClass = classLoader.loadClass(MCP_SERVICE_CLASS)
+            val serviceClass = Class.forName(MCP_SERVICE_CLASS, false, classLoader)
             val companion = serviceClass.getField("Companion").get(null)
             val service = companion.javaClass.getMethod("getInstance").invoke(companion)
 
