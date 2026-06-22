@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+<p><strong>Added</strong></p>
+<ul>
+  <li>Support dragging, dropping, and pasting files into the embedded TUI.</li>
+  <li>A warning banner when JetBrains MCP is not configured.</li>
+</ul>
+
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Remove internal IntelliJ Platform API usage from JetBrains MCP detection while preserving the MCP warning banner behavior.</li>
+</ul>
+
 ## [2.1.0] - 2026-06-20
 
 <p><strong>Added</strong></p>
