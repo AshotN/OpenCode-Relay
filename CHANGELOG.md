@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Support pasting screenshots and other raw clipboard image data into the embedded TUI by saving clipboard images as temporary PNG files.</li>
+  <li>Paste dropped and copied file paths as raw OpenCode TUI paths instead of shell-quoted arguments, improving Windows path compatibility.</li>
+</ul>
+
 ## [2.1.1] - 2026-06-22
 
 <p><strong>Added</strong></p>

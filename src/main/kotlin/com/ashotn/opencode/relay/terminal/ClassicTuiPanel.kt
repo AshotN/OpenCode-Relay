@@ -14,19 +14,27 @@ import com.intellij.openapi.ui.ComponentContainer
 import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalPanel
 import com.intellij.terminal.ui.TerminalWidget
+import com.intellij.util.ui.ImageUtil
 import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import java.awt.BorderLayout
+import java.awt.Image
 import java.awt.Toolkit
 import java.awt.datatransfer.DataFlavor
+import java.awt.datatransfer.Transferable
 import java.awt.dnd.DnDConstants
 import java.awt.dnd.DropTarget
 import java.awt.dnd.DropTargetAdapter
 import java.awt.dnd.DropTargetDropEvent
 import java.awt.event.KeyEvent
+import java.awt.image.BufferedImage
 import java.io.File
+import java.io.IOException
 import java.lang.reflect.Proxy
+import java.nio.file.Files
+import javax.imageio.ImageIO
+import javax.swing.ImageIcon
 import javax.swing.JPanel
 
 /**
@@ -208,16 +216,11 @@ class ClassicTuiPanel(
     }
 
     private fun sendFilesAsBracketedPaste(panel: JBTerminalPanel, files: List<File>) {
-        sendBracketedPaste(panel, files.joinToString(" ") { file -> shellQuoteIfNeeded(file.absolutePath) })
+        files.forEach { file -> sendBracketedPaste(panel, file.absolutePath) }
     }
 
     private fun sendBracketedPaste(panel: JBTerminalPanel, text: String) {
         panel.terminalOutputStream.sendString("\u001b[200~$text\u001b[201~", false)
-    }
-
-    private fun shellQuoteIfNeeded(path: String): String {
-        if (path.none { it.isWhitespace() || it in "'\"\\$`;&|<>()[]{}!*?" }) return path
-        return "'${path.replace("'", "'\\''")}'"
     }
 
     private fun droppedFiles(event: DropTargetDropEvent): List<File> {
@@ -228,14 +231,57 @@ class ClassicTuiPanel(
     private fun clipboardFiles(): List<File> {
         return try {
             val clipboard = Toolkit.getDefaultToolkit().systemClipboard
-            if (!clipboard.isDataFlavorAvailable(DataFlavor.javaFileListFlavor)) return emptyList()
-
-            val data = clipboard.getData(DataFlavor.javaFileListFlavor) as? List<*> ?: return emptyList()
-            data.filterIsInstance<File>()
+            val contents = clipboard.getContents(null) ?: return emptyList()
+            filesFromTransferable(contents)
         } catch (e: Exception) {
             logger.debug("Failed to read files from clipboard", e)
             emptyList()
         }
+    }
+
+    private fun filesFromTransferable(transferable: Transferable): List<File> {
+        if (transferable.isDataFlavorSupported(DataFlavor.javaFileListFlavor)) {
+            val data = transferable.getTransferData(DataFlavor.javaFileListFlavor) as? List<*> ?: return emptyList()
+            val files = data.filterIsInstance<File>()
+            if (files.isNotEmpty()) return files
+        }
+
+        if (!transferable.isDataFlavorSupported(DataFlavor.imageFlavor)) return emptyList()
+
+        val image = transferable.getTransferData(DataFlavor.imageFlavor) as? Image ?: return emptyList()
+        return listOf(writeImageToTempPng(image))
+    }
+
+    private fun writeImageToTempPng(image: Image): File {
+        val file = Files.createTempFile("opencode-clipboard-", ".png").toFile()
+        file.deleteOnExit()
+        try {
+            if (!ImageIO.write(image.toBufferedImage(), "png", file)) {
+                throw IOException("No PNG writer is available")
+            }
+            return file
+        } catch (e: Exception) {
+            file.delete()
+            throw e
+        }
+    }
+
+    private fun Image.toBufferedImage(): BufferedImage {
+        if (this is BufferedImage) return this
+
+        val icon = ImageIcon(this)
+        val width = icon.iconWidth
+        val height = icon.iconHeight
+        if (width <= 0 || height <= 0) throw IOException("Clipboard image has invalid dimensions")
+
+        val bufferedImage = ImageUtil.createImage(width, height, BufferedImage.TYPE_INT_ARGB)
+        val graphics = bufferedImage.createGraphics()
+        try {
+            graphics.drawImage(icon.image, 0, 0, null)
+        } finally {
+            graphics.dispose()
+        }
+        return bufferedImage
     }
 
     private fun KeyEvent.isPasteShortcutPress(): Boolean {
