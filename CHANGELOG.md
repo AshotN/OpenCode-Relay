@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-06-25
+
 <p><strong>Fixed</strong></p>
 <ul>
   <li>Copy selected text to the IDE clipboard in the embedded TUI by intercepting OSC 52 terminal escape sequences.</li>
