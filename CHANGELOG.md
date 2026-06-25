@@ -4,6 +4,7 @@
 
 <p><strong>Fixed</strong></p>
 <ul>
+  <li>Copy selected text to the IDE clipboard in the embedded TUI by intercepting OSC 52 terminal escape sequences.</li>
   <li>Support pasting screenshots and other raw clipboard image data into the embedded TUI by saving clipboard images as temporary PNG files.</li>
   <li>Paste dropped and copied file paths as raw OpenCode TUI paths instead of shell-quoted arguments, improving Windows path compatibility.</li>
 </ul>

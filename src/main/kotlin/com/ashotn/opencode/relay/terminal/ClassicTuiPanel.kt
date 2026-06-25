@@ -9,12 +9,14 @@ import com.ashotn.opencode.relay.util.serverUrl
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.diagnostic.Logger
+import com.intellij.openapi.ide.CopyPasteManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.ComponentContainer
 import com.intellij.openapi.util.Disposer
 import com.intellij.terminal.JBTerminalPanel
 import com.intellij.terminal.ui.TerminalWidget
 import com.intellij.util.ui.ImageUtil
+import com.pty4j.PtyProcess
 import org.jetbrains.plugins.terminal.LocalTerminalDirectRunner
 import org.jetbrains.plugins.terminal.ShellStartupOptions
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
@@ -96,7 +98,7 @@ class ClassicTuiPanel(
                 environmentVariables,
             )
 
-            val runner = LocalTerminalDirectRunner.createTerminalRunner(project)
+            val runner = ClipboardAwareTerminalRunner(project)
             val startupOptions = ShellStartupOptions.Builder()
                 .workingDirectory(workingDir)
                 .shellCommand(command)
@@ -304,5 +306,14 @@ class ClassicTuiPanel(
                     else -> if (method.returnType == Boolean::class.javaPrimitiveType) false else null
                 }
             } as TerminalWidget
+    }
+
+    private class ClipboardAwareTerminalRunner(project: Project) : LocalTerminalDirectRunner(project) {
+        override fun createTtyConnector(process: PtyProcess) =
+            Osc52ClipboardTtyConnector(super.createTtyConnector(process)) { text ->
+                ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) CopyPasteManager.copyTextToClipboard(text)
+                }
+            }
     }
 }
