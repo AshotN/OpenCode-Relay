@@ -30,8 +30,8 @@ private class OpenCodeFileMentionFilter(project: Project) :
         if ('@' in line) {
             fileMentionRegex.findAll(line).forEach { match ->
                 val (path, lineText) = match.destructured
-                val lineNumber = lineText.toIntOrNull() ?: return@forEach
-                links += createLinkData(path, lineNumber - 1, match.range)
+                val lineNumber = if (lineText.isEmpty()) -1 else lineText.toIntOrNull()?.minus(1) ?: return@forEach
+                links += createLinkData(path, lineNumber, match.range)
             }
             directoryMentionRegex.findAll(line).forEach { match ->
                 val (path) = match.destructured
@@ -68,11 +68,11 @@ private class OpenCodeFileMentionFilter(project: Project) :
 }
 
 private val fileMentionRegex = Regex(
-    """(?<!\S)@([^#\s]+)#L([1-9]\d*)(?:-L?[1-9]\d*)?(?![\w-])"""
+    """(?<!\S)@([^#\s]*[^#\s.,:;!?])(?:#L([1-9]\d*)(?:-L?[1-9]\d*)?)?(?![#\w-])"""
 )
 
 private val directoryMentionRegex = Regex(
-    """(?<!\S)@([^#\s]+/)(?![\w./#-])"""
+    """(?<!\S)@([^#\s]+/)(?!(?:[\w./#-]|\(|\[))"""
 )
 
 // Matches PatternBasedFileHyperlinkRawDataFinder's default safeguard for console lines.

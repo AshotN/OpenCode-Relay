@@ -119,6 +119,7 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
             "See ./missing.md:2",
             "See ./README.md:0",
             "See ${readme.toURI()}",
+            "See https:/${readme.path}",
             "See @src/main/Example.kt#L2",
         ).forEach { line -> assertTrue(matcher.findAll(line).isEmpty()) }
     }
@@ -151,6 +152,35 @@ class TerminalDataProvidersTest : BasePlatformTestCase() {
             assertEquals(line.indexOf(target), result.sourceStartOffset)
             assertEquals(line.indexOf(target) + target.length, result.sourceEndOffset)
         }
+    }
+
+    fun `test file mention filter resolves at-prefixed route without line anchor`() {
+        val target = "@packages/portal/src/routes/_private/records/(list)/index.tsx"
+        val file = createProjectFile(target.drop(1), "content\n")
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+        assertNotNull(virtualFile)
+
+        val item = createOpenCodeFileMentionFilter(project)
+            .applyFilter(target, target.length)!!.resultItems.single()
+
+        assertEquals(0, item.highlightStartOffset)
+        assertEquals(target.length, item.highlightEndOffset)
+        assertEquals(virtualFile!!.path, (item.hyperlinkInfo as OpenFileHyperlinkInfo).virtualFile?.path)
+    }
+
+    fun `test file mention filter excludes trailing sentence punctuation`() {
+        val target = "@src/routes/index.tsx"
+        val file = createProjectFile(target.drop(1), "content\n")
+        val virtualFile = LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)
+        assertNotNull(virtualFile)
+        val line = "Open $target."
+
+        val item = createOpenCodeFileMentionFilter(project)
+            .applyFilter(line, line.length)!!.resultItems.single()
+
+        assertEquals(line.indexOf(target), item.highlightStartOffset)
+        assertEquals(line.indexOf(target) + target.length, item.highlightEndOffset)
+        assertEquals(virtualFile!!.path, (item.hyperlinkInfo as OpenFileHyperlinkInfo).virtualFile?.path)
     }
 
     fun `test Classic adapter maps local file reference to JediTerm link`() {
