@@ -57,18 +57,25 @@ class OpenCodePlugin(private val project: Project) : Disposable {
      * Safe to call from any thread; expensive resolution work is moved off the EDT,
      * while topic publication still happens on the EDT.
      */
-    fun resolveExecutable() {
+    fun resolveExecutable(onResolved: ((OpenCodeExecutableResolutionState) -> Unit)? = null) {
         val application = ApplicationManager.getApplication()
         if (application.isDispatchThread) {
             application.executeOnPooledThread {
-                if (isInactive()) return@executeOnPooledThread
-                publishExecutableResolution(resolveExecutableState())
+                resolveExecutableAndNotify(onResolved)
             }
             return
         }
 
+        resolveExecutableAndNotify(onResolved)
+    }
+
+    private fun resolveExecutableAndNotify(onResolved: ((OpenCodeExecutableResolutionState) -> Unit)?) {
         if (isInactive()) return
-        publishExecutableResolution(resolveExecutableState())
+        val state = resolveExecutableState()
+        publishExecutableResolution(state)
+        if (!isInactive()) {
+            onResolved?.invoke(state)
+        }
     }
 
     fun setExecutableResolutionState(state: OpenCodeExecutableResolutionState) {

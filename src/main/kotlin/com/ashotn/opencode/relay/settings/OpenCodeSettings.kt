@@ -41,6 +41,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         var protectPluginLaunchedServerWithAuth: Boolean = false,
         var serverEnvironmentVariables: MutableList<EnvironmentVariable> = mutableListOf(),
         var executablePath: String = "",
+        var autoStartOnStartup: Boolean = false,
         var inlineDiffEnabled: Boolean = true,
         var relayPromptInjectionEnabled: Boolean = true,
         var diffTraceEnabled: Boolean = false,
@@ -112,6 +113,12 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
         get() = state.executablePath
         set(value) {
             state.executablePath = value
+        }
+
+    var autoStartOnStartup: Boolean
+        get() = state.autoStartOnStartup
+        set(value) {
+            state.autoStartOnStartup = value
         }
 
     var inlineDiffEnabled: Boolean
@@ -186,6 +193,7 @@ fun OpenCodeSettings.State.toSnapshot(): OpenCodeSettingsSnapshot = OpenCodeSett
     protectPluginLaunchedServerWithAuth = protectPluginLaunchedServerWithAuth,
     serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() },
     executablePath = executablePath,
+    autoStartOnStartup = autoStartOnStartup,
     inlineDiffEnabled = inlineDiffEnabled,
     relayPromptInjectionEnabled = relayPromptInjectionEnabled,
     diffTraceEnabled = diffTraceEnabled,

@@ -12,6 +12,7 @@ data class OpenCodeSettingsSnapshot(
     val protectPluginLaunchedServerWithAuth: Boolean,
     val serverEnvironmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     val executablePath: String,
+    val autoStartOnStartup: Boolean,
     val inlineDiffEnabled: Boolean,
     val relayPromptInjectionEnabled: Boolean,
     val diffTraceEnabled: Boolean,

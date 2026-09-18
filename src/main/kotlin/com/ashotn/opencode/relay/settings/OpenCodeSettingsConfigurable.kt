@@ -54,6 +54,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     internal lateinit var protectPluginLaunchedServerWithAuthCheckBox: JCheckBox
     internal lateinit var serverMdnsEnabledCheckBox: JCheckBox
     internal lateinit var serverMdnsDomainField: JBTextField
+    internal lateinit var autoStartOnStartupCheckBox: JCheckBox
 
     internal var executableResolver: (String?) -> OpenCodeInfo? = { path -> OpenCodeChecker.findExecutable(path) }
 
@@ -112,6 +113,12 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .bindText(pendingState::executablePath)
                         .comment("Path to the opencode executable. Leave blank to auto-detect.")
                         .align(AlignX.FILL)
+                }
+                row {
+                    val cell = checkBox("Start OpenCode automatically when project opens")
+                        .bindSelected(pendingState::autoStartOnStartup)
+                        .comment("Launches the OpenCode server after the project starts. Default: false")
+                    autoStartOnStartupCheckBox = cell.component
                 }
             }
             group("Server") {
@@ -418,6 +425,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         pendingState.protectPluginLaunchedServerWithAuth = settings.protectPluginLaunchedServerWithAuth
         pendingState.serverEnvironmentVariables = settings.serverEnvironmentVariables.map { it.copy() }.toMutableList()
         pendingState.executablePath = settings.executablePath
+        pendingState.autoStartOnStartup = settings.autoStartOnStartup
         pendingState.inlineDiffEnabled = settings.inlineDiffEnabled
         pendingState.relayPromptInjectionEnabled = settings.relayPromptInjectionEnabled
         pendingState.diffTraceEnabled = settings.diffTraceEnabled

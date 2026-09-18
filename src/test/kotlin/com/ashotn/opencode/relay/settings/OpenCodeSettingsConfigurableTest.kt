@@ -21,10 +21,16 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             val settings = OpenCodeSettings.getInstance(project)
             settings.serverAuthUsername = OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME
             settings.protectPluginLaunchedServerWithAuth = false
+            settings.autoStartOnStartup = false
             OpenCodeServerAuth.getInstance(project).setPassword("")
         } finally {
             super.tearDown()
         }
+    }
+
+    fun testAutoStartDefaultsOff() {
+        assertFalse(OpenCodeSettings.getInstance(project).autoStartOnStartup)
+        assertFalse(OpenCodeSettings.State().autoStartOnStartup)
     }
 
     fun testIsModifiedWhenOnlyCorsOriginsChange() {
@@ -58,6 +64,23 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             }
 
             assertTrue(configurable.isModified())
+        } finally {
+            runOnEdt { configurable.disposeUIResources() }
+        }
+    }
+
+    fun testApplyPersistsAutoStartSetting() {
+        val settings = OpenCodeSettings.getInstance(project)
+        val configurable = OpenCodeSettingsConfigurable(project)
+
+        try {
+            getOnEdt { configurable.createComponent() }
+            runOnEdt {
+                configurable.autoStartOnStartupCheckBox.isSelected = true
+                configurable.apply()
+            }
+
+            assertTrue(settings.autoStartOnStartup)
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
