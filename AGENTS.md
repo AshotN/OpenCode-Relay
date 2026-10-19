@@ -14,6 +14,9 @@ The plugin speaks the OpenCode 2.x HTTP/SSE API exclusively:
   Do not reintroduce v1 code paths, endpoints (`/session`, `/tui/*`, `prompt_async`, ...), or dual-version logic.
 - All `/api/*` requests carry Basic auth (`opencode:<password>`). Servers the plugin launches receive their
   password via the `OPENCODE_PASSWORD` environment variable.
+- The embedded TUI is launched as `opencode --server=<url>`. v2 removed the v1 `attach` subcommand, and the
+  equals form is required: a space-separated `--server <url>` is misparsed as the positional directory argument
+  (chdir ENOENT, the TUI hangs rendering nothing).
 - v2 API facts were verified against a live v2 server (OpenAPI spec with 119 paths) and the official v2 client
   types. When in doubt, trust the live server over memory.
 

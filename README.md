@@ -40,7 +40,7 @@ Once the server is running the plugin connects over SSE (Server-Sent Events) to 
 
 ### Session list
 
-The **Session changes** panel lists the project's root sessions. Each row shows:
+The **Sessions** panel lists the project's root sessions. Each row shows:
 
 - Session title and a short description
 - A spinner while the session is actively running

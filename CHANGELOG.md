@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+<p><strong>Added</strong></p>
+<ul>
+  <li>Support for the OpenCode 2.x server: Basic authentication (<code>OPENCODE_PASSWORD</code>), the durable <code>/api/event</code> stream, session-scoped permission rules, and per-turn diff snapshots.</li>
+  <li>Automatic detection of OpenCode's background service via its <code>service.json</code> state file, with a live-process check and password read from the same file.</li>
+</ul>
+
+<p><strong>Breaking Changes</strong></p>
+<ul>
+  <li>OpenCode 1.x is no longer supported. 1.x executables are detected at startup and the tool window asks for an upgrade to OpenCode 2.x.</li>
+</ul>
+
+<p><strong>Changed</strong></p>
+<ul>
+  <li>Server authentication now always uses the fixed <code>opencode</code> user. The settings panel no longer exposes a username or a "Protect server launched by plugin" toggle.</li>
+  <li>Drop the mDNS launch options (<code>--mdns</code>, <code>--mdns-domain</code>); OpenCode 2.x no longer supports them.</li>
+</ul>
+
+<p><strong>Fixed</strong></p>
+<ul>
+  <li>Launch the embedded and external TUI with <code>opencode --server=&lt;url&gt;</code> instead of the removed v1 <code>attach</code> subcommand.</li>
+  <li>Derive session idle state from execution-finished events, which is what OpenCode 2.x emits.</li>
+  <li>Request cumulative session diffs with chronologically ordered turn ranges, as required by the v2 diff API.</li>
+</ul>
+
 ## [3.0.0] - 2026-08-30
 
 <p><strong>Added</strong></p>
