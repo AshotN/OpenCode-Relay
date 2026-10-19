@@ -122,8 +122,12 @@ class OpenCodePlugin(private val project: Project) : Disposable {
      * `opencode service start`). When one is found, its password is loaded into
      * [OpenCodeServerAuth] and the plugin connects to its port.
      *
-     * Detection runs at most once per plugin lifetime; [onDetected] is invoked
-     * with the detected service (or null) once the outcome is known.
+     * A detected service is cached for the plugin lifetime; negative outcomes
+     * are deliberately NOT cached, so each call re-probes (a state-file read
+     * plus a short authenticated `/api/info` handshake) and a background
+     * service started mid-session is picked up on the next call.
+     * [onDetected] is invoked with the detected service (or null) once the
+     * outcome is known.
      */
     fun detectBackgroundService(onDetected: ((OpenCodeBackgroundService?) -> Unit)? = null) {
         detectedService?.let { service ->

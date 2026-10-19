@@ -94,6 +94,13 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
      * Updates the in-memory password cache without persisting to the IDE credential
      * store. Used for passwords sourced from the OpenCode background service state
      * file, which is re-read on every IDE startup.
+     *
+     * For the rest of the session the transient password shadows any password
+     * stored in the IDE password safe: all connections (API, SSE, launched
+     * processes via [ensureLaunchPassword]) use it, while the settings UI keeps
+     * showing the stored password. The shadow ends when the project service is
+     * disposed, at which point the stored password (or a generated one) applies
+     * again.
      */
     fun setPasswordTransiently(password: String) {
         passwordRevision.incrementAndGet()

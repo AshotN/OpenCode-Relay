@@ -19,6 +19,11 @@ The plugin speaks the OpenCode 2.x HTTP/SSE API exclusively:
   (chdir ENOENT, the TUI hangs rendering nothing).
 - v2 API facts were verified against a live v2 server (OpenAPI spec with 119 paths) and the official v2 client
   types. When in doubt, trust the live server over memory.
+- **Known, documented exception:** the TUI "Send Selection" / "New Session" features still call the v1
+  `/tui/append-prompt` and `/tui/select-session` routes. v2 has no TUI-control routes (verified in the v2.0.32
+  OpenAPI spec — 119 paths, nothing tui-related; the only prompt route is `POST /api/session/{sessionID}/prompt`),
+  so these features fail gracefully until a v2 rework lands (marked "in progress" in the README). This is a
+  conscious deviation, not drift — do not extend `/tui/*` usage; replace it with the v2 rework.
 
 ## Prefer JetBrains Tools
 

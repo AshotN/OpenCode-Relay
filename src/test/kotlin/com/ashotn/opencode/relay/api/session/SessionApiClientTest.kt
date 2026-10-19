@@ -197,6 +197,46 @@ class SessionApiClientTest {
     }
 
     @Test
+    fun `fetchSessionDiffSnapshot orders tied user messages by arrival order, not timestamp`() {
+        withTestServer { server, port ->
+            val diffQueries = mutableListOf<String>()
+            // Two user messages share a `time.created` timestamp. The list still
+            // arrives newest-first, so the older message is the last one listed;
+            // the range must follow that arrival order — a stable timestamp sort
+            // would keep the newer message first and invert `from`/`to` (400
+            // InvalidRequestError from the server).
+            server.createContext("/api/session/ses_1/message") { exchange ->
+                val body = """
+                    {
+                      "data": [
+                        {"id": "msg_u2", "type": "user", "text": "second", "time": {"created": 100}},
+                        {"id": "msg_a1", "type": "assistant", "content": [], "time": {"created": 100}},
+                        {"id": "msg_u1", "type": "user", "text": "first", "time": {"created": 100}}
+                      ],
+                      "cursor": {"next": null, "previous": null}
+                    }
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+            server.createContext("/api/session/ses_1/diff") { exchange ->
+                diffQueries.add(exchange.requestURI.query.orEmpty())
+                val body = """
+                    {"data": []}
+                """.trimIndent()
+                exchange.sendResponseHeaders(200, body.toByteArray(Charsets.UTF_8).size.toLong())
+                exchange.responseBody.use { it.write(body.toByteArray(Charsets.UTF_8)) }
+            }
+
+            val client = SessionApiClient()
+            val result = client.fetchSessionDiffSnapshot(port, "ses_1")
+
+            assertIs<ApiResult.Success<SessionDiffSnapshot>>(result)
+            assertEquals(listOf("from=msg_u1&to=msg_u2"), diffQueries)
+        }
+    }
+
+    @Test
     fun `fetchSessionDiffSnapshot falls back to latest turn when session has no user messages`() {
         withTestServer { server, port ->
             val diffQueries = mutableListOf<String?>()

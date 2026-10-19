@@ -267,8 +267,12 @@ class SessionApiClient(
     /**
      * User message IDs of the session in chronological order (oldest first).
      *
-     * The v2 message list arrives newest-first, but the diff range route requires
-     * `from` to precede `to`, so IDs are sorted by `time.created` ascending.
+     * The v2 message list arrives newest-first and its order is the authoritative
+     * turn order, so IDs are collected in arrival order and reversed. Sorting by
+     * `time.created` instead is unsafe: messages sharing a timestamp keep their
+     * newest-first order under a stable sort, which would invert the `from`/`to`
+     * range the diff route requires (`from` before `to`, otherwise 400
+     * InvalidRequestError).
      */
     private fun fetchUserMessageIds(port: Int, sessionId: String): ApiResult<List<String>> {
         val endpoint = SessionEndpoints.messages(sessionId)
@@ -278,16 +282,10 @@ class SessionApiClient(
                     if (!element.isJsonObject) return@mapNotNull null
                     val message = element.asJsonObject
                     if (message.getStringOrNull("type") != "user") return@mapNotNull null
-                    val id = message.getStringOrNull("id")?.takeIf { it.isNotBlank() }
-                        ?: return@mapNotNull null
-                    val created = message.getAsJsonObject("time")
-                        ?.get("created")
-                        ?.takeIf { it.isJsonPrimitive }
-                        ?.asLong
-                        ?: Long.MIN_VALUE
-                    created to id
-                }.sortedBy { it.first }
-                ApiResult.Success(ids.map { it.second })
+                    message.getStringOrNull("id")?.takeIf { it.isNotBlank() }
+                }
+                // Arrival order is newest-first; the diff range wants oldest first.
+                ApiResult.Success(ids.reversed())
             }
             .withParseContext(endpoint)
     }
