@@ -105,7 +105,7 @@ class SessionApiClientTest {
 
             val failure = assertIs<ApiResult.Failure>(result)
             val error = assertIs<ApiError.ParseError>(failure.error)
-            assertEquals("GET /session/ses_1/diff?messageID=msg_1: Expected JSON array", error.message)
+            assertEquals("GET /session/ses_1/diff?messageID=msg_1: Expected JSON array payload", error.message)
         }
     }
 
@@ -248,7 +248,7 @@ class SessionApiClientTest {
 
             val failure = assertIs<ApiResult.Failure>(result)
             val error = assertIs<ApiError.ParseError>(failure.error)
-            assertEquals("GET /session: Expected JSON array", error.message)
+            assertEquals("GET /session: Expected JSON array payload", error.message)
         }
     }
 

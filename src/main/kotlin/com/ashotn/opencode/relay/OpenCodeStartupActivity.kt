@@ -10,9 +10,15 @@ class OpenCodeStartupActivity : ProjectActivity, DumbAware {
     override suspend fun execute(project: Project) {
         val plugin = OpenCodePlugin.getInstance(project)
         plugin.resolveExecutable { state ->
-            val settings = OpenCodeSettings.getInstance(project)
-            if (settings.autoStartOnStartup && state is OpenCodeExecutableResolutionState.Resolved) {
-                plugin.startServer(settings.serverPort)
+            if (state !is OpenCodeExecutableResolutionState.Resolved) return@resolveExecutable
+
+            // Connect to a running background service when present; only spawn a
+            // plugin-owned server when there is nothing to connect to.
+            plugin.detectBackgroundService { service ->
+                val settings = OpenCodeSettings.getInstance(project)
+                if (service == null && settings.autoStartOnStartup) {
+                    plugin.startServer(settings.serverPort)
+                }
             }
         }
     }

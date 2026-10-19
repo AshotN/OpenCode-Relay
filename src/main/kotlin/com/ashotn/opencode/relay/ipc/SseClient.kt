@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Connects to the OpenCode server's durable SSE event stream (`GET /global/event`) and
+ * Connects to the OpenCode server's durable SSE event stream (`GET /api/event`) and
  * dispatches parsed [OpenCodeEvent]s to a listener on a background thread.
  *
  * - Automatically reconnects on disconnect (with bounded backoff).
@@ -103,7 +103,7 @@ class SseClient(
     }
 
     private fun connect() {
-        log.info("SseClient: connecting to /global/event on port $port")
+        log.info("SseClient: connecting to /api/event on port $port")
         val dataBuffer = StringBuilder()
         eventStreamClient.consume(port) { line ->
             if (Thread.currentThread().isInterrupted) return@consume

@@ -254,6 +254,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         val screen = when (val state = plugin.executableResolutionState) {
             OpenCodeExecutableResolutionState.Resolving -> ResolvingExecutablePanel()
             OpenCodeExecutableResolutionState.NotFound -> NotInstalledPanel()
+            is OpenCodeExecutableResolutionState.IncompatibleVersion -> IncompatibleVersionPanel(state.info)
             is OpenCodeExecutableResolutionState.Resolved -> InstalledPanel(project, slotDisposable, state.info)
         }
 

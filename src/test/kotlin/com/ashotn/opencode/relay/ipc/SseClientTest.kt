@@ -15,7 +15,7 @@ class SseClientTest {
     fun `reports authentication failure once and stops retrying`() {
         withTestServer { server, port ->
             val requests = AtomicInteger(0)
-            server.createContext("/global/event") { exchange ->
+            server.createContext("/api/event") { exchange ->
                 requests.incrementAndGet()
                 val body = "Unauthorized"
                 exchange.sendResponseHeaders(401, body.toByteArray(Charsets.UTF_8).size.toLong())
@@ -46,7 +46,7 @@ class SseClientTest {
     @Test
     fun `parses busy retry and idle session status events`() {
         withTestServer { server, port ->
-            server.createContext("/global/event") { exchange ->
+            server.createContext("/api/event") { exchange ->
                 val body = """
                     data: {"directory":"/other","payload":{"type":"session.status","properties":{"sessionID":"ses_1","status":{"type":"busy"}}}}
 
@@ -100,7 +100,7 @@ class SseClientTest {
     @Test
     fun `parses wrapped session lifecycle events`() {
         withTestServer { server, port ->
-            server.createContext("/global/event") { exchange ->
+            server.createContext("/api/event") { exchange ->
                 val body = """
                     data: {"directory":"/project","payload":{"type":"session.created","properties":{"info":{"id":"ses_created"}}}}
 
@@ -143,7 +143,7 @@ class SseClientTest {
     @Test
     fun `parses message diff availability with summary files`() {
         withTestServer { server, port ->
-            server.createContext("/global/event") { exchange ->
+            server.createContext("/api/event") { exchange ->
                 val body = """
                     data: {"directory":"/project","payload":{"type":"message.updated","properties":{"sessionID":"ses_1","info":{"id":"msg_1","role":"user","summary":{"diffs":[{"file":"pkg/alpha.py"},{"file":"pkg/bravo.py"}]}}}}}
 

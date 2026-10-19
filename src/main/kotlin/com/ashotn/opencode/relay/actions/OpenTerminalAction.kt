@@ -37,7 +37,7 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
         if (plugin.serverState != ServerState.READY) return
         val executablePath = plugin.openCodeInfo?.path ?: return
 
-        val url = serverUrl(settings.serverPort)
+        val url = serverUrl(OpenCodePlugin.getInstance(project).connectionPort)
         launchExternalTerminal(executablePath, url)
     }
 

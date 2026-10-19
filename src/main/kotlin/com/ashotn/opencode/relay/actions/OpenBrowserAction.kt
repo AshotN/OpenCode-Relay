@@ -25,7 +25,7 @@ class OpenBrowserAction(private val project: Project) : AnAction(), DumbAware {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val port = OpenCodeSettings.getInstance(project).serverPort
+        val port = OpenCodePlugin.getInstance(project).connectionPort
         BrowserUtil.browse(URI(serverUrl(port)))
     }
 }

@@ -14,8 +14,6 @@ class ServerManagerTest : BasePlatformTestCase() {
     fun testBuildServeArgumentsIncludesHostnameAndCorsOrigins() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.serverHostname = "0.0.0.0"
-        settings.serverMdnsEnabled = true
-        settings.serverMdnsDomain = "relay.local"
         settings.serverCorsOrigins = "http://localhost:5173\nhttps://app.example.com"
 
         val manager = ServerManager(project) { }
@@ -27,9 +25,6 @@ class ServerManagerTest : BasePlatformTestCase() {
                     "4096",
                     "--hostname",
                     "0.0.0.0",
-                    "--mdns",
-                    "--mdns-domain",
-                    "relay.local",
                     "--cors",
                     "http://localhost:5173",
                     "--cors",
@@ -45,8 +40,6 @@ class ServerManagerTest : BasePlatformTestCase() {
     fun testBuildServeArgumentsOmitsBlankHostnameAndCorsOrigins() {
         val settings = OpenCodeSettings.getInstance(project)
         settings.serverHostname = "   "
-        settings.serverMdnsEnabled = false
-        settings.serverMdnsDomain = "   "
         settings.serverCorsOrigins = "\n  \n"
 
         val manager = ServerManager(project) { }

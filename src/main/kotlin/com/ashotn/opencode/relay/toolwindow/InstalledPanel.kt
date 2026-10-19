@@ -116,8 +116,9 @@ class InstalledPanel(
 
         plugin.addListener(this)
         onStateChanged(plugin.serverState)
-        plugin.checkPort(settings.serverPort)
-        plugin.startPolling(settings.serverPort)
+        plugin.detectBackgroundService()
+        plugin.checkPort(plugin.connectionPort)
+        plugin.startPolling(plugin.connectionPort)
 
         project.messageBus.connect(this).subscribe(
             OpenCodeInfoChangedListener.TOPIC,
@@ -133,8 +134,8 @@ class InstalledPanel(
             OpenCodeSettingsChangedListener.TOPIC,
             OpenCodeSettingsChangedListener { oldSettings, newSettings ->
                 if (oldSettings.serverPort != newSettings.serverPort) {
-                    plugin.startPolling(newSettings.serverPort)
-                    plugin.checkPort(newSettings.serverPort)
+                    plugin.checkPort(plugin.connectionPort)
+                    plugin.startPolling(plugin.connectionPort)
                 }
                 onStateChanged(plugin.serverState)
             }
@@ -151,7 +152,7 @@ class InstalledPanel(
     }
 
     override fun onStateChanged(state: ServerState) {
-        val port = settings.serverPort
+        val port = plugin.connectionPort
         when (state) {
             ServerState.UNKNOWN -> {
                 portStatusLabel.text = "Checking…"

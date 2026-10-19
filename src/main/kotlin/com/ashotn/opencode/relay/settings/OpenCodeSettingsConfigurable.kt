@@ -1,8 +1,8 @@
 package com.ashotn.opencode.relay.settings
 
 import com.ashotn.opencode.relay.OpenCodeChecker
+import com.ashotn.opencode.relay.OpenCodeExecutableDetection
 import com.ashotn.opencode.relay.OpenCodeExecutableResolutionState
-import com.ashotn.opencode.relay.OpenCodeInfo
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.core.EditorDiffRenderer
 import com.ashotn.opencode.relay.settings.OpenCodeSettings.TerminalEngine
@@ -56,7 +56,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     internal lateinit var serverMdnsDomainField: JBTextField
     internal lateinit var autoStartOnStartupCheckBox: JCheckBox
 
-    internal var executableResolver: (String?) -> OpenCodeInfo? = { path -> OpenCodeChecker.findExecutable(path) }
+    internal var executableResolver: (String?) -> OpenCodeExecutableDetection = { path -> OpenCodeChecker.findExecutable(path) }
 
     override fun createPanel(): DialogPanel {
         loadPendingFromPersisted()
@@ -99,7 +99,10 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                     }
 
                     ApplicationManager.getApplication().executeOnPooledThread {
-                        val autoResolvedPath = OpenCodeChecker.findExecutable()?.path ?: return@executeOnPooledThread
+                        val autoResolved = OpenCodeChecker.findExecutable()
+                        val autoResolvedPath =
+                            (autoResolved as? OpenCodeExecutableDetection.Found)?.info?.path
+                                ?: return@executeOnPooledThread
                         ApplicationManager.getApplication().invokeLater {
                             if (project.isDisposed) return@invokeLater
                             if (executablePathField.text.isBlank()) {
@@ -181,7 +184,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             group("Environment") {
                 row("Variables:") {
                     cell(serverEnvironmentVariablesEditor.panel)
-                        .comment("Additional environment variables passed to OpenCode processes launched by the plugin. `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD` are managed above.")
+                        .comment("Additional environment variables passed to OpenCode processes launched by the plugin. `OPENCODE_PASSWORD` is managed above.")
                         .align(AlignX.FILL)
                         .resizableColumn()
                 }
@@ -323,12 +326,9 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         val settingsChanged = newSettings != oldSettings
         val newPassword = currentServerAuthPassword()
         val passwordChanged = newPassword != oldPassword
-        val connectionAuthChanged = oldSettings.serverAuthUsername != newSettings.serverAuthUsername || passwordChanged
-        val oldLaunchAuthEnabled = oldSettings.protectPluginLaunchedServerWithAuth && oldPassword.isNotEmpty()
-        val newLaunchAuthEnabled = newSettings.protectPluginLaunchedServerWithAuth && newPassword.isNotEmpty()
-        val launchAuthChanged =
-            oldLaunchAuthEnabled != newLaunchAuthEnabled ||
-                    (newLaunchAuthEnabled && connectionAuthChanged)
+        // OpenCode 2.x always authenticates; any credential change affects the
+        // connection to a server we do not own.
+        val connectionAuthChanged = passwordChanged
         val newPort = newSettings.serverPort
         val newPath = newSettings.executablePath
         val portChanged = newPort != oldSettings.serverPort
@@ -338,22 +338,36 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         if (!settingsChanged && !passwordChanged && !shouldUpdateExecutableResolution) return
 
         val mustConfirmStop =
-            plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || launchAuthChanged)
+            plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || connectionAuthChanged)
         val mustReattach = plugin.isRunning && !plugin.ownsProcess && portChanged
         val mustResetConnection = plugin.isRunning && !plugin.ownsProcess && !portChanged && connectionAuthChanged
 
         var resolvedState = oldResolutionState
         if (shouldUpdateExecutableResolution) {
             val userProvidedPath = newPath.takeIf { it.isNotBlank() }
-            val detectedExecutableInfo = detectExecutableInfo(userProvidedPath)
-            if (userProvidedPath != null && detectedExecutableInfo == null) {
-                throw ConfigurationException(
-                    "Could not find a valid OpenCode executable. Check the path and try again.",
-                )
+            val detection = detectExecutable(userProvidedPath)
+            when (detection) {
+                is OpenCodeExecutableDetection.Found -> resolvedState = OpenCodeExecutableResolutionState.Resolved(detection.info)
+
+                is OpenCodeExecutableDetection.IncompatibleVersion -> {
+                    if (userProvidedPath != null) {
+                        throw ConfigurationException(
+                            "OpenCode 2.x is required, but $userProvidedPath is OpenCode ${detection.info.version}. " +
+                                    "Upgrade it or point to an OpenCode 2.x executable.",
+                        )
+                    }
+                    resolvedState = OpenCodeExecutableResolutionState.IncompatibleVersion(detection.info)
+                }
+
+                OpenCodeExecutableDetection.None -> {
+                    if (userProvidedPath != null) {
+                        throw ConfigurationException(
+                            "Could not find a valid OpenCode executable. Check the path and try again.",
+                        )
+                    }
+                    resolvedState = OpenCodeExecutableResolutionState.NotFound
+                }
             }
-            resolvedState =
-                detectedExecutableInfo?.let(OpenCodeExecutableResolutionState::Resolved)
-                    ?: OpenCodeExecutableResolutionState.NotFound
         }
 
         if (mustConfirmStop && !confirmStopServerRestart()) {
@@ -371,12 +385,12 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
         when {
             mustConfirmStop -> plugin.stopServer()
-            mustReattach -> plugin.reattach(newPort)
+            mustReattach -> plugin.reattach()
             mustResetConnection -> plugin.resetConnection()
         }
 
         if (connectionAuthChanged && !plugin.ownsProcess && !mustReattach && !mustResetConnection) {
-            plugin.checkPort(newPort)
+            plugin.checkPort(plugin.connectionPort)
         }
 
         if (shouldUpdateExecutableResolution && resolvedState != oldResolutionState) {
@@ -391,17 +405,17 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         EditorDiffRenderer.getInstance(project).onSettingsChanged()
     }
 
-    private fun detectExecutableInfo(userProvidedPath: String?): OpenCodeInfo? {
-        val detectedInfoRef = AtomicReference<OpenCodeInfo?>()
+    private fun detectExecutable(userProvidedPath: String?): OpenCodeExecutableDetection {
+        val detectionRef = AtomicReference<OpenCodeExecutableDetection?>()
         ProgressManager.getInstance().runProcessWithProgressSynchronously(
             {
-                detectedInfoRef.set(executableResolver(userProvidedPath))
+                detectionRef.set(executableResolver(userProvidedPath))
             },
             "Resolving OpenCode...",
             false,
             project,
         )
-        return detectedInfoRef.get()
+        return detectionRef.get() ?: OpenCodeExecutableDetection.None
     }
 
     private fun confirmStopServerRestart(): Boolean =
@@ -520,7 +534,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     private fun validateReservedServerAuthEnvironmentVariables(
         environmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     ) {
-        val reservedNames = setOf("OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD")
+        val reservedNames = setOf("OPENCODE_PASSWORD")
         val reservedName = environmentVariables
             .firstOrNull { it.name.uppercase() in reservedNames }
             ?.name

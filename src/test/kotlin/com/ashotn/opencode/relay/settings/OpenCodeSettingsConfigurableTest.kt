@@ -1,5 +1,6 @@
 package com.ashotn.opencode.relay.settings
 
+import com.ashotn.opencode.relay.OpenCodeExecutableDetection
 import com.ashotn.opencode.relay.OpenCodeExecutableResolutionState
 import com.ashotn.opencode.relay.OpenCodeInfo
 import com.ashotn.opencode.relay.OpenCodePlugin
@@ -263,7 +264,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
             runOnEdt {
                 configurable.serverEnvironmentVariablesModel.setItems(
-                    listOf(OpenCodeSettings.EnvironmentVariable("OPENCODE_SERVER_PASSWORD", "secret"))
+                    listOf(OpenCodeSettings.EnvironmentVariable("OPENCODE_PASSWORD", "secret"))
                 )
             }
 
@@ -308,7 +309,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         )
 
         val configurable = OpenCodeSettingsConfigurable(project).apply {
-            executableResolver = { null }
+            executableResolver = { OpenCodeExecutableDetection.None }
         }
 
         try {
@@ -331,7 +332,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         settings.executablePath = "C:/existing/opencode"
 
         val configurable = OpenCodeSettingsConfigurable(project).apply {
-            executableResolver = { null }
+            executableResolver = { OpenCodeExecutableDetection.None }
         }
 
         try {
@@ -359,7 +360,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         val configurable = OpenCodeSettingsConfigurable(project).apply {
             executableResolver = {
                 resolveCalls.incrementAndGet()
-                null
+                OpenCodeExecutableDetection.None
             }
         }
 
@@ -387,7 +388,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         val configurable = OpenCodeSettingsConfigurable(project).apply {
             executableResolver = {
                 resolveCalls.incrementAndGet()
-                null
+                OpenCodeExecutableDetection.None
             }
         }
 
@@ -417,7 +418,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
         val configurable = OpenCodeSettingsConfigurable(project).apply {
             executableResolver = {
                 resolveCalls.incrementAndGet()
-                OpenCodeInfo("C:/resolved/opencode", "1.2.3")
+                OpenCodeExecutableDetection.Found(OpenCodeInfo("C:/resolved/opencode", "1.2.3"))
             }
         }
 

@@ -94,7 +94,7 @@ class ClassicTuiPanel(
                 listOf(
                     executablePath,
                     "attach",
-                    serverUrl(OpenCodeSettings.getInstance(project).serverPort),
+                    serverUrl(OpenCodePlugin.getInstance(project).connectionPort),
                 ),
                 environmentVariables,
             )

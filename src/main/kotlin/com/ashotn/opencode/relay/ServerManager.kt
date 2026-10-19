@@ -28,10 +28,10 @@ enum class ServerState {
     /** Initial state - no check has completed yet. */
     UNKNOWN,
 
-    /** We launched the process and are waiting for /global/health to return 200. */
+    /** We launched the process and are waiting for /api/info to return 200. */
     STARTING,
 
-    /** /global/health returned 200 - server is fully ready. */
+    /** /api/info returned 200 - server is fully ready. */
     READY,
 
     /** Stop was requested and shutdown is in progress. */
@@ -398,9 +398,14 @@ class ServerManager(
             }
         }
 
+    /**
+     * Builds the arguments for `opencode serve`.
+     *
+     * OpenCode 2.x only supports `--port`, `--hostname`, and `--cors`
+     * (the v1 `--mdns`/`--mdns-domain` flags were removed).
+     */
     internal fun buildServeArguments(settings: OpenCodeSettings, port: Int): List<String> {
         val hostname = settings.serverHostname.trim()
-        val mdnsDomain = settings.serverMdnsDomain.trim()
         return buildList {
             add("serve")
             add("--port")
@@ -408,13 +413,6 @@ class ServerManager(
             if (hostname.isNotEmpty()) {
                 add("--hostname")
                 add(hostname)
-            }
-            if (settings.serverMdnsEnabled) {
-                add("--mdns")
-                if (mdnsDomain.isNotEmpty()) {
-                    add("--mdns-domain")
-                    add(mdnsDomain)
-                }
             }
             settings.serverCorsOrigins
                 .lineSequence()
@@ -455,8 +453,10 @@ class ServerManager(
 
             try {
                 val settings = OpenCodeSettings.getInstance(project)
+                // OpenCode 2.x servers always require authentication, so a launch
+                // password is always supplied via OPENCODE_PASSWORD.
                 val environmentVariables =
-                    settings.processEnvironmentVariables(serverAuth.serverLaunchEnvironmentVariables())
+                    settings.processEnvironmentVariables(serverAuth.launchEnvironmentVariables())
                 val serveArguments = buildServeArguments(settings, port)
                 val command =
                     if (SystemInfo.isWindows) {
@@ -539,24 +539,12 @@ class ServerManager(
                 SwingUtilities.invokeLater {
                     if (isInactive()) return@invokeLater
 
-                    when (e) {
-                        is OpenCodeServerAuth.MissingServerLaunchAuthCredentialsException -> {
-                            showNotification(
-                                "Failed to start OpenCode server",
-                                "Server authentication is enabled, but the password is missing. Re-enter it in Settings | OpenCode Relay.",
-                                NotificationType.ERROR,
-                            )
-                        }
-
-                        else -> {
-                            val message = e.message ?: e.javaClass.simpleName
-                            showNotification(
-                                "Failed to start OpenCode server",
-                                "Could not launch the OpenCode server process: $message",
-                                NotificationType.ERROR,
-                            )
-                        }
-                    }
+                    val message = e.message ?: e.javaClass.simpleName
+                    showNotification(
+                        "Failed to start OpenCode server",
+                        "Could not launch the OpenCode server process: $message",
+                        NotificationType.ERROR,
+                    )
                     applyState(ServerState.STOPPED)
                 }
             }
