@@ -38,10 +38,13 @@ capabilities not listed above, use `idea.execute_tool` to invoke the underlying 
 
 ## Build
 
-- Build with **JDK 21** (project targets JVM 21, Kotlin 2.1.0). The Kotlin 2.1.0 Gradle daemon crashes on JDK 27
-  (the system default on the dev machine) with `IllegalArgumentException: 27` from `JavaVersion.parse`.
-  If a build fails that way: `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 && ./gradlew ...`, then
-  `./gradlew --stop` to kill a poisoned daemon.
+- Build with **JDK 21** (`/usr/lib/jvm/java-21-openjdk-amd64`; project targets JVM 21, Kotlin 2.1.0).
+  OpenJDK 21 and 25 are installed on the dev machine, and the system default `java` resolves to 25.
+  The Kotlin 2.1.0 compiler crashes on JDK 25+ with `IllegalArgumentException: 25...` from
+  `JavaVersion.parse` ("Internal compiler error") — the release predates those JDKs.
+- The crash follows the **Gradle daemon's** JVM (the Kotlin compiler runs inside the daemon). If a
+  JDK 25 daemon is already running, setting `JAVA_HOME` alone does not fix the build — run
+  `./gradlew --stop` first, then `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 && ./gradlew ...`.
 - Unit tests: `./gradlew test`.
 - Live integration tests live in `src/liveTest` and only run when the `OPENCODE_TEST_VERSIONS` environment
   variable lists OpenCode **2.x** versions to test against.
