@@ -148,7 +148,16 @@ tasks {
             liveTest.runtimeClasspath,
             baseTestTask.classpath.filter { it !in testOutputFiles },
         )
-        listOf("OPENCODE_TEST_VERSIONS", "OPENCODE_TEST_AUTH_JSON").forEach { name ->
+        // Read at daemon configuration time: the Gradle daemon's environment is fixed
+        // at daemon start, so changing these variables requires `./gradlew --stop`
+        // before the new values take effect.
+        listOf(
+            "OPENCODE_TEST_VERSIONS",
+            "OPENCODE_TEST_AUTH_JSON",
+            "OPENCODE_TEST_BIN",
+            "OPENCODE_TEST_MODEL",
+            "OPENCODE_TEST_CONFIG_JSON",
+        ).forEach { name ->
             System.getenv(name)?.let { value ->
                 environment(name, value)
             }

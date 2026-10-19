@@ -2,6 +2,7 @@ package com.ashotn.opencode.relay.integration.session
 
 import com.ashotn.opencode.relay.api.session.SessionApiClient
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.integration.OpenCodeTestEnvironmentFactory
 import com.ashotn.opencode.relay.integration.OpenCodeTestEventCollector
 import com.ashotn.opencode.relay.integration.OpenCodeTestVersions
@@ -26,14 +27,24 @@ class OpenCodeSessionStateLiveTest(
     fun `real server emits session lifecycle and status events`() {
         OpenCodeTestEnvironmentFactory.create(version).use { environment ->
             val server = environment.startServer()
-            val sessionClient = SessionApiClient()
+            val sessionClient = SessionApiClient(
+                OpenCodeHttpTransport(authorizationHeaderProvider = environment::authorizationHeader),
+            )
 
-            OpenCodeTestEventCollector(server.port, environment.repoRoot.toString()).use { events ->
+            OpenCodeTestEventCollector(
+                port = server.port,
+                directory = environment.repoRoot.toString(),
+                authorizationHeaderProvider = environment::authorizationHeader,
+            ).use { events ->
                 try {
                     events.awaitConnected()
 
                     val sessionId = assertIs<ApiResult.Success<SessionApiClient.CreatedSession>>(
-                        sessionClient.createSession(server.port),
+                        sessionClient.createSession(
+                            port = server.port,
+                            permissions = environment.sessionPermissions,
+                            model = environment.testModel,
+                        ),
                     ).value.sessionId
 
                     events.awaitSessionLifecycle(sessionId, atLeastCount = 1)

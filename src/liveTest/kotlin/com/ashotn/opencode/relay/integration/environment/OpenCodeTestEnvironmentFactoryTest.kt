@@ -58,6 +58,12 @@ class OpenCodeTestEnvironmentFactoryTest(
             )
             assertEquals("true", environment.env.getValue("OPENCODE_DISABLE_AUTOUPDATE"))
             assertEquals("true", environment.env.getValue("OPENCODE_DISABLE_LSP_DOWNLOAD"))
+            assertTrue(environment.serverPassword.isNotEmpty())
+            assertEquals(environment.serverPassword, environment.env.getValue("OPENCODE_PASSWORD"))
+            assertTrue(environment.sessionPermissions.any { it.action == "edit" && it.effect == "allow" })
+            assertTrue(environment.sessionPermissions.any { it.action == "bash" && it.effect == "deny" })
+            assertFalse(environment.sessionPermissions.any { it.action == "task" })
+            assertEquals(OpenCodeTestEnvironmentFactory.testModel(), environment.testModel)
         } finally {
             val scenarioRoot = environment.scenarioRoot
             environment.close()

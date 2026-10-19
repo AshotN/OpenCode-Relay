@@ -39,15 +39,32 @@ capabilities not listed above, use `idea.execute_tool` to invoke the underlying 
 ## Build
 
 - Build with **JDK 21** (`/usr/lib/jvm/java-21-openjdk-amd64`; project targets JVM 21, Kotlin 2.1.0).
-  OpenJDK 21 and 25 are installed on the dev machine, and the system default `java` resolves to 25.
-  The Kotlin 2.1.0 compiler crashes on JDK 25+ with `IllegalArgumentException: 25...` from
-  `JavaVersion.parse` ("Internal compiler error") — the release predates those JDKs.
+  JDK 21 is required: the Kotlin 2.1.0 compiler crashes on JDK 25+ with `IllegalArgumentException: 25...`
+  from `JavaVersion.parse` ("Internal compiler error") — the release predates those JDKs.
 - The crash follows the **Gradle daemon's** JVM (the Kotlin compiler runs inside the daemon). If a
   JDK 25 daemon is already running, setting `JAVA_HOME` alone does not fix the build — run
   `./gradlew --stop` first, then `export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64 && ./gradlew ...`.
 - Unit tests: `./gradlew test`.
 - Live integration tests live in `src/liveTest` and only run when the `OPENCODE_TEST_VERSIONS` environment
-  variable lists OpenCode **2.x** versions to test against.
+  variable lists OpenCode **2.x** versions to test against. They also require `OPENCODE_TEST_AUTH_JSON`
+  (OpenCode provider `auth.json` content) and, by default, `npm` to install each version. On machines
+  without node/npm (the dev box has none — OpenCode is a standalone native binary there), set
+  `OPENCODE_TEST_BIN` to a pre-installed `opencode` binary; its `--version` must match the test list.
+  Optionally set `OPENCODE_TEST_MODEL=providerID:modelID` to pin the session model (default model
+  resolution can flake on small local deployments; the model ID must be the provider-registered
+  one, e.g. `qwen3.8-27b`, not the Ollama-style tag `qwen3.8:27b`).
+  Live scenarios start with an empty config home, so a provider defined only in the user's own
+  `~/.config/opencode/opencode.json` (e.g. a local llama.cpp endpoint with a custom model catalog)
+  is invisible to the test server — turns then fail with `provider.no-route`/deprecated-catalog
+  errors. Set `OPENCODE_TEST_CONFIG_JSON` to the JSON written as the global config
+  (`opencode/opencode.json` under the isolated config home; the `providers` definition plus the
+  default `model` is sufficient, and the API key still comes from `OPENCODE_TEST_AUTH_JSON`).
+  Live servers are started with a
+  client-generated `OPENCODE_PASSWORD` (v2 servers always require Basic auth), and sessions are
+  created with explicit permission rules (v2 removed the v1 `OPENCODE_PERMISSION` env var).
+  Note: these variables are read inside the **Gradle daemon**, whose environment is fixed at
+  daemon start — after changing any of them, run `./gradlew --stop` first or the stale value
+  from the daemon that started stays in effect.
 
 ## Kotlin Style
 

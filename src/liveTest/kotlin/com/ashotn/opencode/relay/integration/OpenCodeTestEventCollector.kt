@@ -6,6 +6,7 @@ import com.ashotn.opencode.relay.ipc.SseClient
 class OpenCodeTestEventCollector(
     port: Int,
     directory: String? = null,
+    authorizationHeaderProvider: () -> String? = { null },
     private val onCollectedEvent: (OpenCodeEvent) -> Unit = {},
 ) : AutoCloseable {
 
@@ -15,6 +16,7 @@ class OpenCodeTestEventCollector(
     private val sseClient = SseClient(
         port = port,
         directory = directory,
+        authorizationHeaderProvider = authorizationHeaderProvider,
         onEvent = { event ->
             synchronized(lock) {
                 events.add(event)

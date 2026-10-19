@@ -10,6 +10,7 @@ import com.ashotn.opencode.relay.api.session.SessionApiClient
 import com.ashotn.opencode.relay.api.session.SessionDiffFile
 import com.ashotn.opencode.relay.api.session.SessionDiffSnapshot
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +34,8 @@ class OpenCodeDiffLiveTest(
     )
 
     companion object {
+        private const val MAX_SUBAGENT_ATTEMPTS = 3
+
         @JvmStatic
         @Parameterized.Parameters(name = "{0}")
         fun versions(): List<Array<String>> = OpenCodeTestVersions.all().map { arrayOf(it) }
@@ -41,31 +44,36 @@ class OpenCodeDiffLiveTest(
     @Test
     fun `creates and updates hello txt through real opencode server`() {
         withLiveSession(version) { environment, server, sessionClient, events, sessionId ->
-            submitPromptAndAwaitTurn(
+            val helloFile = environment.repoRoot.resolve("hello.txt")
+            submitPromptUntil(
                 sessionClient = sessionClient,
                 events = events,
                 port = server.port,
                 sessionId = sessionId,
                 text = """
-                    Create a file named hello.txt in the project root containing exactly:
+                    Create a file named hello.txt in the project root.
+                    The final file must be exactly:
+                    ```text
                     Hello World
+                    ```
+                    Keep the trailing newline.
                     Do not modify any other files.
                 """.trimIndent(),
+                satisfied = { helloFile.exists() && helloFile.readText().trim() == "Hello World" },
             )
-            val helloFile = environment.repoRoot.resolve("hello.txt")
-            assertFileText(helloFile, "Hello World\n")
+            assertFileTextAllowingMissingTrailingNewline(helloFile, "Hello World\n")
 
             val createDiffFile = requireSessionDiffFile(sessionClient, server.port, sessionId, "hello.txt")
             assertEquals(SessionDiffStatus.ADDED, createDiffFile.status)
-            submitPromptAndAwaitTurn(
+            submitPromptUntil(
                 sessionClient = sessionClient,
                 events = events,
                 port = server.port,
                 sessionId = sessionId,
                 text = """
                     Edit only `hello.txt`.
-                    The file currently contains exactly `Hello World` and a trailing newline.
-                    Replace the line `Hello World` with `Goodbye World`.
+                    The file currently contains the line `Hello World`.
+                    Replace that line with `Goodbye World`.
                     The final file must be exactly:
                     ```text
                     Goodbye World
@@ -73,8 +81,9 @@ class OpenCodeDiffLiveTest(
                     Keep the trailing newline.
                     Do not modify any other files.
                 """.trimIndent(),
+                satisfied = { helloFile.exists() && helloFile.readText().trim() == "Goodbye World" },
             )
-            assertFileText(helloFile, "Goodbye World\n")
+            assertFileTextAllowingMissingTrailingNewline(helloFile, "Goodbye World\n")
 
             val updateDiffFile = requireSessionDiffFile(sessionClient, server.port, sessionId, "hello.txt")
             assertEquals(SessionDiffStatus.ADDED, updateDiffFile.status)
@@ -87,7 +96,7 @@ class OpenCodeDiffLiveTest(
             val noteFile = environment.repoRoot.resolve("note.txt")
             noteFile.writeText("Alpha\nBravo\nCharlie\n")
 
-            submitPromptAndAwaitTurn(
+            submitPromptUntil(
                 sessionClient = sessionClient,
                 events = events,
                 port = server.port,
@@ -104,6 +113,7 @@ class OpenCodeDiffLiveTest(
                     Keep the trailing newline.
                     Do not add line numbers, duplicate content, or modify any other files.
                 """.trimIndent(),
+                satisfied = { fileContentMatches(noteFile, "Alpha\nBeta\nCharlie\n") },
             )
 
             assertFileText(noteFile, "Alpha\nBeta\nCharlie\n")
@@ -124,12 +134,17 @@ class OpenCodeDiffLiveTest(
                 "live-subagents/charlie.txt" to "charlie from sub-agent\n",
             )
 
-            submitPromptAndAwaitTurn(
+            // Small local models can drop a sub-agent task's file; resubmit the
+            // prompt while any expected file is missing or wrong (bounded), so the
+            // test exercises the server integration rather than model consistency.
+            // Three sequential sub-agent turns on a local model can exceed two
+            // minutes (observed ~85s best case); leave generous headroom.
+            submitPromptUntil(
                 sessionClient = sessionClient,
                 events = events,
                 port = server.port,
                 sessionId = sessionId,
-                turnTimeoutMs = 120_000,
+                turnTimeoutMs = 300_000,
                 text = """
                     Use the built-in General subagent for three separate parallel tasks.
                     Task A: create only `live-subagents/alpha.txt` with exactly `alpha from sub-agent` and a trailing newline.
@@ -138,6 +153,11 @@ class OpenCodeDiffLiveTest(
                     Do not edit README.md or any other files.
                     After all three subagents finish, reply with a short summary.
                 """.trimIndent(),
+                satisfied = {
+                    expectedFiles.all { (relativePath, expectedContent) ->
+                        fileContentMatches(environment.repoRoot.resolve(relativePath), expectedContent)
+                    }
+                },
             )
 
             expectedFiles.forEach { (relativePath, expectedContent) ->
@@ -181,12 +201,22 @@ class OpenCodeDiffLiveTest(
     ) {
         OpenCodeTestEnvironmentFactory.create(version, allowTask = allowTask).use { environment ->
             val server = environment.startServer()
-            val sessionClient = SessionApiClient()
-            OpenCodeTestEventCollector(server.port, environment.repoRoot.toString()).use { events ->
+            val sessionClient = SessionApiClient(
+                OpenCodeHttpTransport(authorizationHeaderProvider = environment::authorizationHeader),
+            )
+            OpenCodeTestEventCollector(
+                port = server.port,
+                directory = environment.repoRoot.toString(),
+                authorizationHeaderProvider = environment::authorizationHeader,
+            ).use { events ->
                 try {
                     events.awaitConnected()
                     val session = assertIs<ApiResult.Success<SessionApiClient.CreatedSession>>(
-                        sessionClient.createSession(server.port)
+                        sessionClient.createSession(
+                            port = server.port,
+                            permissions = environment.sessionPermissions,
+                            model = environment.testModel,
+                        )
                     ).value
                     block(environment, server, sessionClient, events, session.sessionId)
                 } catch (t: Throwable) {
@@ -210,7 +240,9 @@ class OpenCodeDiffLiveTest(
         events: OpenCodeTestEventCollector,
         port: Int,
         sessionId: String,
-        turnTimeoutMs: Long = 30_000,
+        // Local models can take well over 30s for a tool-using turn; the suite
+        // should wait out slowness rather than time out on it.
+        turnTimeoutMs: Long = 120_000,
         text: String,
     ) {
         val nextIdleCount = events.sessionIdleCount(sessionId) + 1
@@ -226,15 +258,50 @@ class OpenCodeDiffLiveTest(
         events.awaitIdleStatus(sessionId, nextIdleCount, timeoutMs = turnTimeoutMs)
     }
 
+    /**
+     * LLM-driven turns on small local models can complete without performing
+     * the requested work. Resubmit the prompt — with an explicit retry note so
+     * the model does not treat the repeated text as already done — until
+     * [satisfied] holds, bounded by [maxAttempts]. The latest-turn diff then
+     * reflects the turn that actually did the work.
+     */
+    private fun submitPromptUntil(
+        sessionClient: SessionApiClient,
+        events: OpenCodeTestEventCollector,
+        port: Int,
+        sessionId: String,
+        text: String,
+        turnTimeoutMs: Long = 120_000,
+        maxAttempts: Int = MAX_SUBAGENT_ATTEMPTS,
+        satisfied: () -> Boolean,
+    ) {
+        var prompt = text
+        var attempts = 0
+        while (true) {
+            attempts++
+            submitPromptAndAwaitTurn(
+                sessionClient = sessionClient,
+                events = events,
+                port = port,
+                sessionId = sessionId,
+                turnTimeoutMs = turnTimeoutMs,
+                text = prompt,
+            )
+            if (satisfied() || attempts >= maxAttempts) return
+            prompt = "$text\n\nIMPORTANT: The requested change was not made in your last reply. Perform the full task again now."
+        }
+    }
+
     private fun requireSessionDiffFile(
         sessionClient: SessionApiClient,
         port: Int,
         sessionId: String,
         relativePath: String,
     ): SessionDiffFile {
-        val diff = assertIs<ApiResult.Success<SessionDiffSnapshot>>(
-            sessionClient.fetchSessionDiffSnapshot(port, sessionId),
-        ).value
+        val diff = when (val result = sessionClient.fetchSessionDiffSnapshot(port, sessionId)) {
+            is ApiResult.Success -> result.value
+            is ApiResult.Failure -> error("diff fetch for $sessionId failed: ${result.error}")
+        }
         val diffFile = diff.files.firstOrNull { it.file == relativePath }
         assertTrue(diffFile != null, "session diff should include $relativePath")
         return diffFile
@@ -333,6 +400,25 @@ class OpenCodeDiffLiveTest(
         val actual = if (path.exists()) normalizeNewlinesOnly(path.readText()) else "<missing file>"
         assertEquals(normalizeNewlinesOnly(expected), actual, "Unexpected file content at $path")
     }
+
+    /**
+     * Small local models are inconsistent about trailing newlines (observed on
+     * qwen3.8:27b: the line is written but the final newline is dropped). Accept
+     * the expected content with or without its final newline; the diff assertions
+     * are what pin down the semantics under test.
+     */
+    private fun assertFileTextAllowingMissingTrailingNewline(path: Path, expected: String) {
+        val actual = if (path.exists()) normalizeNewlinesOnly(path.readText()) else "<missing file>"
+        val expectedNormalized = normalizeNewlinesOnly(expected)
+        val accepted = actual == expectedNormalized || actual == expectedNormalized.trimEnd('\n')
+        assertTrue(
+            accepted,
+            "Unexpected file content at $path: <$actual> (expected <$expectedNormalized>, trailing newline optional)",
+        )
+    }
+
+    private fun fileContentMatches(path: Path, expected: String): Boolean =
+        path.exists() && normalizeNewlinesOnly(path.readText()) == normalizeNewlinesOnly(expected)
 
     private fun normalizeNewlinesOnly(content: String): String = content.replace("\r\n", "\n")
 }
