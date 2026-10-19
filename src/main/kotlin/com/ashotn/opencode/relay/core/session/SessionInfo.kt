@@ -7,6 +7,6 @@ data class SessionInfo(
     val isBusy: Boolean,
     val trackedFileCount: Int?,
     val updatedAtMillis: Long,
-    /** True if the server has reported a summary for this session, indicating it has messages. */
+    /** True if the session has content — local diff state or a loaded file count. */
     val hasMessages: Boolean,
 )

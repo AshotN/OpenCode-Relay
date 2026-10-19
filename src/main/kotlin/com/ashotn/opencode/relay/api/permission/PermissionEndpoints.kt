@@ -5,5 +5,5 @@ import com.ashotn.opencode.relay.api.transport.HttpMethod
 
 internal object PermissionEndpoints {
     fun reply(sessionId: String, permissionId: String): ApiEndpoint =
-        ApiEndpoint(method = HttpMethod.POST, path = "/session/$sessionId/permissions/$permissionId")
+        ApiEndpoint(method = HttpMethod.POST, path = "/api/session/$sessionId/permission/$permissionId/reply")
 }

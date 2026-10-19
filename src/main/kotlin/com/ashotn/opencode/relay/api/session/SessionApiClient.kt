@@ -1,11 +1,15 @@
 package com.ashotn.opencode.relay.api.session
 
+import com.ashotn.opencode.relay.api.transport.ApiEndpoint
 import com.ashotn.opencode.relay.api.transport.ApiError
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
-import com.ashotn.opencode.relay.api.transport.mapJsonArrayResponse
+import com.ashotn.opencode.relay.api.transport.flatMap
+import com.ashotn.opencode.relay.api.transport.map
 import com.ashotn.opencode.relay.api.transport.mapJsonObjectResponse
 import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
+import com.ashotn.opencode.relay.api.transport.parseJsonArrayResponse
+import com.ashotn.opencode.relay.api.transport.parseJsonEnvelope
 import com.ashotn.opencode.relay.api.transport.withParseContext
 import com.ashotn.opencode.relay.ipc.PatchDiffTextParser
 import com.ashotn.opencode.relay.ipc.SessionDiffStatus
@@ -15,11 +19,22 @@ import com.ashotn.opencode.relay.util.getStringOrNull
 import com.ashotn.opencode.relay.util.pathsEqual
 import com.ashotn.opencode.relay.util.toAbsolutePath
 import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.intellij.openapi.diagnostic.logger
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 class SessionApiClient(
     private val transport: OpenCodeHttpTransport = OpenCodeHttpTransport(),
 ) {
+    companion object {
+        private val log = logger<SessionApiClient>()
+
+        private const val PAGE_SIZE = 100
+        private const val MAX_PAGES = 50
+    }
+
     data class CreatedSession(
         val sessionId: String,
     )
@@ -48,27 +63,13 @@ class SessionApiClient(
         }.withParseContext(endpoint)
     }
 
-    fun promptTextAsync(
-        port: Int,
-        sessionId: String,
-        providerId: String,
-        modelId: String,
-        text: String,
-    ): ApiResult<Unit> {
-        val endpoint = SessionEndpoints.promptAsync(sessionId)
-        val parts = JsonArray().apply {
-            add(JsonObject().apply {
-                addProperty("type", "text")
-                addProperty("text", text)
-            })
-        }
-        val payload = JsonObject().apply {
-            add("model", JsonObject().apply {
-                addProperty("providerID", providerId)
-                addProperty("modelID", modelId)
-            })
-            add("parts", parts)
-        }
+    /**
+     * Enqueues a user prompt on the session's durable inbox and starts its execution.
+     * Replaces the v1 `prompt_async` route (v2 `POST /api/session/{id}/prompt`).
+     */
+    fun promptText(port: Int, sessionId: String, text: String): ApiResult<Unit> {
+        val endpoint = SessionEndpoints.prompt(sessionId)
+        val payload = JsonObject().also { it.addProperty("text", text) }
         val response = transport.post(
             port = port,
             path = endpoint.path,
@@ -80,50 +81,46 @@ class SessionApiClient(
         }.withParseContext(endpoint)
     }
 
-    fun fetchSessionDiffSnapshot(
+    /**
+     * Snapshot of the newest user turn's file changes.
+     *
+     * In OpenCode 2.x the per-message diff route is gone; `GET /api/session/{id}/diff`
+     * with no query returns the turn of the newest user message, which is exactly the
+     * "live" snapshot the inline diff rendering needs.
+     */
+    fun fetchLatestTurnDiffSnapshot(
         port: Int,
         sessionId: String,
-        messageId: String? = null,
     ): ApiResult<SessionDiffSnapshot> {
-        if (messageId == null) {
-            return fetchSessionMessageDiffSnapshot(port, sessionId)
-        }
-
-        val endpoint = SessionEndpoints.diff(sessionId, messageId)
-        return when (val response = transport.get(port = port, path = endpoint.path)) {
-            is ApiResult.Failure -> response
-            is ApiResult.Success -> {
-                val body = response.value
-                if (body.isNullOrBlank()) {
-                    ApiResult.Success(SessionDiffSnapshot(sessionId, emptyList()))
-                } else {
-                    transport.mapJsonArrayResponse(ApiResult.Success(body)) { diffArray ->
-                        val files =
-                            diffArray.mapNotNull { element -> parseSessionDiffFile(element.asJsonObjectOrNull()) }
-                        ApiResult.Success(SessionDiffSnapshot(sessionId, files))
-                    }.withParseContext(endpoint)
-                }
-            }
-        }
+        val endpoint = SessionEndpoints.diffLatestTurn(sessionId)
+        return fetchDiffFiles(port, endpoint)
+            .map { files -> SessionDiffSnapshot(sessionId, files) }
+            .withParseContext(endpoint)
     }
 
-    fun fetchSessionMessageDiffSnapshot(port: Int, sessionId: String): ApiResult<SessionDiffSnapshot> {
-        return when (val refsResult = fetchSessionMessageDiffRefs(port, sessionId)) {
-            is ApiResult.Failure -> refsResult
-            is ApiResult.Success -> {
-                val messageIds = refsResult.value
-                if (messageIds.isEmpty()) return ApiResult.Success(SessionDiffSnapshot(sessionId, emptyList()))
-
-                val mergedFilesByPath = linkedMapOf<String, SessionDiffFile>()
-                for (messageId in messageIds) {
-                    when (val diffResult = fetchSessionDiffSnapshot(port, sessionId, messageId)) {
-                        is ApiResult.Failure -> return diffResult
-                        is ApiResult.Success -> mergeDiffFiles(mergedFilesByPath, diffResult.value.files)
-                    }
-                }
-                ApiResult.Success(SessionDiffSnapshot(sessionId, mergedFilesByPath.values.toList()))
+    /**
+     * Cumulative snapshot across all user turns of the session.
+     *
+     * v2 diffs are per-turn: `from`/`to` select a range of user-message turns, so the
+     * cumulative view is a single range request from the first to the last user
+     * message. Sessions without user messages fall back to the latest-turn snapshot.
+     */
+    fun fetchSessionDiffSnapshot(port: Int, sessionId: String): ApiResult<SessionDiffSnapshot> {
+        val endpoint = when (val userMessageIds = fetchUserMessageIds(port, sessionId)) {
+            is ApiResult.Failure -> return userMessageIds
+            is ApiResult.Success -> when {
+                userMessageIds.value.isEmpty() -> SessionEndpoints.diffLatestTurn(sessionId)
+                userMessageIds.value.size == 1 -> SessionEndpoints.diffTurn(sessionId, userMessageIds.value.first())
+                else -> SessionEndpoints.diffRange(
+                    sessionId = sessionId,
+                    fromUserMessageId = userMessageIds.value.first(),
+                    toUserMessageId = userMessageIds.value.last(),
+                )
             }
         }
+        return fetchDiffFiles(port, endpoint)
+            .map { files -> SessionDiffSnapshot(sessionId, files) }
+            .withParseContext(endpoint)
     }
 
     fun fetchFileDiffPreview(
@@ -144,43 +141,168 @@ class SessionApiClient(
         }
     }
 
-    private fun fetchSessionMessageDiffRefs(port: Int, sessionId: String): ApiResult<List<String>> {
-        return when (val summariesResult = fetchSessionMessageDiffSummaries(port, sessionId)) {
-            is ApiResult.Failure -> summariesResult
-            is ApiResult.Success -> ApiResult.Success(
-                summariesResult.value.mapNotNull { summary ->
-                    summary.messageId?.takeIf { summary.role == "user" && summary.files.isNotEmpty() }
-                },
-            )
-        }
-    }
-
+    /**
+     * Per-message summaries used to estimate how many files a session touched.
+     *
+     * v2 messages are flat objects; file changes are reported on assistant messages
+     * via `snapshot.files`.
+     */
     fun fetchSessionMessageDiffSummaries(port: Int, sessionId: String): ApiResult<List<SessionMessageDiffSummary>> {
         val endpoint = SessionEndpoints.messages(sessionId)
-        val response = transport.get(port = port, path = endpoint.path)
-        return transport.mapJsonArrayResponse(response) { messagesArray ->
-            val summaries = messagesArray.mapNotNull { element ->
-                val messageObj = element.asJsonObjectOrNull() ?: return@mapNotNull null
-                val info = messageObj.getObjectOrNull("info") ?: return@mapNotNull null
-                parseMessageDiffSummary(info)
+        return walkPages(port, endpoint.path) { cursor -> pageQuery(cursor = cursor) }
+            .flatMap { messages ->
+                val summaries = messages.mapNotNull { element ->
+                    if (!element.isJsonObject) return@mapNotNull null
+                    parseMessageDiffSummary(element.asJsonObject)
+                }
+                ApiResult.Success(summaries)
             }
-            ApiResult.Success(summaries)
+            .withParseContext(endpoint)
+    }
+
+    fun fetchSessionHierarchy(port: Int, directory: String? = null): ApiResult<List<Session>> {
+        val endpoint = SessionEndpoints.list()
+        return walkPages(port, endpoint.path) { cursor -> pageQuery(directory = directory, cursor = cursor) }
+            .flatMap { sessionElements ->
+                val sessions = mutableListOf<Session>()
+                for (element in sessionElements) {
+                    if (!element.isJsonObject) continue
+                    when (val result = parseSession(element.asJsonObject)) {
+                        is ApiResult.Failure -> return@flatMap result
+                        is ApiResult.Success -> sessions.add(result.value)
+                    }
+                }
+                ApiResult.Success(sessions)
+            }
+            .withParseContext(endpoint)
+    }
+
+    fun deleteSession(port: Int, sessionId: String): ApiResult<Boolean> {
+        val endpoint = SessionEndpoints.delete(sessionId)
+        val response = transport.delete(port = port, path = endpoint.path)
+        return transport.parseBooleanResponse(response, emptyBodyValue = true)
+            .withParseContext(endpoint)
+    }
+
+    fun updateSession(port: Int, sessionId: String, title: String): ApiResult<Unit> {
+        val endpoint = SessionEndpoints.update(sessionId)
+        val payload = JsonObject().also { it.addProperty("title", title) }
+        val response = transport.patch(port = port, path = endpoint.path, payload = payload.toString())
+        return when (response) {
+            is ApiResult.Failure -> response
+            is ApiResult.Success -> ApiResult.Success(Unit)
         }.withParseContext(endpoint)
     }
 
-    private fun parseMessageDiffSummary(info: JsonObject): SessionMessageDiffSummary? {
-        val diffs = info.getObjectOrNull("summary")
-            ?.get("diffs")
+    private fun fetchDiffFiles(port: Int, endpoint: ApiEndpoint): ApiResult<List<SessionDiffFile>> {
+        val response = transport.get(port = port, path = endpoint.path)
+        // Some server versions answer empty for diff routes; treat that as an empty
+        // snapshot rather than a parse failure.
+        val arrayResult: ApiResult<JsonArray> =
+            if (response is ApiResult.Success && response.value.isNullOrBlank()) {
+                ApiResult.Success(JsonArray())
+            } else {
+                transport.parseJsonArrayResponse(response)
+            }
+        // Parse context is applied by the callers, which own the endpoint.
+        return arrayResult.flatMap { diffArray ->
+            val files = diffArray.mapNotNull { element -> parseSessionDiffFile(element.asJsonObjectOrNull()) }
+            ApiResult.Success(files)
+        }
+    }
+
+    private fun fetchUserMessageIds(port: Int, sessionId: String): ApiResult<List<String>> {
+        val endpoint = SessionEndpoints.messages(sessionId)
+        return walkPages(port, endpoint.path) { cursor -> pageQuery(cursor = cursor) }
+            .flatMap { messages ->
+                val ids = messages.mapNotNull { element ->
+                    if (!element.isJsonObject) return@mapNotNull null
+                    val message = element.asJsonObject
+                    if (message.getStringOrNull("type") != "user") return@mapNotNull null
+                    message.getStringOrNull("id")?.takeIf { it.isNotBlank() }
+                }
+                ApiResult.Success(ids)
+            }
+            .withParseContext(endpoint)
+    }
+
+    private data class Page(
+        val items: List<JsonElement>,
+        val nextCursor: String?,
+    )
+
+    /**
+     * v2 lists are cursor-paginated (`{data: [...], cursor: {next, previous}}`) with a
+     * small default page size, so every list fetch walks pages until the cursor is gone.
+     */
+    private fun walkPages(port: Int, basePath: String, pageQuery: (String?) -> String): ApiResult<List<JsonElement>> {
+        val allItems = mutableListOf<JsonElement>()
+        var cursor: String? = null
+        var pagesFetched = 0
+
+        while (true) {
+            if (pagesFetched >= MAX_PAGES) {
+                log.debug("SessionApiClient: stopping pagination at $MAX_PAGES pages for $basePath")
+                break
+            }
+            val page = when (val pageResult = fetchPage(port, basePath + pageQuery(cursor))) {
+                is ApiResult.Failure -> return pageResult
+                is ApiResult.Success -> pageResult.value
+            }
+            allItems += page.items
+            pagesFetched++
+            cursor = page.nextCursor
+            if (cursor.isNullOrBlank()) break
+        }
+
+        return ApiResult.Success(allItems)
+    }
+
+    private fun fetchPage(port: Int, path: String): ApiResult<Page> {
+        val response = transport.get(port = port, path = path)
+        return when (val rootResult = transport.parseJsonEnvelope(response)) {
+            is ApiResult.Failure -> rootResult
+            is ApiResult.Success -> {
+                val root = rootResult.value
+                val items = root.get("data")
+                    ?.takeIf { it.isJsonArray }
+                    ?.asJsonArray
+                    ?.toList()
+                    .orEmpty()
+                val nextCursor = root.get("cursor")
+                    ?.takeIf { it.isJsonObject }
+                    ?.asJsonObject
+                    ?.getStringOrNull("next")
+                ApiResult.Success(Page(items = items, nextCursor = nextCursor))
+            }
+        }
+    }
+
+    private fun pageQuery(directory: String? = null, limit: Int = PAGE_SIZE, cursor: String? = null): String {
+        val params = mutableListOf<String>()
+        directory?.takeIf { it.isNotBlank() }
+            ?.let { params.add("directory=${URLEncoder.encode(it, StandardCharsets.UTF_8)}") }
+        params.add("limit=$limit")
+        cursor?.takeIf { it.isNotBlank() }
+            ?.let { params.add("cursor=${URLEncoder.encode(it, StandardCharsets.UTF_8)}") }
+        return "?${params.joinToString("&")}"
+    }
+
+    private fun parseMessageDiffSummary(message: JsonObject): SessionMessageDiffSummary? {
+        if (message.getStringOrNull("type") != "assistant") return null
+        val files = message.getObjectOrNull("snapshot")
+            ?.get("files")
             ?.takeIf { it.isJsonArray }
             ?.asJsonArray
+            ?.mapNotNull { element ->
+                if (!element.isJsonPrimitive) return@mapNotNull null
+                element.asString.takeIf { it.isNotBlank() }
+            }
             ?: return null
-        val files = diffs.mapNotNull { diffElement ->
-            diffElement.asJsonObjectOrNull()?.getStringOrNull("file")
-        }
         if (files.isEmpty()) return null
         return SessionMessageDiffSummary(
-            messageId = info.getStringOrNull("id"),
-            role = info.getStringOrNull("role"),
+            messageId = message.getStringOrNull("id"),
+            role = "assistant",
             files = files,
         )
     }
@@ -203,52 +325,6 @@ class SessionApiClient(
         )
     }
 
-    private fun mergeDiffFiles(
-        mergedFilesByPath: MutableMap<String, SessionDiffFile>,
-        files: List<SessionDiffFile>,
-    ) {
-        for (file in files) {
-            val existing = mergedFilesByPath[file.file]
-            if (existing == null) {
-                mergedFilesByPath[file.file] = file
-                continue
-            }
-            mergedFilesByPath[file.file] = existing.copy(
-                after = file.after,
-                additions = existing.additions + file.additions,
-                deletions = existing.deletions + file.deletions,
-                status = mergeStatus(existing.status, file.status),
-            )
-        }
-    }
-
-    // Build one final status from multiple message diffs for the same file.
-    // Example: ADDED in turn 1 + MODIFIED in turn 2 should still show as ADDED.
-    private fun mergeStatus(existing: SessionDiffStatus, next: SessionDiffStatus): SessionDiffStatus = when {
-        next == SessionDiffStatus.UNKNOWN -> existing
-        existing == SessionDiffStatus.ADDED && next != SessionDiffStatus.DELETED -> SessionDiffStatus.ADDED
-        else -> next
-    }
-
-    private fun com.google.gson.JsonElement?.asJsonObjectOrNull(): JsonObject? =
-        this?.takeIf { it.isJsonObject }?.asJsonObject
-
-    fun fetchSessionHierarchy(port: Int): ApiResult<List<Session>> {
-        val endpoint = SessionEndpoints.list()
-        val response = transport.get(port = port, path = endpoint.path)
-        return transport.mapJsonArrayResponse(response) { sessionArray ->
-            val sessions = mutableListOf<Session>()
-            for (element in sessionArray) {
-                if (!element.isJsonObject) continue
-                when (val result = parseSession(element.asJsonObject)) {
-                    is ApiResult.Failure -> return@mapJsonArrayResponse result
-                    is ApiResult.Success -> sessions.add(result.value)
-                }
-            }
-            ApiResult.Success(sessions)
-        }.withParseContext(endpoint)
-    }
-
     private fun parseSession(obj: JsonObject): ApiResult<Session> {
         val id = obj.getStringOrNull("id")
         if (id.isNullOrBlank()) {
@@ -256,10 +332,11 @@ class SessionApiClient(
         }
 
         val projectID = obj.getStringOrNull("projectID")
-        val directory = obj.getStringOrNull("directory")
         val parentID = obj.getStringOrNull("parentID")
         val title = obj.getStringOrNull("title")
-        val version = obj.getStringOrNull("version")
+        // v2 reports the session location as {directory, workspaceID?}; v1 had a flat
+        // `directory` field.
+        val directory = obj.getObjectOrNull("location")?.getStringOrNull("directory")
 
         val timeObj = obj.getObjectOrNull("time")
         val timeCreated = timeObj?.get("created")
@@ -268,43 +345,7 @@ class SessionApiClient(
         val timeUpdated = timeObj?.get("updated")
             ?.takeIf { it.isJsonPrimitive }
             ?.let { runCatching { it.asLong }.getOrNull() } ?: 0L
-        val timeCompacting = timeObj?.get("compacting")
-            ?.takeIf { it.isJsonPrimitive }
-            ?.let { runCatching { it.asLong }.getOrNull() }
-        val sessionTime = SessionTime(created = timeCreated, updated = timeUpdated, compacting = timeCompacting)
-
-        val summaryObj = obj.getObjectOrNull("summary")
-        val summary = if (summaryObj != null) {
-            val additions = summaryObj.getIntOrNull("additions") ?: 0
-            val deletions = summaryObj.getIntOrNull("deletions") ?: 0
-            val files = summaryObj.getIntOrNull("files") ?: 0
-            val diffsArray = summaryObj.get("diffs")
-                ?.takeIf { it.isJsonArray }
-                ?.asJsonArray
-            val diffs = diffsArray?.mapNotNull { diffElement ->
-                if (!diffElement.isJsonObject) return@mapNotNull null
-                val diffObj = diffElement.asJsonObject
-                val file = diffObj.getStringOrNull("file") ?: return@mapNotNull null
-                val diffText = PatchDiffTextParser.parse(diffObj)
-                FileDiff(
-                    file = file,
-                    before = diffText.before,
-                    after = diffText.after,
-                    additions = diffObj.getIntOrNull("additions") ?: 0,
-                    deletions = diffObj.getIntOrNull("deletions") ?: 0,
-                )
-            }
-            SessionSummary(additions = additions, deletions = deletions, files = files, diffs = diffs)
-        } else {
-            null
-        }
-
-        val shareObj = obj.getObjectOrNull("share")
-        val share = if (shareObj != null) {
-            SessionShare(url = shareObj.getStringOrNull("url"))
-        } else {
-            null
-        }
+        val sessionTime = SessionTime(created = timeCreated, updated = timeUpdated, compacting = null)
 
         return ApiResult.Success(
             Session(
@@ -313,28 +354,11 @@ class SessionApiClient(
                 directory = directory,
                 parentID = parentID,
                 title = title,
-                version = version,
                 time = sessionTime,
-                summary = summary,
-                share = share,
-            )
+            ),
         )
     }
 
-    fun deleteSession(port: Int, sessionId: String): ApiResult<Boolean> {
-        val endpoint = SessionEndpoints.delete(sessionId)
-        val response = transport.delete(port = port, path = endpoint.path)
-        return transport.parseBooleanResponse(response).withParseContext(endpoint)
-    }
-
-    fun updateSession(port: Int, sessionId: String, title: String): ApiResult<Session> {
-        val endpoint = SessionEndpoints.update(sessionId)
-        val payload = JsonObject().apply {
-            addProperty("title", title)
-        }
-        val response = transport.patch(port = port, path = endpoint.path, payload = payload.toString())
-        return transport.mapJsonObjectResponse(response) { parseSession(it) }
-            .withParseContext(endpoint)
-    }
-
+    private fun JsonElement.asJsonObjectOrNull(): JsonObject? =
+        if (isJsonObject) asJsonObject else null
 }

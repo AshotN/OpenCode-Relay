@@ -22,9 +22,6 @@ class OpenCodeSessionStateLiveTest(
         fun versions(): List<Array<String>> = OpenCodeTestVersions.all().map { arrayOf(it) }
     }
 
-    private val providerId = "github-copilot"
-    private val modelId = "gpt-5-mini"
-
     @Test
     fun `real server emits session lifecycle and status events`() {
         OpenCodeTestEnvironmentFactory.create(version).use { environment ->
@@ -51,11 +48,9 @@ class OpenCodeSessionStateLiveTest(
                     ) + 1
 
                     assertIs<ApiResult.Success<Unit>>(
-                        sessionClient.promptTextAsync(
+                        sessionClient.promptText(
                             port = server.port,
                             sessionId = sessionId,
-                            providerId = providerId,
-                            modelId = modelId,
                             text = "Reply with exactly: pong\nDo not edit files or use tools.",
                         ),
                     )

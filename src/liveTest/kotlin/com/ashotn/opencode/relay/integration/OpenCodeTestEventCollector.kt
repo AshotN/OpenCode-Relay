@@ -42,13 +42,8 @@ class OpenCodeTestEventCollector(
         sessionStatusCountLocked(sessionId, status)
     }
 
-    fun diffSignalCount(sessionId: String): Int = synchronized(lock) {
-        events.count { it is OpenCodeEvent.MessageDiffAvailable && it.sessionId == sessionId }
-    }
-
-    fun messageDiffEvents(sessionId: String): List<OpenCodeEvent.MessageDiffAvailable> = synchronized(lock) {
-        events.filterIsInstance<OpenCodeEvent.MessageDiffAvailable>()
-            .filter { it.sessionId == sessionId }
+    fun executionFinishedCount(sessionId: String): Int = synchronized(lock) {
+        events.count { it is OpenCodeEvent.SessionExecutionFinished && it.sessionId == sessionId }
     }
 
     fun awaitIdleStatus(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent.SessionStatus =
@@ -80,9 +75,9 @@ class OpenCodeTestEventCollector(
             if (matching.size >= atLeastCount) matching.last() else null
         }
 
-    fun awaitDiffSignal(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent =
-        awaitEvent(timeoutMs, "diff signal for $sessionId count >= $atLeastCount") { recordedEvents ->
-            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.MessageDiffAvailable>()
+    fun awaitExecutionFinished(sessionId: String, atLeastCount: Int, timeoutMs: Long = 15_000): OpenCodeEvent =
+        awaitEvent(timeoutMs, "execution finished for $sessionId count >= $atLeastCount") { recordedEvents ->
+            val matching = recordedEvents.filterIsInstance<OpenCodeEvent.SessionExecutionFinished>()
                 .filter { it.sessionId == sessionId }
             if (matching.size >= atLeastCount) matching.last() else null
         }
@@ -96,10 +91,7 @@ class OpenCodeTestEventCollector(
                     "session.status(sessionId=${event.sessionId}, type=${event.status.name.lowercase()})"
                 }
 
-                is OpenCodeEvent.MessageDiffAvailable -> {
-                    val files = event.files.joinToString(",") { it.substringAfterLast('/') }
-                    "message.diff(sessionId=${event.sessionId}, messageId=${event.messageId}, files=$files)"
-                }
+                is OpenCodeEvent.SessionExecutionFinished -> "execution.finished(sessionId=${event.sessionId})"
 
                 is OpenCodeEvent.SessionLifecycleChanged -> "session.lifecycle(sessionId=${event.sessionId})"
 

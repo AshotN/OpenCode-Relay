@@ -3,11 +3,9 @@ package com.ashotn.opencode.relay.ipc
 import com.intellij.util.messages.Topic
 
 /**
- * Published on the project message bus when an MCP server reports its tool list
- * has changed ([OpenCodeEvent.McpToolsChanged] via SSE).
- *
- * This is the best available proxy for MCP connection status changes, since the
- * server does not emit a dedicated connect/disconnect event.
+ * Published on the project message bus when an MCP server's connection status
+ * has changed ([OpenCodeEvent.McpStatusChanged] via SSE, sourced from the
+ * server's `mcp.status.changed` event).
  */
 fun interface McpChangedListener {
 

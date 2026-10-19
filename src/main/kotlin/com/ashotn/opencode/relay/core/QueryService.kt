@@ -83,20 +83,19 @@ internal class QueryService {
                 val localTrackedFileCount = ((hunksBySessionAndFile[sessionId]?.keys ?: emptySet()) +
                         (addedBySession[sessionId] ?: emptySet()) +
                         (deletedBySession[sessionId] ?: emptySet())).size
+                // v2 sessions carry no server-side summary; the file count loaded
+                // from assistant message snapshots and local diff state are the
+                // available signals that a session has content.
+                val loadedFileCount = messageSummaryFileCountBySession[sessionId]
+                val hasMessages = hasLocalDiffState || (loadedFileCount ?: 0) > 0
                 SessionInfo(
                     sessionId = sessionId,
                     parentSessionId = session?.parentID,
                     title = session?.title ?: sessionId.take(12),
                     isBusy = busyBySession[sessionId] == true,
-                    trackedFileCount = if (hasLocalDiffState) {
-                        localTrackedFileCount
-                    } else if (session?.summary == null) {
-                        0
-                    } else {
-                        messageSummaryFileCountBySession[sessionId]
-                    },
+                    trackedFileCount = if (hasLocalDiffState) localTrackedFileCount else (loadedFileCount ?: 0),
                     updatedAtMillis = updatedAtBySession[sessionId] ?: 0L,
-                    hasMessages = session?.summary != null,
+                    hasMessages = hasMessages,
                 )
             }
             .sortedWith(

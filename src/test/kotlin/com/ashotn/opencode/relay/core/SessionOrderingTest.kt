@@ -208,10 +208,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Newest session",
-                    version = null,
                     time = SessionTime(0L, tNew, null),
-                    summary = null,
-                    share = null
                 ),
                 sessionMid to Session(
                     id = sessionMid,
@@ -219,10 +216,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Middle session",
-                    version = null,
                     time = SessionTime(0L, tMid, null),
-                    summary = null,
-                    share = null
                 ),
                 sessionOld to Session(
                     id = sessionOld,
@@ -230,10 +224,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Oldest session",
-                    version = null,
                     time = SessionTime(0L, tOld, null),
-                    summary = null,
-                    share = null
                 ),
             ),
             busyBySession = emptyMap(),
@@ -298,10 +289,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Session A",
-                    version = null,
                     time = SessionTime(0L, 2000L, null),
-                    summary = null,
-                    share = null
                 ),
                 sessionB to Session(
                     id = sessionB,
@@ -309,10 +297,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Session B",
-                    version = null,
                     time = SessionTime(0L, 1000L, null),
-                    summary = null,
-                    share = null
                 ),
             ),
             busyBySession = store.busyBySession,
@@ -412,10 +397,7 @@ class SessionOrderingTest {
                     directory = null,
                     parentID = null,
                     title = "Late diff session",
-                    version = null,
                     time = SessionTime(0L, 2_000L, null),
-                    summary = null,
-                    share = null,
                 )
             ),
             busyBySession = store.busyBySession,

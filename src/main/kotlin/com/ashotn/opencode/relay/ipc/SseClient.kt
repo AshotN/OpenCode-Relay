@@ -16,13 +16,19 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
+ * Consumes the OpenCode 2.x SSE event stream.
+ *
  * Connects to the OpenCode server's durable SSE event stream (`GET /api/event`) and
- * dispatches parsed [OpenCodeEvent]s to a listener on a background thread.
+ * dispatches typed [OpenCodeEvent]s to [onEvent]. The client transparently reconnects
+ * with exponential backoff when the stream drops; a 401 response stops the loop and
+ * reports the failure via [onAuthenticationFailure] (the caller decides how to recover).
  *
- * - Automatically reconnects on disconnect (with bounded backoff).
- * - Stops cleanly when [stop] is called.
+ * Event envelope (v2): each `data:` line carries a single JSON object of the shape
+ * `{"id", "created", "type", "location"?, "data": {...}}`. Events whose
+ * `location.directory` differs from [directory] are dropped (the stream is global to
+ * the server, but this plugin only tracks one project).
  *
- * Thread safety: [start] and [stop] may be called from any thread.
+ * All callbacks ([onEvent]) are invoked on the client's internal reader thread.
  */
 class SseClient(
     private val port: Int,
@@ -136,20 +142,36 @@ class SseClient(
             val rootElement = JsonParser.parseString(json)
             if (!rootElement.isJsonObject) return
 
-            val root = unwrapGlobalEvent(rootElement.asJsonObject) ?: return
+            val root = rootElement.asJsonObject
+            if (!isForThisDirectory(root)) return
+
             val type = root.getStringOrNull("type") ?: return
-            val properties = root.getObjectOrNull("properties") ?: JsonObject()
+            val payload = root.getObjectOrNull("data") ?: JsonObject()
 
             val event: OpenCodeEvent? = when (type) {
                 "server.connected" -> OpenCodeEvent.ServerConnected
-                "server.heartbeat", "sync", "project.updated" -> null
-                "message.updated" -> parseMessageUpdated(properties)
+                "session.status" -> parseSessionStatus(payload)
+                // session.idle is a standalone idle marker in v2.
+                "session.idle" -> parseSessionIdle(payload)
+                // The start of an execution is a reliable busy signal.
+                "session.execution.started" -> parseExecutionStarted(payload)
+                // A finished execution is when the latest turn's diff can change.
+                "session.execution.succeeded",
+                "session.execution.failed",
+                "session.execution.interrupted",
+                -> parseExecutionFinished(payload)
                 // Any lifecycle change can alter the session list/order/title, so all refresh the hierarchy.
-                "session.created", "session.updated", "session.deleted" -> parseSessionLifecycleChanged(properties)
-                "session.status" -> parseSessionStatus(properties)
-                "mcp.tools.changed" -> parseMcpToolsChanged(properties)
-                "permission.asked" -> parsePermissionAsked(properties)
-                "permission.replied" -> parsePermissionReplied(properties)
+                "session.created",
+                "session.deleted",
+                "session.forked",
+                "session.moved",
+                "session.renamed",
+                "session.metadata.updated",
+                -> parseSessionLifecycleChanged(payload)
+                "permission.asked" -> parsePermissionAsked(payload)
+                "permission.replied" -> parsePermissionReplied(payload)
+                "mcp.status.changed" -> parseMcpStatusChanged(payload)
+                "project.updated" -> null
                 else -> {
                     if (unknownEventTypes.add(type)) {
                         log.warn("SseClient: unknown event type ignored: $type")
@@ -166,20 +188,15 @@ class SseClient(
         }
     }
 
-    private fun isExpectedDisconnect(e: Exception): Boolean {
-        if (e !is IOException) return false
-        val message = e.message?.lowercase() ?: return false
-        return message.contains("stream is closed") || message.contains("socket closed")
-    }
-
-    private fun unwrapGlobalEvent(root: JsonObject): JsonObject? {
-        val payload = root.getObjectOrNull("payload") ?: return root
-        val eventDirectory = root.getStringOrNull("directory")
+    /**
+     * v2 events carry an optional `location.directory`. When both the event and this
+     * client have a directory, events from other directories are dropped.
+     */
+    private fun isForThisDirectory(root: JsonObject): Boolean {
+        val eventDirectory = root.getObjectOrNull("location")?.getStringOrNull("directory")
         val expectedDirectory = directory
-        if (eventDirectory != null && expectedDirectory != null && !sameDirectory(eventDirectory, expectedDirectory)) {
-            return null
-        }
-        return payload
+        if (eventDirectory == null || expectedDirectory == null) return true
+        return sameDirectory(eventDirectory, expectedDirectory)
     }
 
     private fun sameDirectory(left: String, right: String): Boolean =
@@ -189,10 +206,10 @@ class SseClient(
         runCatching { Path.of(directory).toRealPath() }
             .getOrElse { Path.of(directory).toAbsolutePath().normalize() }
 
-    private fun parsePermissionReplied(props: JsonObject): OpenCodeEvent.PermissionReplied? {
-        val requestId = props.getStringOrNull("requestID") ?: return null
-        val sessionId = props.getStringOrNull("sessionID") ?: return null
-        val replyRaw = props.getStringOrNull("reply") ?: return null
+    private fun parsePermissionReplied(payload: JsonObject): OpenCodeEvent.PermissionReplied? {
+        val requestId = payload.getStringOrNull("requestID") ?: return null
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        val replyRaw = payload.getStringOrNull("reply") ?: return null
         val reply = PermissionReply.fromWire(replyRaw)
         if (reply == null) {
             log.warn("SseClient: unknown permission reply '$replyRaw' for requestID=$requestId")
@@ -201,12 +218,14 @@ class SseClient(
         return OpenCodeEvent.PermissionReplied(requestId, sessionId, reply)
     }
 
-    private fun parsePermissionAsked(props: JsonObject): OpenCodeEvent.PermissionAsked? {
-        val id = props.getStringOrNull("id") ?: return null
-        val sessionId = props.getStringOrNull("sessionID") ?: return null
-        val permission = props.getStringOrNull("permission") ?: return null
+    private fun parsePermissionAsked(payload: JsonObject): OpenCodeEvent.PermissionAsked? {
+        val id = payload.getStringOrNull("id") ?: return null
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        // v2 names the fields `action` and `resources`; the plugin model keeps the
+        // v1-oriented names `permission` and `patterns`.
+        val permission = payload.getStringOrNull("action") ?: return null
 
-        val patterns = props.getAsJsonArray("patterns")
+        val patterns = payload.getAsJsonArray("resources")
             ?.mapNotNull { element ->
                 if (!element.isJsonPrimitive) return@mapNotNull null
                 element.asString
@@ -214,7 +233,7 @@ class SseClient(
             ?: emptyList()
 
         val metadata = mutableMapOf<String, String>()
-        props.getAsJsonObject("metadata")
+        payload.getAsJsonObject("metadata")
             ?.entrySet()
             ?.forEach { (key, value) ->
                 if (!value.isJsonPrimitive) return@forEach
@@ -231,9 +250,9 @@ class SseClient(
         return OpenCodeEvent.PermissionAsked(id, sessionId, permission, patterns, metadata)
     }
 
-    private fun parseSessionStatus(props: JsonObject): OpenCodeEvent.SessionStatus? {
-        val sessionId = props.getStringOrNull("sessionID") ?: return null
-        val status = props.get("status") ?: return null
+    private fun parseSessionStatus(payload: JsonObject): OpenCodeEvent.SessionStatus? {
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        val status = payload.get("status") ?: return null
         val statusType = status.takeIf { it.isJsonObject }
             ?.asJsonObject
             ?.getStringOrNull("type")
@@ -250,40 +269,35 @@ class SseClient(
         return OpenCodeEvent.SessionStatus(sessionId, parsedStatus)
     }
 
-    private fun parseSessionLifecycleChanged(props: JsonObject): OpenCodeEvent.SessionLifecycleChanged? {
-        val sessionId = props.getStringOrNull("sessionID")
-            ?: props.getObjectOrNull("info")?.getStringOrNull("id")
-            ?: return null
+    private fun parseSessionIdle(payload: JsonObject): OpenCodeEvent.SessionStatus? {
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        return OpenCodeEvent.SessionStatus(sessionId, OpenCodeEvent.SessionStatusType.IDLE)
+    }
+
+    private fun parseExecutionStarted(payload: JsonObject): OpenCodeEvent.SessionStatus? {
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        return OpenCodeEvent.SessionStatus(sessionId, OpenCodeEvent.SessionStatusType.BUSY)
+    }
+
+    private fun parseExecutionFinished(payload: JsonObject): OpenCodeEvent.SessionExecutionFinished? {
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
+        return OpenCodeEvent.SessionExecutionFinished(sessionId)
+    }
+
+    private fun parseSessionLifecycleChanged(payload: JsonObject): OpenCodeEvent.SessionLifecycleChanged? {
+        val sessionId = payload.getStringOrNull("sessionID") ?: return null
         return OpenCodeEvent.SessionLifecycleChanged(sessionId)
     }
 
-    // message.updated only tells us which user message has diffs;
-    // the actual patch content is fetched later via /session/{id}/diff?messageID=...
-    private fun parseMessageUpdated(props: JsonObject): OpenCodeEvent.MessageDiffAvailable? {
-        val info = props.getObjectOrNull("info") ?: return null
-        if (info.getStringOrNull("role") != "user") return null
-
-        val sessionId = props.getStringOrNull("sessionID")
-            ?: info.getStringOrNull("sessionID")
-            ?: return null
-        val messageId = info.getStringOrNull("id") ?: return null
-        val diffs = info.getObjectOrNull("summary")
-            ?.get("diffs")
-            ?.takeIf { it.isJsonArray }
-            ?.asJsonArray
-            ?: return null
-        val files = diffs.mapNotNull { element ->
-            if (!element.isJsonObject) return@mapNotNull null
-            element.asJsonObject.getStringOrNull("file")?.takeIf { it.isNotBlank() }
-        }
-        if (files.isEmpty()) return null
-
-        return OpenCodeEvent.MessageDiffAvailable(sessionId, messageId, files)
+    private fun parseMcpStatusChanged(payload: JsonObject): OpenCodeEvent.McpStatusChanged? {
+        val server = payload.getStringOrNull("server") ?: return null
+        return OpenCodeEvent.McpStatusChanged(server)
     }
 
-    private fun parseMcpToolsChanged(props: JsonObject): OpenCodeEvent.McpToolsChanged? {
-        val server = props.getStringOrNull("server") ?: return null
-        return OpenCodeEvent.McpToolsChanged(server)
+    private fun isExpectedDisconnect(e: Exception): Boolean {
+        if (e !is IOException) return false
+        val message = e.message?.lowercase() ?: return false
+        return message.contains("stream is closed") || message.contains("socket closed")
     }
 
 }

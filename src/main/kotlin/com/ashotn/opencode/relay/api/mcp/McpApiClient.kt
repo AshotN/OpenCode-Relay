@@ -2,8 +2,10 @@ package com.ashotn.opencode.relay.api.mcp
 
 import com.ashotn.opencode.relay.api.transport.ApiResult
 import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
-import com.ashotn.opencode.relay.api.transport.mapJsonObjectResponse
+import com.ashotn.opencode.relay.api.transport.flatMap
+import com.ashotn.opencode.relay.api.transport.map
 import com.ashotn.opencode.relay.api.transport.parseBooleanResponse
+import com.ashotn.opencode.relay.api.transport.parseJsonEnvelope
 import com.ashotn.opencode.relay.api.transport.withParseContext
 import com.ashotn.opencode.relay.util.getStringOrNull
 import com.google.gson.JsonObject
@@ -14,16 +16,16 @@ class McpApiClient(
     data class McpServer(
         val name: String,
         val status: McpConnectionStatus,
-        /** Present when status is [McpConnectionStatus.FAILED] or [McpConnectionStatus.NEEDS_CLIENT_REGISTRATION]. */
+        /** Present when status is [McpConnectionStatus.FAILED] or [McpConnectionStatus.NEEDS_AUTH]. */
         val error: String? = null,
     )
 
     enum class McpConnectionStatus {
         CONNECTED,
+        PENDING,
         DISABLED,
         FAILED,
         NEEDS_AUTH,
-        NEEDS_CLIENT_REGISTRATION,
         UNKNOWN,
     }
 
@@ -44,27 +46,48 @@ class McpApiClient(
     fun listServers(port: Int): ApiResult<List<McpServer>> {
         val endpoint = McpEndpoints.status()
         val response = transport.get(port = port, path = endpoint.path)
-        return transport.mapJsonObjectResponse(response) { root: JsonObject ->
-            val servers = root.entrySet().map { entry ->
-                val name = entry.key
-                val element = entry.value
-                if (!element.isJsonObject) {
-                    return@map McpServer(name = name, status = McpConnectionStatus.UNKNOWN)
+        // v2 returns {location, data: [Mcp.Server]}; the composite envelope keeps
+        // `data` alongside sibling fields, so it is not unwrapped automatically.
+        return transport.parseJsonEnvelope(response)
+            .map { root -> root.get("data") }
+            .flatMap { dataElement ->
+                val servers = if (dataElement != null && dataElement.isJsonArray) {
+                    dataElement.asJsonArray.mapNotNull { element ->
+                        if (!element.isJsonObject) return@mapNotNull null
+                        parseServer(element.asJsonObject)
+                    }
+                } else {
+                    emptyList()
                 }
-                val obj = element.asJsonObject
-                val statusRaw = obj.getStringOrNull("status")
-                val error = obj.getStringOrNull("error")
-                val status = when (statusRaw) {
-                    "connected" -> McpConnectionStatus.CONNECTED
-                    "disabled" -> McpConnectionStatus.DISABLED
-                    "failed" -> McpConnectionStatus.FAILED
-                    "needs_auth" -> McpConnectionStatus.NEEDS_AUTH
-                    "needs_client_registration" -> McpConnectionStatus.NEEDS_CLIENT_REGISTRATION
-                    else -> McpConnectionStatus.UNKNOWN
-                }
-                McpServer(name = name, status = status, error = error)
+                ApiResult.Success(servers)
             }
-            ApiResult.Success(servers)
-        }.withParseContext(endpoint)
+            .withParseContext(endpoint)
+    }
+
+    private fun parseServer(obj: JsonObject): McpServer? {
+        val name = obj.getStringOrNull("name") ?: return null
+        val statusObj = obj.get("status")
+        if (statusObj == null) return McpServer(name = name, status = McpConnectionStatus.UNKNOWN)
+
+        // v2 status is a nested object: {status: "...", error?}.
+        val statusRaw = if (statusObj.isJsonObject) {
+            statusObj.asJsonObject.getStringOrNull("status")
+        } else {
+            statusObj.takeIf { it.isJsonPrimitive }?.asString
+        }
+        val error = if (statusObj.isJsonObject) {
+            statusObj.asJsonObject.getStringOrNull("error")
+        } else {
+            null
+        }
+        val status = when (statusRaw) {
+            "connected" -> McpConnectionStatus.CONNECTED
+            "pending" -> McpConnectionStatus.PENDING
+            "disabled" -> McpConnectionStatus.DISABLED
+            "failed" -> McpConnectionStatus.FAILED
+            "needs_auth" -> McpConnectionStatus.NEEDS_AUTH
+            else -> McpConnectionStatus.UNKNOWN
+        }
+        return McpServer(name = name, status = status, error = error)
     }
 }

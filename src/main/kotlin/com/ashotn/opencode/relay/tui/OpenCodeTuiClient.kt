@@ -183,7 +183,10 @@ class OpenCodeTuiClient(private val project: Project) {
     }
 
     /**
-     * Renames a session via PATCH /session/{sessionId}.
+     * Renames a session via PATCH /api/session/{sessionId}.
+     *
+     * v2 returns 204 without a body, so the updated title is picked up by the
+     * hierarchy refresh that follows.
      */
     fun renameSession(sessionId: String, newTitle: String, onResult: (success: Boolean, error: String?) -> Unit) {
         val currentPort = port
@@ -195,11 +198,7 @@ class OpenCodeTuiClient(private val project: Project) {
         ApplicationManager.getApplication().executeOnPooledThread {
             val coreService = OpenCodeCoreService.getInstance(project)
             when (val result = sessionApiClient.updateSession(currentPort, sessionId, newTitle)) {
-                is ApiResult.Success -> {
-                    coreService.updateSessionState(result.value)
-                    onResult(true, null)
-                }
-
+                is ApiResult.Success -> onResult(true, null)
                 is ApiResult.Failure -> onResult(false, apiErrorMessage(result.error))
             }
             coreService.refreshSessionHierarchy()

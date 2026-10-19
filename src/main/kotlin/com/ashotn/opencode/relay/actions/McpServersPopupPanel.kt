@@ -221,14 +221,12 @@ class McpServersPopupPanel(
     private fun statusTooltipFor(entry: McpEntry) = when {
         entry.isLoading -> "Updating…"
         entry.isConnected -> "Connected"
+        entry.connectionStatus == McpConnectionStatus.PENDING -> "Connecting…"
         entry.connectionStatus == McpConnectionStatus.DISABLED -> "Disabled"
         entry.connectionStatus == McpConnectionStatus.FAILED ->
             "Failed: ${entry.connectionError ?: "unknown error"}"
 
         entry.connectionStatus == McpConnectionStatus.NEEDS_AUTH -> "Needs authentication"
-        entry.connectionStatus == McpConnectionStatus.NEEDS_CLIENT_REGISTRATION ->
-            "Needs client registration"
-
         entry.connectionStatus == null -> "Not yet connected"
         else -> entry.connectionStatus.name.lowercase().replace('_', ' ')
     }

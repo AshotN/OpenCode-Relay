@@ -12,7 +12,7 @@ import java.util.concurrent.CopyOnWriteArraySet
  * Unified view of a configured MCP server, combining:
  * - [config]: what the user has in their opencode config (`/config`)
  * - [connectionStatus]: the live runtime status from the OpenCode server (`/mcp`)
- * - [connectionError]: error message when [connectionStatus] is FAILED or NEEDS_CLIENT_REGISTRATION
+ * - [connectionError]: error message when [connectionStatus] is FAILED or NEEDS_AUTH
  * - [isLoading]: true while a connect/disconnect call is in-flight for this server
  *
  * A server present in config but absent from the runtime status map will have
@@ -33,6 +33,7 @@ data class McpEntry(
     val hasIssue: Boolean
         get() = config.enabled && connectionStatus != null
                 && connectionStatus != McpApiClient.McpConnectionStatus.CONNECTED
+                && connectionStatus != McpApiClient.McpConnectionStatus.PENDING
                 && connectionStatus != McpApiClient.McpConnectionStatus.DISABLED
 }
 

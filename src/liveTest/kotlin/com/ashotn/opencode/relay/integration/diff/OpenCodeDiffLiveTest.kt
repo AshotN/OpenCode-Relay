@@ -38,9 +38,6 @@ class OpenCodeDiffLiveTest(
         fun versions(): List<Array<String>> = OpenCodeTestVersions.all().map { arrayOf(it) }
     }
 
-    private val providerId = "github-copilot"
-    private val modelId = "gpt-5-mini"
-
     @Test
     fun `creates and updates hello txt through real opencode server`() {
         withLiveSession(version) { environment, server, sessionClient, events, sessionId ->
@@ -164,9 +161,9 @@ class OpenCodeDiffLiveTest(
                 "expected at least one child session to own the edits, got ${childDiffs.fileToChildSessionId}",
             )
             assertEquals(
-                expectedFiles.keys.associateWith { "user" },
+                expectedFiles.keys.associateWith { "assistant" },
                 childDiffs.diffSummaryRoleByFile,
-                "child diff summaries should be carried by user messages, matching the parser filter",
+                "child diff summaries should be carried by assistant message snapshots, matching the parser filter",
             )
         }
     }
@@ -217,17 +214,15 @@ class OpenCodeDiffLiveTest(
         text: String,
     ) {
         val nextIdleCount = events.sessionIdleCount(sessionId) + 1
-        val nextDiffSignalCount = events.diffSignalCount(sessionId) + 1
+        val nextExecutionFinishedCount = events.executionFinishedCount(sessionId) + 1
         assertIs<ApiResult.Success<Unit>>(
-            sessionClient.promptTextAsync(
+            sessionClient.promptText(
                 port = port,
                 sessionId = sessionId,
-                providerId = providerId,
-                modelId = modelId,
                 text = text,
             ),
         )
-        events.awaitDiffSignal(sessionId, nextDiffSignalCount, timeoutMs = turnTimeoutMs)
+        events.awaitExecutionFinished(sessionId, nextExecutionFinishedCount, timeoutMs = turnTimeoutMs)
         events.awaitIdleStatus(sessionId, nextIdleCount, timeoutMs = turnTimeoutMs)
     }
 
