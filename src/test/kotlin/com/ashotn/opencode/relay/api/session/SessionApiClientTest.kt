@@ -151,13 +151,15 @@ class SessionApiClientTest {
     fun `fetchSessionDiffSnapshot fetches first to last user turn range`() {
         withTestServer { server, port ->
             val diffQueries = mutableListOf<String>()
+            // v2 message lists arrive newest-first with `time.created`; the diff
+            // range route requires `from` (oldest) to precede `to` (newest).
             server.createContext("/api/session/ses_1/message") { exchange ->
                 val body = """
                     {
                       "data": [
-                        {"id": "msg_u1", "type": "user", "text": "first"},
-                        {"id": "msg_a1", "type": "assistant", "content": []},
-                        {"id": "msg_u2", "type": "user", "text": "second"}
+                        {"id": "msg_u2", "type": "user", "text": "second", "time": {"created": 300}},
+                        {"id": "msg_a2", "type": "assistant", "content": [], "time": {"created": 250}},
+                        {"id": "msg_u1", "type": "user", "text": "first", "time": {"created": 100}}
                       ],
                       "cursor": {"next": null, "previous": null}
                     }

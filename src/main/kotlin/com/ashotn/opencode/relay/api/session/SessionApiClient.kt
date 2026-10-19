@@ -50,9 +50,62 @@ class SessionApiClient(
         val files: List<String>,
     )
 
-    fun createSession(port: Int): ApiResult<CreatedSession> {
+    /**
+     * A single session-scoped permission rule (v2 `Permission.Rule`).
+     * `effect` is one of `"allow"`, `"deny"`, `"ask"`.
+     */
+    data class PermissionRule(
+        val action: String,
+        val resource: String,
+        val effect: String,
+    )
+
+    /**
+     * A model reference for session creation (v2 `Model.Ref`).
+     */
+    data class SessionModelRef(
+        val providerID: String,
+        val modelID: String,
+    )
+
+    /**
+     * Creates a session, optionally with explicit session-scoped permission rules
+     * and a pinned model.
+     *
+     * OpenCode 2.x removed the v1 `OPENCODE_PERMISSION` environment variable;
+     * session permissions are provided here instead of via server config.
+     */
+    fun createSession(
+        port: Int,
+        permissions: List<PermissionRule>? = null,
+        model: SessionModelRef? = null,
+    ): ApiResult<CreatedSession> {
         val endpoint = SessionEndpoints.create()
-        val response = transport.post(port = port, path = endpoint.path, payload = JsonObject().toString())
+        val payload = JsonObject().also { body ->
+            permissions.orEmpty().takeIf { it.isNotEmpty() }?.let { rules ->
+                val rulesArray = JsonArray()
+                rules.forEach { rule ->
+                    rulesArray.add(
+                        JsonObject().also {
+                            it.addProperty("action", rule.action)
+                            it.addProperty("resource", rule.resource)
+                            it.addProperty("effect", rule.effect)
+                        },
+                    )
+                }
+                body.add("permissions", rulesArray)
+            }
+            model?.let { ref ->
+                body.add(
+                    "model",
+                    JsonObject().also {
+                        it.addProperty("providerID", ref.providerID)
+                        it.addProperty("id", ref.modelID)
+                    },
+                )
+            }
+        }
+        val response = transport.post(port = port, path = endpoint.path, payload = payload.toString())
         return transport.mapJsonObjectResponse(response) { sessionObj ->
             val id = sessionObj.getStringOrNull("id")
             if (id.isNullOrBlank()) {
@@ -211,6 +264,12 @@ class SessionApiClient(
         }
     }
 
+    /**
+     * User message IDs of the session in chronological order (oldest first).
+     *
+     * The v2 message list arrives newest-first, but the diff range route requires
+     * `from` to precede `to`, so IDs are sorted by `time.created` ascending.
+     */
     private fun fetchUserMessageIds(port: Int, sessionId: String): ApiResult<List<String>> {
         val endpoint = SessionEndpoints.messages(sessionId)
         return walkPages(port, endpoint.path) { cursor -> pageQuery(cursor = cursor) }
@@ -219,9 +278,16 @@ class SessionApiClient(
                     if (!element.isJsonObject) return@mapNotNull null
                     val message = element.asJsonObject
                     if (message.getStringOrNull("type") != "user") return@mapNotNull null
-                    message.getStringOrNull("id")?.takeIf { it.isNotBlank() }
-                }
-                ApiResult.Success(ids)
+                    val id = message.getStringOrNull("id")?.takeIf { it.isNotBlank() }
+                        ?: return@mapNotNull null
+                    val created = message.getAsJsonObject("time")
+                        ?.get("created")
+                        ?.takeIf { it.isJsonPrimitive }
+                        ?.asLong
+                        ?: Long.MIN_VALUE
+                    created to id
+                }.sortedBy { it.first }
+                ApiResult.Success(ids.map { it.second })
             }
             .withParseContext(endpoint)
     }

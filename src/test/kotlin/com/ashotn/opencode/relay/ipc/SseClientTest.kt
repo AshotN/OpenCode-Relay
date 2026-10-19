@@ -141,15 +141,15 @@ class SseClientTest {
     }
 
     @Test
-    fun `maps execution started and finished events to busy status and finished signal`() {
+    fun `maps execution started and finished events to busy status, finished signal, and derived idle`() {
         withTestServer { server, port ->
+            // v2 turn stream: v2.0.32 emits no `session.idle` or `session.status`
+            // around turn completion, only the execution lifecycle events.
             server.createContext("/api/event") { exchange ->
                 val body = """
                     data: {"id":"evt_1","created":1,"type":"session.execution.started","location":{"directory":"/project"},"data":{"sessionID":"ses_1","userMessageID":"msg_u1"}}
 
                     data: {"id":"evt_2","created":2,"type":"session.execution.succeeded","location":{"directory":"/project"},"data":{"sessionID":"ses_1","assistantMessageID":"msg_a1"}}
-
-                    data: {"id":"evt_3","created":3,"type":"session.idle","location":{"directory":"/project"},"data":{"sessionID":"ses_1"}}
 
                 """.trimIndent()
                 val bytes = body.toByteArray(Charsets.UTF_8)
@@ -186,8 +186,51 @@ class SseClientTest {
             val finished = assertIs<OpenCodeEvent.SessionExecutionFinished>(events[1])
             assertEquals("ses_1", finished.sessionId)
 
+            // Idle is derived from the finished execution because v2 emits no idle event.
             val idle = assertIs<OpenCodeEvent.SessionStatus>(events[2])
             assertEquals(OpenCodeEvent.SessionStatusType.IDLE, idle.status)
+            assertEquals("ses_1", idle.sessionId)
+        }
+    }
+
+    @Test
+    fun `still maps explicit session idle event to idle status`() {
+        withTestServer { server, port ->
+            server.createContext("/api/event") { exchange ->
+                val body = """
+                    data: {"id":"evt_1","created":1,"type":"session.idle","location":{"directory":"/project"},"data":{"sessionID":"ses_1"}}
+
+                """.trimIndent()
+                val bytes = body.toByteArray(Charsets.UTF_8)
+                exchange.responseHeaders.add("Content-Type", "text/event-stream")
+                exchange.sendResponseHeaders(200, bytes.size.toLong())
+                exchange.responseBody.use { it.write(bytes) }
+            }
+
+            val received = mutableListOf<OpenCodeEvent>()
+            val latch = CountDownLatch(1)
+            val client = SseClient(
+                port = port,
+                directory = "/project",
+                onEvent = { event ->
+                    synchronized(received) {
+                        received.add(event)
+                    }
+                    latch.countDown()
+                },
+            )
+
+            try {
+                client.start()
+                assertTrue(latch.await(2, TimeUnit.SECONDS), "expected idle event")
+            } finally {
+                client.stop()
+            }
+
+            val events = synchronized(received) { received.toList() }
+            val idle = assertIs<OpenCodeEvent.SessionStatus>(events[0])
+            assertEquals(OpenCodeEvent.SessionStatusType.IDLE, idle.status)
+            assertEquals("ses_1", idle.sessionId)
         }
     }
 

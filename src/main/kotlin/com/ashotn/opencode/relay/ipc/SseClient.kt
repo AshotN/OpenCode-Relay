@@ -182,11 +182,25 @@ class SseClient(
 
             if (event != null) {
                 onEvent(event)
+                derivedIdleStatus(event)?.let { onEvent(it) }
             }
         } catch (e: Exception) {
             log.warn("SseClient: failed to parse event jsonLength=${json.length}", e)
         }
     }
+
+    /**
+     * v2 does not emit `session.idle` or `session.status` when a turn completes —
+     * only `session.execution.{succeeded,failed,interrupted}` marks the end of a
+     * turn (verified live against v2.0.32) — so the idle status is derived from
+     * the finished execution.
+     */
+    private fun derivedIdleStatus(event: OpenCodeEvent): OpenCodeEvent.SessionStatus? =
+        when (event) {
+            is OpenCodeEvent.SessionExecutionFinished ->
+                OpenCodeEvent.SessionStatus(event.sessionId, OpenCodeEvent.SessionStatusType.IDLE)
+            else -> null
+        }
 
     /**
      * v2 events carry an optional `location.directory`. When both the event and this
