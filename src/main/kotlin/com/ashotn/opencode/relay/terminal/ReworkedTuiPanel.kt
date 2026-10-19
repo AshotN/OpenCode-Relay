@@ -33,7 +33,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * Hosts an embedded Reworked Terminal running `opencode attach <server-url>`.
+ * Hosts an embedded Reworked Terminal running `opencode --server=<server-url>`.
  *
  * Uses the experimental [TerminalToolWindowTabsManager] API to create a detached terminal
  * session that is never shown or persisted in the native Terminal tool window. Correct
@@ -82,11 +82,15 @@ class ReworkedTuiPanel(
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val environmentVariables = OpenCodeSettings.getInstance(project)
                 .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
+            // v2 removed the v1 `attach` subcommand; the TUI is the default command and
+            // connects to an explicit server via `--server=<url>`. The equals form is
+            // required: with a space-separated value the URL is misparsed as the
+            // positional directory argument (chdir ENOENT, TUI renders nothing) on
+            // v2.0.32.
             val command = OpenCodeProcessEnvironment.terminalCommand(
                 listOf(
                     executablePath,
-                    "attach",
-                    serverUrl(OpenCodePlugin.getInstance(project).connectionPort),
+                    "--server=${serverUrl(OpenCodePlugin.getInstance(project).connectionPort)}",
                 ),
                 environmentVariables,
             )

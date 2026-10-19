@@ -40,7 +40,7 @@ import javax.swing.ImageIcon
 import javax.swing.JPanel
 
 /**
- * Hosts an embedded classic terminal running `opencode attach <server-url>`.
+ * Hosts an embedded classic terminal running `opencode --server=<server-url>`.
  *
  * Backed by [LocalTerminalDirectRunner] with a [ShellStartupOptions.shellCommand] override.
  * The terminal is started lazily on the first call to [startIfNeeded] and lives for as long
@@ -90,11 +90,15 @@ class ClassicTuiPanel(
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val environmentVariables = OpenCodeSettings.getInstance(project)
                 .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
+            // v2 removed the v1 `attach` subcommand; the TUI is the default command and
+            // connects to an explicit server via `--server=<url>`. The equals form is
+            // required: with a space-separated value the URL is misparsed as the
+            // positional directory argument (chdir ENOENT, TUI renders nothing) on
+            // v2.0.32.
             val command = OpenCodeProcessEnvironment.terminalCommand(
                 listOf(
                     executablePath,
-                    "attach",
-                    serverUrl(OpenCodePlugin.getInstance(project).connectionPort),
+                    "--server=${serverUrl(OpenCodePlugin.getInstance(project).connectionPort)}",
                 ),
                 environmentVariables,
             )

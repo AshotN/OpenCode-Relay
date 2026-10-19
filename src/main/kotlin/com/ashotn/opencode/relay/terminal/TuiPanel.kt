@@ -5,7 +5,7 @@ import javax.swing.JPanel
 
 /**
  * Common contract for the embeddable terminal panel that runs
- * `opencode attach <server-url>` inside the tool window.
+ * `opencode --server=<server-url>` inside the tool window.
  *
  * Two implementations exist:
  * - [ClassicTuiPanel] backed by the classic JediTerm widget
