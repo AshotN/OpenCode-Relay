@@ -5,11 +5,7 @@ import com.intellij.util.messages.Topic
 data class OpenCodeSettingsSnapshot(
     val serverPort: Int,
     val serverHostname: String,
-    val serverMdnsEnabled: Boolean,
-    val serverMdnsDomain: String,
     val serverCorsOrigins: String,
-    val serverAuthUsername: String,
-    val protectPluginLaunchedServerWithAuth: Boolean,
     val serverEnvironmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     val executablePath: String,
     val autoStartOnStartup: Boolean,

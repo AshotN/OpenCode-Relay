@@ -15,12 +15,9 @@ class OpenCodeServerAuthTest : BasePlatformTestCase() {
     }
 
     fun testConnectionAuthorizationHeaderUsesFixedOpenCodeUsername() {
-        val settings = OpenCodeSettings.getInstance(project)
         val auth = OpenCodeServerAuth.getInstance(project)
 
-        // OpenCode 2.x always authenticates as the fixed "opencode" user;
-        // a configured username must not leak into the header.
-        settings.serverAuthUsername = "alice"
+        // OpenCode 2.x always authenticates as the fixed "opencode" user.
         auth.setPassword("secret")
 
         val expectedToken = Base64.getEncoder()

@@ -34,11 +34,7 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
     data class State(
         var serverPort: Int = 4096,
         var serverHostname: String = "127.0.0.1",
-        var serverMdnsEnabled: Boolean = false,
-        var serverMdnsDomain: String = "opencode.local",
         var serverCorsOrigins: String = "",
-        var serverAuthUsername: String = DEFAULT_SERVER_AUTH_USERNAME,
-        var protectPluginLaunchedServerWithAuth: Boolean = false,
         var serverEnvironmentVariables: MutableList<EnvironmentVariable> = mutableListOf(),
         var executablePath: String = "",
         var autoStartOnStartup: Boolean = false,
@@ -73,34 +69,10 @@ class OpenCodeSettings : PersistentStateComponent<OpenCodeSettings.State> {
             state.serverHostname = value
         }
 
-    var serverMdnsEnabled: Boolean
-        get() = state.serverMdnsEnabled
-        set(value) {
-            state.serverMdnsEnabled = value
-        }
-
-    var serverMdnsDomain: String
-        get() = state.serverMdnsDomain
-        set(value) {
-            state.serverMdnsDomain = value
-        }
-
     var serverCorsOrigins: String
         get() = state.serverCorsOrigins
         set(value) {
             state.serverCorsOrigins = value
-        }
-
-    var serverAuthUsername: String
-        get() = state.serverAuthUsername
-        set(value) {
-            state.serverAuthUsername = value
-        }
-
-    var protectPluginLaunchedServerWithAuth: Boolean
-        get() = state.protectPluginLaunchedServerWithAuth
-        set(value) {
-            state.protectPluginLaunchedServerWithAuth = value
         }
 
     var serverEnvironmentVariables: List<EnvironmentVariable>
@@ -186,11 +158,7 @@ fun OpenCodeSettings.snapshot(): OpenCodeSettingsSnapshot = state.toSnapshot()
 fun OpenCodeSettings.State.toSnapshot(): OpenCodeSettingsSnapshot = OpenCodeSettingsSnapshot(
     serverPort = serverPort,
     serverHostname = serverHostname,
-    serverMdnsEnabled = serverMdnsEnabled,
-    serverMdnsDomain = serverMdnsDomain,
     serverCorsOrigins = serverCorsOrigins,
-    serverAuthUsername = serverAuthUsername,
-    protectPluginLaunchedServerWithAuth = protectPluginLaunchedServerWithAuth,
     serverEnvironmentVariables = serverEnvironmentVariables.map { it.copy() },
     executablePath = executablePath,
     autoStartOnStartup = autoStartOnStartup,

@@ -49,11 +49,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     internal lateinit var serverEnvironmentVariablesTable: TableView<OpenCodeSettings.EnvironmentVariable>
 
     internal lateinit var serverHostnameField: JBTextField
-    internal lateinit var serverAuthUsernameField: JBTextField
     internal lateinit var serverAuthPasswordField: JBPasswordField
-    internal lateinit var protectPluginLaunchedServerWithAuthCheckBox: JCheckBox
-    internal lateinit var serverMdnsEnabledCheckBox: JCheckBox
-    internal lateinit var serverMdnsDomainField: JBTextField
     internal lateinit var autoStartOnStartupCheckBox: JCheckBox
 
     internal var executableResolver: (String?) -> OpenCodeExecutableDetection = { path -> OpenCodeChecker.findExecutable(path) }
@@ -137,19 +133,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .align(AlignX.FILL)
                     serverHostnameField = cell.component
                 }
-                row("mDNS:") {
-                    val cell = checkBox("Enable discovery")
-                        .bindSelected(pendingState::serverMdnsEnabled)
-                        .comment("`--mdns`: Enable mDNS discovery. Default: false")
-                    serverMdnsEnabledCheckBox = cell.component
-                }
-                row("mDNS Domain:") {
-                    val cell = textField()
-                        .bindText(pendingState::serverMdnsDomain)
-                        .comment("`--mdns-domain`: Custom domain name for mDNS service. Default: opencode.local")
-                        .align(AlignX.FILL)
-                    serverMdnsDomainField = cell.component
-                }
                 row("CORS Origins:") {
                     cell(serverCorsOriginsEditor.panel)
                         .comment("`--cors`: Additional browser origins to allow. Default: []. Use Add and Remove to manage entries, and edit values inline.")
@@ -158,27 +141,16 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 }
             }
             group("Server Authentication") {
-                row("Username:") {
-                    val cell = textField()
-                        .bindText(pendingState::serverAuthUsername)
-                        .comment("Used for protected OpenCode server connections. Default: opencode")
-                        .align(AlignX.FILL)
-                    serverAuthUsernameField = cell.component
-                }
+                // OpenCode 2.x always authenticates as the fixed "opencode" user with a
+                // password supplied via OPENCODE_PASSWORD, so only the password is
+                // configurable.
                 row("Password:") {
                     val field = JBPasswordField()
                     serverAuthPasswordField = field
                     loadServerAuthPasswordField()
                     cell(field)
-                        .comment("Stored securely in the IDE password safe.")
+                        .comment("Stored securely in the IDE password safe. OpenCode 2.x servers always require this password.")
                         .align(AlignX.FILL)
-                }
-                row {
-                    val cell = checkBox("Protect server launched by plugin")
-                        .bindSelected(pendingState::protectPluginLaunchedServerWithAuth)
-                        .comment("When enabled, the plugin will use these credentials for plugin-launched OpenCode servers.")
-                    protectPluginLaunchedServerWithAuthCheckBox = cell.component
-                    updateServerAuthPasswordLoadingUi()
                 }
             }
             group("Environment") {
@@ -306,8 +278,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         commitTableEdits()
         super.apply() // Pushes UI values into pendingState.
         pendingState.serverCorsOrigins = serializeServerCorsOrigins()
-        pendingState.serverAuthUsername =
-            pendingState.serverAuthUsername.trim().ifEmpty { OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME }
         pendingState.serverEnvironmentVariables = serializeServerEnvironmentVariables()
 
         if (pendingState.serverEnvironmentVariables.any { it.name.contains('=') }) {
@@ -315,12 +285,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         }
         validateUniqueEnvironmentVariableNames(pendingState.serverEnvironmentVariables)
         validateReservedServerAuthEnvironmentVariables(pendingState.serverEnvironmentVariables)
-        if (pendingState.protectPluginLaunchedServerWithAuth && currentServerAuthPassword().isBlank()) {
-            if (!serverAuth.isPasswordLoaded()) {
-                throw ConfigurationException("Server authentication password is still loading. Try again.")
-            }
-            throw ConfigurationException("Enter a password to protect the server launched by plugin")
-        }
 
         val newSettings = pendingState.toSnapshot()
         val settingsChanged = newSettings != oldSettings
@@ -432,11 +396,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     private fun loadPendingFromPersisted(settings: OpenCodeSettings = OpenCodeSettings.getInstance(project)) {
         pendingState.serverPort = settings.serverPort
         pendingState.serverHostname = settings.serverHostname
-        pendingState.serverMdnsEnabled = settings.serverMdnsEnabled
-        pendingState.serverMdnsDomain = settings.serverMdnsDomain
         pendingState.serverCorsOrigins = settings.serverCorsOrigins
-        pendingState.serverAuthUsername = settings.serverAuthUsername
-        pendingState.protectPluginLaunchedServerWithAuth = settings.protectPluginLaunchedServerWithAuth
         pendingState.serverEnvironmentVariables = settings.serverEnvironmentVariables.map { it.copy() }.toMutableList()
         pendingState.executablePath = settings.executablePath
         pendingState.autoStartOnStartup = settings.autoStartOnStartup
@@ -504,9 +464,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         if (::serverAuthPasswordField.isInitialized) {
             serverAuthPasswordField.isEnabled = !serverAuthPasswordLoading
         }
-        if (::protectPluginLaunchedServerWithAuthCheckBox.isInitialized) {
-            protectPluginLaunchedServerWithAuthCheckBox.isEnabled = !serverAuthPasswordLoading
-        }
     }
 
     private fun saveServerAuthPassword(serverAuth: OpenCodeServerAuth, password: String): Boolean {
@@ -540,7 +497,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
             ?.name
             ?: return
         throw ConfigurationException(
-            "Use the Server Authentication fields instead of $reservedName",
+            "Use the Server Authentication password instead of $reservedName",
         )
     }
 

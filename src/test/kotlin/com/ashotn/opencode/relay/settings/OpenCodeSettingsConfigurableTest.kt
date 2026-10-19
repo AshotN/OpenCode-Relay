@@ -20,8 +20,6 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
     override fun tearDown() {
         try {
             val settings = OpenCodeSettings.getInstance(project)
-            settings.serverAuthUsername = OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME
-            settings.protectPluginLaunchedServerWithAuth = false
             settings.autoStartOnStartup = false
             OpenCodeServerAuth.getInstance(project).setPassword("")
         } finally {
@@ -125,8 +123,6 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
 
             runOnEdt {
                 configurable.serverHostnameField.text = "0.0.0.0"
-                configurable.serverMdnsEnabledCheckBox.isSelected = true
-                configurable.serverMdnsDomainField.text = "relay.local"
                 configurable.serverCorsOriginsModel.setItems(
                     listOf(
                         OpenCodeSettingsConfigurable.CorsOriginRow("http://localhost:5173"),
@@ -137,8 +133,6 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             }
 
             assertEquals("0.0.0.0", settings.serverHostname)
-            assertTrue(settings.serverMdnsEnabled)
-            assertEquals("relay.local", settings.serverMdnsDomain)
             assertEquals("http://localhost:5173\nhttps://app.example.com", settings.serverCorsOrigins)
         } finally {
             runOnEdt { configurable.disposeUIResources() }
@@ -154,53 +148,11 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             getOnEdt { configurable.createComponent() }
 
             runOnEdt {
-                configurable.serverAuthUsernameField.text = "alice"
                 configurable.serverAuthPasswordField.text = "secret"
-                configurable.protectPluginLaunchedServerWithAuthCheckBox.isSelected = true
                 configurable.apply()
             }
 
-            assertEquals("alice", settings.serverAuthUsername)
-            assertTrue(settings.protectPluginLaunchedServerWithAuth)
             assertEquals("secret", serverAuth.password())
-        } finally {
-            runOnEdt { configurable.disposeUIResources() }
-        }
-    }
-
-    fun testApplyDefaultsBlankServerAuthUsername() {
-        val settings = OpenCodeSettings.getInstance(project)
-        val configurable = OpenCodeSettingsConfigurable(project)
-
-        try {
-            getOnEdt { configurable.createComponent() }
-
-            runOnEdt {
-                configurable.serverAuthUsernameField.text = "   "
-                configurable.apply()
-            }
-
-            assertEquals(OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME, settings.serverAuthUsername)
-        } finally {
-            runOnEdt { configurable.disposeUIResources() }
-        }
-    }
-
-    fun testApplyRejectsProtectedServerWithoutPassword() {
-        val configurable = OpenCodeSettingsConfigurable(project)
-
-        try {
-            getOnEdt { configurable.createComponent() }
-
-            runOnEdt {
-                configurable.protectPluginLaunchedServerWithAuthCheckBox.isSelected = true
-                configurable.serverAuthPasswordField.text = ""
-            }
-
-            val exception = assertFailsWith<ConfigurationException> {
-                runOnEdt { configurable.apply() }
-            }
-            assertTrue(exception.localizedMessage.orEmpty().contains("protect the server launched by plugin"))
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
@@ -271,7 +223,7 @@ class OpenCodeSettingsConfigurableTest : BasePlatformTestCase() {
             val exception = assertFailsWith<ConfigurationException> {
                 runOnEdt { configurable.apply() }
             }
-            assertTrue(exception.localizedMessage.orEmpty().contains("Server Authentication fields"))
+            assertTrue(exception.localizedMessage.orEmpty().contains("Server Authentication password"))
         } finally {
             runOnEdt { configurable.disposeUIResources() }
         }
