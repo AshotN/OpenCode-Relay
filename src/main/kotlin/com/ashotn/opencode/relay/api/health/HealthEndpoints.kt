@@ -4,5 +4,5 @@ import com.ashotn.opencode.relay.api.transport.ApiEndpoint
 import com.ashotn.opencode.relay.api.transport.HttpMethod
 
 internal object HealthEndpoints {
-    fun check(): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/global/health")
+    fun check(): ApiEndpoint = ApiEndpoint(method = HttpMethod.GET, path = "/api/info")
 }

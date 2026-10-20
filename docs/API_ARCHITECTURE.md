@@ -28,7 +28,7 @@ Rules:
 
 - Use shared transport parsers (`parseBooleanResponse`, `parseJsonObjectResponse`, `parseJsonArrayResponse`) for mechanical parsing.
 - Apply `withParseContext(endpoint)` at API client boundaries when returning `ApiResult<*>` to callers.
-- Define endpoints in domain-grouped endpoint factory files next to each API client (for example `api/session/SessionEndpoints.kt`, `api/tui/TuiEndpoints.kt`) and pass the resulting endpoint object to `withParseContext(endpoint)`.
+- Define endpoints in domain-grouped endpoint factory files next to each API client (for example `api/session/SessionEndpoints.kt`, `api/health/HealthEndpoints.kt`) and pass the resulting endpoint object to `withParseContext(endpoint)`.
 - `ApiEndpoint` context must remain `METHOD /path` format (for example: `GET /session`, `POST /session/{sessionId}/permissions/{permissionId}`).
 - Keep parser error messages generic; endpoint attribution is added by `withParseContext(...)`.
 - Do not use `withParseContext(...)` to wrap non-parse concerns (`HttpError`, `NetworkError`).

@@ -33,7 +33,7 @@ import javax.swing.JComponent
 import javax.swing.JPanel
 
 /**
- * Hosts an embedded Reworked Terminal running `opencode attach <server-url>`.
+ * Hosts an embedded Reworked Terminal running `opencode --server=<server-url>`.
  *
  * Uses the experimental [TerminalToolWindowTabsManager] API to create a detached terminal
  * session that is never shown or persisted in the native Terminal tool window. Correct
@@ -67,9 +67,11 @@ class ReworkedTuiPanel(
      * Creates and embeds the terminal (once). Safe to call multiple times —
      * subsequent calls are no-ops while a session is alive.
      *
+     * [initialSessionId], when provided, opens that session via `--session=<id>`.
+     *
      * Must be called on the EDT.
      */
-    override fun startIfNeeded() {
+    override fun startIfNeeded(initialSessionId: String?) {
         if (terminalView != null) return
 
         try {
@@ -82,14 +84,17 @@ class ReworkedTuiPanel(
             val workingDir = project.basePath ?: System.getProperty("user.home")
             val environmentVariables = OpenCodeSettings.getInstance(project)
                 .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
-            val command = OpenCodeProcessEnvironment.terminalCommand(
-                listOf(
-                    executablePath,
-                    "attach",
-                    serverUrl(OpenCodeSettings.getInstance(project).serverPort),
-                ),
-                environmentVariables,
+            // v2 removed the v1 `attach` subcommand; the TUI is the default command and
+            // connects to an explicit server via `--server=<url>`. The equals form is
+            // required: with a space-separated value the value is misparsed as the
+            // positional directory argument (chdir ENOENT, TUI renders nothing) on
+            // v2.0.32. --session (equals form too) opens/continues a specific session.
+            val args = mutableListOf(
+                executablePath,
+                "--server=${serverUrl(OpenCodePlugin.getInstance(project).connectionPort)}",
             )
+            initialSessionId?.takeIf { it.isNotBlank() }?.let { args.add("--session=$it") }
+            val command = OpenCodeProcessEnvironment.terminalCommand(args, environmentVariables)
             val manager = TerminalToolWindowTabsManager.getInstance(project)
 
             val tabBuilder = manager.createTabBuilder()
@@ -193,6 +198,15 @@ class ReworkedTuiPanel(
     override fun focusTerminal() {
         val view = terminalView ?: return
         view.preferredFocusableComponent.requestFocusInWindow()
+    }
+
+    override fun appendToPrompt(text: String): Boolean {
+        val view = terminalView ?: return false
+        view.preferredFocusableComponent.requestFocusInWindow()
+        view.coroutineScope.launch {
+            view.createSendTextBuilder().useBracketedPasteMode().send(text)
+        }
+        return true
     }
 
     /** True while a terminal session is live. */

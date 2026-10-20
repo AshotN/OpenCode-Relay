@@ -28,20 +28,26 @@ The plugin can launch, monitor, and stop the OpenCode server for you.
 
 - **Start / Stop** — Start the server from the tool window with a single click. The plugin spawns
   `opencode serve --port <port>` in the project directory.
-- **Auto-detect a running server** — If OpenCode is already running on the configured port (e.g. started from the
-  terminal), the plugin connects to it automatically without taking ownership of the process.
+- **Auto-detect a running server** — If OpenCode's background service is running (detected from its
+  `service.json` state file and verified against the live process) or a server is already listening on the
+  configured port (e.g. started from the terminal), the plugin connects to it automatically without taking
+  ownership of the process.
+- **Authentication** — OpenCode 2.x servers require authentication. For servers the plugin launches, it generates
+  a password and passes it via the `OPENCODE_PASSWORD` environment variable; for detected services it reads the
+  password from the service state file.
 
 Once the server is running the plugin connects over SSE (Server-Sent Events) to receive real-time events.
 
 ### Session list
 
-The **Session changes** panel lists all root sessions. Each row shows:
+The **Sessions** panel lists the project's root sessions. Each row shows:
 
 - Session title and a short description
 - A spinner while the session is actively running
 - The number of files being tracked in that session
 
-Clicking a session row makes it the active session; the file list updates to show only that session's changes.
+Clicking a session row makes it the active session — the embedded TUI switches to it (by restarting with
+`--session`) and the file list updates to show only that session's changes.
 
 ### Modified-files list
 
@@ -85,12 +91,16 @@ Share code from the editor directly with OpenCode's prompt input:
 
 - Select any code in the editor
 - Use **Send Selection to OpenCode** from the right-click context menu
-- The selection is sent as a fenced code block (with filename and line range) to the active TUI session's prompt input
-  buffer
+- The selection is appended to the embedded TUI's prompt input as a file reference
+  (`@path#Lstart[-end]`) — no file content is embedded, OpenCode resolves the file and line range itself when
+  you submit
 
 The text is appended — not submitted — so you retain full control before pressing Enter in the TUI.
 
 You can also send file and folder paths to the TUI by right-clicking them in the project view.
+
+These actions paste into the embedded OpenCode terminal, so the OpenCode Relay tool window with the inline
+terminal must be open.
 
 ### Open in browser
 
@@ -99,7 +109,11 @@ The **Open in Browser** toolbar button opens the OpenCode web UI in your default
 ### New session in TUI
 
 The **New Session** toolbar button creates a new OpenCode session and immediately switches the active TUI instance to
-it.
+it. If the most recent session is already empty (no messages, no tracked files), it is reused instead of
+accumulating blank sessions.
+
+OpenCode 2.x exposes no non-interactive route for pointing the TUI at a session, so the embedded TUI is restarted
+with the new session (`opencode --session=<id>`); the session itself is created via the `POST /api/session` API.
 
 ### Permission prompts
 
@@ -114,12 +128,14 @@ Responses are sent back to the server immediately.
 ## Requirements
 
 - A JetBrains IDE based on IntelliJ Platform 2025.3 or later
-- [OpenCode CLI](https://opencode.ai/docs) version `1.16.0+` installed and on `PATH` (or the path configured in
-  settings)
+- [OpenCode CLI](https://opencode.ai/docs) version `2.x` installed and on `PATH` (or the path configured in
+  settings). OpenCode 1.x is not supported — the plugin detects it and explains that OpenCode 2.x is required.
 
 ## JetBrains MCP
 
 OpenCode Relay will warn you when JetBrains MCP is disabled or when a running OpenCode server is not connected to it.
+The **MCP Servers** action shows each configured server's connection status and lets you connect or disconnect it
+from the IDE.
 
 **It is highly recommended to enable JetBrains MCP for the best experience.**
 
@@ -130,16 +146,17 @@ To enable JetBrains MCP:
 3. Add a `jetbrains` MCP server to your `opencode.json`.
 4. Restart the OpenCode server so it reloads the config.
 
-Basic `opencode.json` example:
+Basic `opencode.json` example (OpenCode 2.x config format):
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "jetbrains": {
-      "type": "remote",
-      "url": "http://localhost:64342/sse",
-      "enabled": true
+    "servers": {
+      "jetbrains": {
+        "type": "remote",
+        "url": "http://localhost:64342/stream"
+      }
     }
   }
 }

@@ -14,6 +14,7 @@ import java.util.Base64
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
+import java.security.SecureRandom
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.SwingUtilities
 
@@ -33,10 +34,6 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
         loadPasswordInBackground()
     }
 
-    class MissingServerLaunchAuthCredentialsException : IllegalStateException(
-        "Server launch authentication is enabled but credentials are incomplete",
-    )
-
     data class BasicAuthCredentials(
         val username: String,
         val password: String,
@@ -46,9 +43,13 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
             return "Basic $token"
         }
 
+        /**
+         * Environment variables that authenticate a process against an OpenCode 2.x server.
+         * v2 reads the server password from `OPENCODE_PASSWORD` (the v1
+         * `OPENCODE_SERVER_PASSWORD` variable is no longer recognized).
+         */
         fun environmentVariables(): Map<String, String> = mapOf(
-            "OPENCODE_SERVER_USERNAME" to username,
-            "OPENCODE_SERVER_PASSWORD" to password,
+            "OPENCODE_PASSWORD" to password,
         )
     }
 
@@ -87,6 +88,24 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
         } catch (e: RejectedExecutionException) {
             logger.warn("Failed to schedule OpenCode server authentication password storage", e)
         }
+    }
+
+    /**
+     * Updates the in-memory password cache without persisting to the IDE credential
+     * store. Used for passwords sourced from the OpenCode background service state
+     * file, which is re-read on every IDE startup.
+     *
+     * For the rest of the session the transient password shadows any password
+     * stored in the IDE password safe: all connections (API, SSE, launched
+     * processes via [ensureLaunchPassword]) use it, while the settings UI keeps
+     * showing the stored password. The shadow ends when the project service is
+     * disposed, at which point the stored password (or a generated one) applies
+     * again.
+     */
+    fun setPasswordTransiently(password: String) {
+        passwordRevision.incrementAndGet()
+        cachedPassword = password
+        passwordLoaded.countDown()
     }
 
     fun setPasswordAndWait(password: String): Boolean {
@@ -130,10 +149,11 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
         val password = password()
         if (password.isEmpty()) return null
 
-        val username = OpenCodeSettings.getInstance(project).serverAuthUsername
-            .trim()
-            .ifEmpty { OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME }
-        return BasicAuthCredentials(username = username, password = password)
+        // OpenCode 2.x always authenticates as the fixed "opencode" user.
+        return BasicAuthCredentials(
+            username = OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME,
+            password = password,
+        )
     }
 
     fun connectionAuthorizationHeader(): String? = connectionCredentials()?.authorizationHeader()
@@ -141,11 +161,30 @@ class OpenCodeServerAuth(private val project: Project) : Disposable {
     fun connectionEnvironmentVariables(): Map<String, String> =
         connectionCredentials()?.environmentVariables().orEmpty()
 
-    fun serverLaunchEnvironmentVariables(): Map<String, String> {
-        val settings = OpenCodeSettings.getInstance(project)
-        if (!settings.protectPluginLaunchedServerWithAuth) return emptyMap()
-        return connectionCredentials()?.environmentVariables()
-            ?: throw MissingServerLaunchAuthCredentialsException()
+    /**
+     * Environment variables for a server process launched by the plugin.
+     *
+     * OpenCode 2.x servers always require authentication, so a launch password is
+     * guaranteed: the stored password is reused, or a fresh one is generated.
+     */
+    fun launchEnvironmentVariables(): Map<String, String> =
+        mapOf("OPENCODE_PASSWORD" to ensureLaunchPassword())
+
+    /**
+     * Returns the password the next plugin-launched server should use,
+     * generating and storing one when none is available.
+     */
+    fun ensureLaunchPassword(): String {
+        val stored = password()
+        if (stored.isNotEmpty()) return stored
+        val generated = generatePassword()
+        setPassword(generated)
+        return generated
+    }
+
+    private fun generatePassword(): String {
+        val bytes = ByteArray(32).also { SecureRandom().nextBytes(it) }
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
     }
 
     private fun attributes(): CredentialAttributes =

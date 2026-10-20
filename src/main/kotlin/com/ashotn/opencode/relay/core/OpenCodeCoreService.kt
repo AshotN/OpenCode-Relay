@@ -32,7 +32,6 @@ internal fun selectMessageSummaryFileCountLoadBatch(
     maxBatchSize: Int,
     shouldLoad: (Session) -> Boolean,
 ): List<Session> = sessions.asSequence()
-    .filter { it.summary != null }
     .filter(shouldLoad)
     .sortedByDescending { it.time.updated }
     .take(maxBatchSize)
@@ -166,11 +165,11 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                 refreshSessionHierarchyAsync(generation)
             }
 
-            is OpenCodeEvent.MessageDiffAvailable -> {
-                handleMessageDiffAvailable(event, generation)
+            is OpenCodeEvent.SessionExecutionFinished -> {
+                scheduleLiveTurnDiffFetch(event.sessionId, generation)
             }
 
-            is OpenCodeEvent.McpToolsChanged -> {
+            is OpenCodeEvent.McpStatusChanged -> {
                 project.messageBus.syncPublisher(McpChangedListener.TOPIC).onMcpChanged()
             }
 
@@ -179,24 +178,22 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         }
     }
 
-    private fun handleMessageDiffAvailable(event: OpenCodeEvent.MessageDiffAvailable, generation: Long) {
+    /**
+     * Fetches and applies the latest-turn diff snapshot after a session execution
+     * finished. Coalesced per session so bursty execution end events trigger at most
+     * one in-flight fetch.
+     */
+    private fun scheduleLiveTurnDiffFetch(sessionId: String, generation: Long) {
         if (generation != lifecycleGeneration.get()) return
-        if (!messageDiffFetchCoalescer.tryStart(event)) {
-            log.debug("OpenCodeCoreService: defer message diff reason=alreadyInFlight session=${event.sessionId} message=${event.messageId} generation=$generation")
+        val key = MessageDiffFetchCoalescer.liveTurnKey(sessionId)
+        if (!messageDiffFetchCoalescer.tryStart(key)) {
+            log.debug("OpenCodeCoreService: defer live turn diff reason=alreadyInFlight session=$sessionId generation=$generation")
             return
         }
 
-        scheduleMessageDiffFetch(event, messageDiffFetchCoalescer.key(event), generation)
-    }
-
-    private fun scheduleMessageDiffFetch(
-        event: OpenCodeEvent.MessageDiffAvailable,
-        key: String,
-        generation: Long,
-    ) {
         val currentPort = port
         if (currentPort <= 0) {
-            log.debug("OpenCodeCoreService: skip message diff reason=missingPort session=${event.sessionId} message=${event.messageId} generation=$generation")
+            log.debug("OpenCodeCoreService: skip live turn diff reason=missingPort session=$sessionId generation=$generation")
             messageDiffFetchCoalescer.cancel(key)
             return
         }
@@ -204,14 +201,13 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
-                val eventDiff = when (val result = sessionApiClient.fetchSessionDiffSnapshot(
+                val snapshot = when (val result = sessionApiClient.fetchLatestTurnDiffSnapshot(
                     port = currentPort,
-                    sessionId = event.sessionId,
-                    messageId = event.messageId,
+                    sessionId = sessionId,
                 )) {
                     is ApiResult.Failure -> {
                         log.debug(
-                            "OpenCodeCoreService: skip message diff reason=requestFailed session=${event.sessionId} message=${event.messageId} port=$currentPort generation=$generation error=${result.error}",
+                            "OpenCodeCoreService: skip live turn diff reason=requestFailed session=$sessionId port=$currentPort generation=$generation error=${result.error}",
                         )
                         return@executeOnPooledThread
                     }
@@ -219,18 +215,18 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                     is ApiResult.Success -> result.value
                 }
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
-                if (eventDiff.files.isEmpty()) {
-                    log.debug("OpenCodeCoreService: skip message diff reason=emptySnapshot session=${event.sessionId} message=${event.messageId} generation=$generation")
+                if (snapshot.files.isEmpty()) {
+                    log.debug("OpenCodeCoreService: skip live turn diff reason=emptySnapshot session=$sessionId generation=$generation")
                     return@executeOnPooledThread
                 }
 
                 log.debug(
-                    "OpenCodeCoreService: apply message diff session=${event.sessionId} message=${event.messageId} eventFiles=${event.files} fileCount=${eventDiff.files.size} files=${eventDiff.files.map { it.file }} generation=$generation",
+                    "OpenCodeCoreService: apply live turn diff session=$sessionId fileCount=${snapshot.files.size} files=${snapshot.files.map { it.file }} generation=$generation",
                 )
-                handleSessionDiff(eventDiff, fromHistory = false, generation = generation)
+                handleSessionDiff(snapshot, fromHistory = false, generation = generation)
             } catch (e: Exception) {
                 log.debug(
-                    "OpenCodeCoreService: failed message diff load session=${event.sessionId} message=${event.messageId} port=$currentPort generation=$generation",
+                    "OpenCodeCoreService: failed live turn diff load session=$sessionId port=$currentPort generation=$generation",
                     e,
                 )
             } finally {
@@ -238,9 +234,9 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
                     key = key,
                     allowPending = generation == lifecycleGeneration.get(),
                 )
-                if (pending != null) {
-                    log.debug("OpenCodeCoreService: refetch pending message diff session=${pending.sessionId} message=${pending.messageId} generation=$generation")
-                    scheduleMessageDiffFetch(pending, key, generation)
+                if (pending && generation == lifecycleGeneration.get()) {
+                    log.debug("OpenCodeCoreService: refetch pending live turn diff session=$sessionId generation=$generation")
+                    scheduleLiveTurnDiffFetch(sessionId, generation)
                 }
             }
         }
@@ -841,8 +837,9 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
 
                             is ApiResult.Success -> result.value
                         }
+                    // v2 reports changed files on assistant messages (snapshot.files).
                     val fileCount = summaries
-                        .filter { it.role == "user" }
+                        .filter { it.role == "assistant" }
                         .flatMap { it.files }
                         .toSet()
                         .size
@@ -923,7 +920,10 @@ class OpenCodeCoreService(private val project: Project) : Disposable {
             try {
                 if (generation != lifecycleGeneration.get()) return@executeOnPooledThread
 
-                val sessions: List<Session> = when (val result = sessionApiClient.fetchSessionHierarchy(currentPort)) {
+                val sessions: List<Session> = when (val result = sessionApiClient.fetchSessionHierarchy(
+                    port = currentPort,
+                    directory = project.basePath,
+                )) {
                     is ApiResult.Success -> result.value
                     is ApiResult.Failure -> {
                         log.debug(

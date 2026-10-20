@@ -25,7 +25,7 @@ class McpServersAction(private val project: Project) : AnAction(), DumbAware {
     }
 
     override fun actionPerformed(e: AnActionEvent) {
-        val port = OpenCodeSettings.getInstance(project).serverPort
+        val port = OpenCodePlugin.getInstance(project).connectionPort
         val content = McpServersPopupPanel(project, port)
 
         val popup = JBPopupFactory.getInstance()

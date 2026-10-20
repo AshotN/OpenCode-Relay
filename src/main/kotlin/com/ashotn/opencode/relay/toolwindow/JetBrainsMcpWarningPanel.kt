@@ -158,7 +158,7 @@ class JetBrainsMcpWarningPanel(
 
         if (plugin.serverState != ServerState.READY) return null
 
-        val openCodeMcpEntries = when (val result = mcpService.listMcpEntries(settings.serverPort)) {
+        val openCodeMcpEntries = when (val result = mcpService.listMcpEntries(OpenCodePlugin.getInstance(project).connectionPort)) {
             is ApiResult.Success -> result.value
             is ApiResult.Failure -> return null
         }

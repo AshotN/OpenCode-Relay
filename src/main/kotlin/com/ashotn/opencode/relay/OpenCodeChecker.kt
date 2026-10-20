@@ -8,10 +8,54 @@ import kotlin.concurrent.thread
 
 data class OpenCodeInfo(val path: String, val version: String)
 
+/**
+ * Result of searching for an `opencode` executable.
+ */
+sealed interface OpenCodeExecutableDetection {
+    /** A supported OpenCode 2.x executable was found. */
+    data class Found(val info: OpenCodeInfo) : OpenCodeExecutableDetection
+
+    /**
+     * An executable was found but it is an unsupported major version (OpenCode 1.x).
+     * [info.version] carries the detected version for display.
+     */
+    data class IncompatibleVersion(val info: OpenCodeInfo) : OpenCodeExecutableDetection
+
+    /** No usable executable was found. */
+    data object None : OpenCodeExecutableDetection
+}
+
+internal data class OpenCodeVersion(val major: Int, val semVer: String)
+
+private val openCodeVersionPattern = Regex("""v?(\d+)\.(\d+)\.(\d+)(?:[-+][\w.]+)?""")
+private val requiredHelpCommands = listOf("serve")
+
+/**
+ * Parses the output of `opencode --version`.
+ *
+ * v1 prints a bare semver ("1.4.0"); v2 prints "opencode v2.0.32".
+ * Returns null when no semver can be extracted.
+ */
+internal fun parseOpenCodeVersion(output: String): OpenCodeVersion? {
+    val match = openCodeVersionPattern.find(output) ?: return null
+    val major = match.groupValues[1].toIntOrNull() ?: return null
+    return OpenCodeVersion(major = major, semVer = match.value.removePrefix("v"))
+}
+
+/**
+ * Checks that the `--help` output documents the subcommands the plugin relies on.
+ * v2 lists bare subcommand names (e.g. `serve`); v1 listed them as "opencode serve".
+ */
+internal fun hasRequiredHelpCommands(helpOutput: String): Boolean =
+    requiredHelpCommands.all { command ->
+        Regex("\\b${Regex.escape(command)}\\b").containsMatchIn(helpOutput.lowercase())
+    }
+
 object OpenCodeChecker {
 
     private val log = logger<OpenCodeChecker>()
-    private val requiredHelpCommands = listOf("opencode serve", "opencode attach")
+
+    private const val MIN_SUPPORTED_MAJOR = 2
     private const val COMMAND_TIMEOUT_SECONDS = 10L
     private const val OUTPUT_JOIN_TIMEOUT_MILLIS = 1_000L
 
@@ -81,18 +125,17 @@ object OpenCodeChecker {
         }
 
     /**
-     * Returns an [OpenCodeInfo] containing the resolved path and version of the `opencode`
-     * executable, or null if no valid executable is found.
+     * Searches for an `opencode` executable and validates it against the OpenCode 2.x
+     * requirements (version output + `serve` subcommand).
      *
-     * If [userProvidedPath] is non-blank, it is validated (file exists, is runnable on this OS, and
-     * responds to `--version` and `--help`). If it does not pass validation, a warning is
-     * logged and null is returned immediately (auto-resolve is NOT attempted).
-     *
-     * If [userProvidedPath] is blank or null, the auto-resolve strategy is used:
-     * PATH entries are searched first, followed by common install locations. The first
-     * candidate that passes all validation gates is returned.
+     * If [userProvidedPath] is non-blank, it is validated in isolation (auto-resolve is
+     * NOT attempted when it fails). If it is blank or null, the auto-resolve strategy
+     * is used: PATH entries are searched first, followed by common install locations.
+     * During auto-resolve, OpenCode 1.x candidates are skipped so a newer install
+     * elsewhere can still be found; when only 1.x candidates exist, the last one is
+     * reported as [OpenCodeExecutableDetection.IncompatibleVersion].
      */
-    fun findExecutable(userProvidedPath: String? = null): OpenCodeInfo? {
+    fun findExecutable(userProvidedPath: String? = null): OpenCodeExecutableDetection {
         val normalizedUserProvidedPath = normalizeUserProvidedPath(userProvidedPath) ?: return autoResolve()
 
         val file = File(normalizedUserProvidedPath)
@@ -101,14 +144,14 @@ object OpenCodeChecker {
                 "OpenCode executable at user-provided path is invalid: $normalizedUserProvidedPath " +
                         "(exists=${file.exists()}, isFile=${file.isFile}, canExecute=${file.canExecute()}, os=${SystemInfo.OS_NAME})"
             )
-            return null
+            return OpenCodeExecutableDetection.None
         }
 
-        val absolutePath = file.absolutePath
-        return validateCandidate(absolutePath) ?: run {
-            log.warn("OpenCode executable at user-provided path failed validation: $absolutePath")
-            null
+        val detection = validateCandidate(file.absolutePath)
+        if (detection !is OpenCodeExecutableDetection.Found) {
+            log.warn("OpenCode executable at user-provided path failed validation: ${file.absolutePath} ($detection)")
         }
+        return detection
     }
 
     // NVM keeps packages under each installed Node version, so scan versions/node/*/bin/opencode.
@@ -127,13 +170,15 @@ object OpenCodeChecker {
             .toList()
     }
 
-    private fun autoResolve(): OpenCodeInfo? {
+    private fun autoResolve(): OpenCodeExecutableDetection {
         val executableNames =
             if (SystemInfo.isWindows) {
                 listOf("opencode", "opencode.cmd", "opencode-cli.exe")
             } else {
                 listOf("opencode")
             }
+
+        var incompatible: OpenCodeExecutableDetection.IncompatibleVersion? = null
 
         val pathEnv = OpenCodeProcessEnvironment.pathEnvironmentValue()
         if (pathEnv.isNullOrBlank()) {
@@ -143,8 +188,11 @@ object OpenCodeChecker {
                 if (dir.isBlank()) continue
                 for (executableName in executableNames) {
                     val candidate = File(dir, executableName)
-                    if (isCandidateFile(candidate)) {
-                        validateCandidate(candidate.absolutePath)?.let { return it }
+                    if (!isCandidateFile(candidate)) continue
+                    when (val detection = validateCandidate(candidate.absolutePath)) {
+                        is OpenCodeExecutableDetection.Found -> return detection
+                        is OpenCodeExecutableDetection.IncompatibleVersion -> incompatible = detection
+                        OpenCodeExecutableDetection.None -> Unit
                     }
                 }
             }
@@ -152,12 +200,15 @@ object OpenCodeChecker {
 
         for (path in osSpecificInstallLocations) {
             val candidate = File(path)
-            if (isCandidateFile(candidate)) {
-                validateCandidate(candidate.absolutePath)?.let { return it }
+            if (!isCandidateFile(candidate)) continue
+            when (val detection = validateCandidate(candidate.absolutePath)) {
+                is OpenCodeExecutableDetection.Found -> return detection
+                is OpenCodeExecutableDetection.IncompatibleVersion -> incompatible = detection
+                OpenCodeExecutableDetection.None -> Unit
             }
         }
 
-        return null
+        return incompatible ?: OpenCodeExecutableDetection.None
     }
 
     private fun normalizeUserProvidedPath(path: String?): String? {
@@ -179,14 +230,22 @@ object OpenCodeChecker {
         }
     }
 
-    private fun validateCandidate(path: String): OpenCodeInfo? {
-        val version = getVersion(path) ?: return null
-        val helpOutput = getHelpOutput(path) ?: return null
-        if (!hasRequiredHelpCommands(helpOutput, path)) return null
-        return OpenCodeInfo(path, version)
+    private fun validateCandidate(path: String): OpenCodeExecutableDetection {
+        val version = getVersion(path) ?: return OpenCodeExecutableDetection.None
+        val info = OpenCodeInfo(path, version.semVer)
+        if (version.major < MIN_SUPPORTED_MAJOR) {
+            log.warn("OpenCode $version.semVer at $path is not supported; OpenCode 2.x is required")
+            return OpenCodeExecutableDetection.IncompatibleVersion(info)
+        }
+        val helpOutput = getHelpOutput(path) ?: return OpenCodeExecutableDetection.None
+        if (!hasRequiredHelpCommands(helpOutput)) {
+            log.warn("OpenCode --help output missing required commands for: $path")
+            return OpenCodeExecutableDetection.None
+        }
+        return OpenCodeExecutableDetection.Found(info)
     }
 
-    private fun getVersion(path: String): String? {
+    private fun getVersion(path: String): OpenCodeVersion? {
         val result = runCommand(path, "--version") ?: return null
 
         if (result.timedOut) {
@@ -206,13 +265,10 @@ object OpenCodeChecker {
             return null
         }
 
-        val startsWithSemVer = Regex("^\\d+\\.\\d+\\.\\d+.*").matches(output)
-        if (!startsWithSemVer) {
-            log.warn("OpenCode --version output did not start with semantic version for: $path. Output: '$output'")
-            return null
+        return parseOpenCodeVersion(output) ?: run {
+            log.warn("Could not parse OpenCode version for: $path. Output: '$output'")
+            null
         }
-
-        return output
     }
 
     private fun getHelpOutput(path: String): String? {
@@ -269,21 +325,5 @@ object OpenCodeChecker {
             log.warn("Failed to run command '$arg' for: $path", e)
             null
         }
-    }
-
-    private fun hasRequiredHelpCommands(helpOutput: String, path: String): Boolean {
-        val normalizedOutput = helpOutput.lowercase()
-        val missingCommands = requiredHelpCommands.filterNot { normalizedOutput.contains(it) }
-        if (missingCommands.isNotEmpty()) {
-            log.warn(
-                "OpenCode --help output missing required commands for: $path. Missing: ${
-                    missingCommands.joinToString(
-                        ", "
-                    )
-                }"
-            )
-            return false
-        }
-        return true
     }
 }

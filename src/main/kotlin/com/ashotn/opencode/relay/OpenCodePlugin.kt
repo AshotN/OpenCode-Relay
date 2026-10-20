@@ -1,7 +1,10 @@
 package com.ashotn.opencode.relay
 
+import com.ashotn.opencode.relay.api.service.OpenCodeBackgroundService
+import com.ashotn.opencode.relay.api.service.OpenCodeBackgroundServiceDetector
 import com.ashotn.opencode.relay.core.OpenCodeCoreService
 import com.ashotn.opencode.relay.settings.OpenCodeSettings
+import com.ashotn.opencode.relay.settings.OpenCodeServerAuth
 import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
@@ -84,8 +87,11 @@ class OpenCodePlugin(private val project: Project) : Disposable {
 
     private fun resolveExecutableState(): OpenCodeExecutableResolutionState {
         val userPath = OpenCodeSettings.getInstance(project).executablePath.takeIf { it.isNotBlank() }
-        val info = OpenCodeChecker.findExecutable(userPath)
-        return info?.let(OpenCodeExecutableResolutionState::Resolved) ?: OpenCodeExecutableResolutionState.NotFound
+        return when (val detection = OpenCodeChecker.findExecutable(userPath)) {
+            is OpenCodeExecutableDetection.Found -> OpenCodeExecutableResolutionState.Resolved(detection.info)
+            is OpenCodeExecutableDetection.IncompatibleVersion -> OpenCodeExecutableResolutionState.IncompatibleVersion(detection.info)
+            OpenCodeExecutableDetection.None -> OpenCodeExecutableResolutionState.NotFound
+        }
     }
 
     private fun publishExecutableResolution(state: OpenCodeExecutableResolutionState) {
@@ -99,6 +105,60 @@ class OpenCodePlugin(private val project: Project) : Disposable {
                     .onOpenCodeInfoChanged(info)
             }
         }
+    }
+
+    @Volatile
+    private var detectedService: OpenCodeBackgroundService? = null
+
+    /**
+     * The port used for all API connections: the detected background service's
+     * port when one is running, otherwise the configured server port.
+     */
+    val connectionPort: Int
+        get() = detectedService?.port ?: OpenCodeSettings.getInstance(project).serverPort
+
+    /**
+     * Looks for a running OpenCode 2.x background service (started via
+     * `opencode service start`). When one is found, its password is loaded into
+     * [OpenCodeServerAuth] and the plugin connects to its port.
+     *
+     * A detected service is cached for the plugin lifetime; negative outcomes
+     * are deliberately NOT cached, so each call re-probes (a state-file read
+     * plus a short authenticated `/api/info` handshake) and a background
+     * service started mid-session is picked up on the next call.
+     * [onDetected] is invoked with the detected service (or null) once the
+     * outcome is known.
+     */
+    fun detectBackgroundService(onDetected: ((OpenCodeBackgroundService?) -> Unit)? = null) {
+        detectedService?.let { service ->
+            onDetected?.invoke(service)
+            return
+        }
+
+        val application = ApplicationManager.getApplication()
+        if (application.isDispatchThread) {
+            application.executeOnPooledThread { detectBackgroundServiceInternal(onDetected) }
+            return
+        }
+        detectBackgroundServiceInternal(onDetected)
+    }
+
+    private fun detectBackgroundServiceInternal(onDetected: ((OpenCodeBackgroundService?) -> Unit)?) {
+        if (isInactive()) return
+
+        val service = runCatching { OpenCodeBackgroundServiceDetector().detect() }
+            .onFailure { log.warn("Background service detection failed", it) }
+            .getOrNull()
+        if (isInactive()) return
+
+        if (service != null) {
+            OpenCodeServerAuth.getInstance(project).setPasswordTransiently(service.password)
+            detectedService = service
+            log.info("Detected OpenCode background service at ${service.url}")
+            startPolling(service.port)
+            checkPort(service.port)
+        }
+        onDetected?.invoke(service)
     }
 
     @Volatile
@@ -133,17 +193,33 @@ class OpenCodePlugin(private val project: Project) : Disposable {
         submitConnectionSyncTask {
             when (state) {
                 ServerState.READY -> {
-                    val port = OpenCodeSettings.getInstance(project).serverPort
-                    attachRelayConnections(port)
+                    attachRelayConnections(connectionPort)
                 }
 
-                ServerState.STOPPED, ServerState.PORT_CONFLICT, ServerState.AUTH_REQUIRED -> {
+                ServerState.STOPPED -> {
+                    if (!serverManager.ownsProcess) {
+                        // The external target we were connected to is gone; fall
+                        // back to the configured port for the next connection.
+                        detectedService = null
+                    }
+                    detachRelayConnections()
+                    retargetPolling()
+                }
+
+                ServerState.PORT_CONFLICT, ServerState.AUTH_REQUIRED -> {
                     detachRelayConnections()
                 }
 
                 else -> Unit
             }
         }
+    }
+
+    /** Re-points port polling at the current [connectionPort]. */
+    private fun retargetPolling() {
+        val port = connectionPort
+        startPolling(port)
+        checkPort(port)
     }
 
     fun startPolling(port: Int, intervalSeconds: Long = 10L) = serverManager.startPolling(port, intervalSeconds)
@@ -155,28 +231,30 @@ class OpenCodePlugin(private val project: Project) : Disposable {
             log.warn("startServer() called but executable resolution is not in the resolved state")
             return
         }
+        // We are about to own the server process, so a previously detected
+        // background service is no longer the connection target.
+        detectedService = null
         serverManager.startServer(port, resolvedExecutableInfo.path)
     }
 
     fun stopServer() = serverManager.stopServer()
 
     /**
-     * Tears down the current core/TUI connections and re-attaches to the given [port].
-     * Used when the user changes the port setting while attached to an external process
-     * (i.e. we don't own the server process).
+     * Tears down the current core/TUI connections and re-attaches to the current
+     * [connectionPort]. Used when the user changes the port setting while attached
+     * to an external process (i.e. we don't own the server process).
      */
-    fun reattach(port: Int) {
+    fun reattach() {
         ApplicationManager.getApplication().executeOnPooledThread {
             if (isInactive()) return@executeOnPooledThread
             detachRelayConnections()
             if (isInactive()) return@executeOnPooledThread
-            startPolling(port)
-            checkPort(port)
+            retargetPolling()
         }
     }
 
     fun resetConnection() {
-        val port = OpenCodeSettings.getInstance(project).serverPort
+        val port = connectionPort
         overrideState = ServerState.RESETTING
         broadcastState(ServerState.RESETTING)
         val submitted = submitConnectionSyncTask {

@@ -17,8 +17,8 @@ import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.vfs.VirtualFile
 
 /**
- * Action that appends an @path file reference to the TUI's prompt input buffer via
- * POST /tui/append-prompt.
+ * Action that appends an @path file reference to the TUI's prompt input buffer by pasting it
+ * into the embedded terminal.
  *
  * Editor action that sends a reference to the file currently open in the editor.
  *

@@ -2,6 +2,7 @@ package com.ashotn.opencode.relay.integration.session
 
 import com.ashotn.opencode.relay.api.session.SessionApiClient
 import com.ashotn.opencode.relay.api.transport.ApiResult
+import com.ashotn.opencode.relay.api.transport.OpenCodeHttpTransport
 import com.ashotn.opencode.relay.integration.OpenCodeTestEnvironmentFactory
 import com.ashotn.opencode.relay.integration.OpenCodeTestEventCollector
 import com.ashotn.opencode.relay.integration.OpenCodeTestVersions
@@ -22,21 +23,28 @@ class OpenCodeSessionStateLiveTest(
         fun versions(): List<Array<String>> = OpenCodeTestVersions.all().map { arrayOf(it) }
     }
 
-    private val providerId = "github-copilot"
-    private val modelId = "gpt-5-mini"
-
     @Test
     fun `real server emits session lifecycle and status events`() {
         OpenCodeTestEnvironmentFactory.create(version).use { environment ->
             val server = environment.startServer()
-            val sessionClient = SessionApiClient()
+            val sessionClient = SessionApiClient(
+                OpenCodeHttpTransport(authorizationHeaderProvider = environment::authorizationHeader),
+            )
 
-            OpenCodeTestEventCollector(server.port, environment.repoRoot.toString()).use { events ->
+            OpenCodeTestEventCollector(
+                port = server.port,
+                directory = environment.repoRoot.toString(),
+                authorizationHeaderProvider = environment::authorizationHeader,
+            ).use { events ->
                 try {
                     events.awaitConnected()
 
                     val sessionId = assertIs<ApiResult.Success<SessionApiClient.CreatedSession>>(
-                        sessionClient.createSession(server.port),
+                        sessionClient.createSession(
+                            port = server.port,
+                            permissions = environment.sessionPermissions,
+                            model = environment.testModel,
+                        ),
                     ).value.sessionId
 
                     events.awaitSessionLifecycle(sessionId, atLeastCount = 1)
@@ -51,11 +59,9 @@ class OpenCodeSessionStateLiveTest(
                     ) + 1
 
                     assertIs<ApiResult.Success<Unit>>(
-                        sessionClient.promptTextAsync(
+                        sessionClient.promptText(
                             port = server.port,
                             sessionId = sessionId,
-                            providerId = providerId,
-                            modelId = modelId,
                             text = "Reply with exactly: pong\nDo not edit files or use tools.",
                         ),
                     )

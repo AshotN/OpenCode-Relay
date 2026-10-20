@@ -1,8 +1,8 @@
 package com.ashotn.opencode.relay.settings
 
 import com.ashotn.opencode.relay.OpenCodeChecker
+import com.ashotn.opencode.relay.OpenCodeExecutableDetection
 import com.ashotn.opencode.relay.OpenCodeExecutableResolutionState
-import com.ashotn.opencode.relay.OpenCodeInfo
 import com.ashotn.opencode.relay.OpenCodePlugin
 import com.ashotn.opencode.relay.core.EditorDiffRenderer
 import com.ashotn.opencode.relay.settings.OpenCodeSettings.TerminalEngine
@@ -49,14 +49,10 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     internal lateinit var serverEnvironmentVariablesTable: TableView<OpenCodeSettings.EnvironmentVariable>
 
     internal lateinit var serverHostnameField: JBTextField
-    internal lateinit var serverAuthUsernameField: JBTextField
     internal lateinit var serverAuthPasswordField: JBPasswordField
-    internal lateinit var protectPluginLaunchedServerWithAuthCheckBox: JCheckBox
-    internal lateinit var serverMdnsEnabledCheckBox: JCheckBox
-    internal lateinit var serverMdnsDomainField: JBTextField
     internal lateinit var autoStartOnStartupCheckBox: JCheckBox
 
-    internal var executableResolver: (String?) -> OpenCodeInfo? = { path -> OpenCodeChecker.findExecutable(path) }
+    internal var executableResolver: (String?) -> OpenCodeExecutableDetection = { path -> OpenCodeChecker.findExecutable(path) }
 
     override fun createPanel(): DialogPanel {
         loadPendingFromPersisted()
@@ -99,7 +95,10 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                     }
 
                     ApplicationManager.getApplication().executeOnPooledThread {
-                        val autoResolvedPath = OpenCodeChecker.findExecutable()?.path ?: return@executeOnPooledThread
+                        val autoResolved = OpenCodeChecker.findExecutable()
+                        val autoResolvedPath =
+                            (autoResolved as? OpenCodeExecutableDetection.Found)?.info?.path
+                                ?: return@executeOnPooledThread
                         ApplicationManager.getApplication().invokeLater {
                             if (project.isDisposed) return@invokeLater
                             if (executablePathField.text.isBlank()) {
@@ -134,19 +133,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                         .align(AlignX.FILL)
                     serverHostnameField = cell.component
                 }
-                row("mDNS:") {
-                    val cell = checkBox("Enable discovery")
-                        .bindSelected(pendingState::serverMdnsEnabled)
-                        .comment("`--mdns`: Enable mDNS discovery. Default: false")
-                    serverMdnsEnabledCheckBox = cell.component
-                }
-                row("mDNS Domain:") {
-                    val cell = textField()
-                        .bindText(pendingState::serverMdnsDomain)
-                        .comment("`--mdns-domain`: Custom domain name for mDNS service. Default: opencode.local")
-                        .align(AlignX.FILL)
-                    serverMdnsDomainField = cell.component
-                }
                 row("CORS Origins:") {
                     cell(serverCorsOriginsEditor.panel)
                         .comment("`--cors`: Additional browser origins to allow. Default: []. Use Add and Remove to manage entries, and edit values inline.")
@@ -155,33 +141,22 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
                 }
             }
             group("Server Authentication") {
-                row("Username:") {
-                    val cell = textField()
-                        .bindText(pendingState::serverAuthUsername)
-                        .comment("Used for protected OpenCode server connections. Default: opencode")
-                        .align(AlignX.FILL)
-                    serverAuthUsernameField = cell.component
-                }
+                // OpenCode 2.x always authenticates as the fixed "opencode" user with a
+                // password supplied via OPENCODE_PASSWORD, so only the password is
+                // configurable.
                 row("Password:") {
                     val field = JBPasswordField()
                     serverAuthPasswordField = field
                     loadServerAuthPasswordField()
                     cell(field)
-                        .comment("Stored securely in the IDE password safe.")
+                        .comment("Stored securely in the IDE password safe. OpenCode 2.x servers always require this password.")
                         .align(AlignX.FILL)
-                }
-                row {
-                    val cell = checkBox("Protect server launched by plugin")
-                        .bindSelected(pendingState::protectPluginLaunchedServerWithAuth)
-                        .comment("When enabled, the plugin will use these credentials for plugin-launched OpenCode servers.")
-                    protectPluginLaunchedServerWithAuthCheckBox = cell.component
-                    updateServerAuthPasswordLoadingUi()
                 }
             }
             group("Environment") {
                 row("Variables:") {
                     cell(serverEnvironmentVariablesEditor.panel)
-                        .comment("Additional environment variables passed to OpenCode processes launched by the plugin. `OPENCODE_SERVER_USERNAME` and `OPENCODE_SERVER_PASSWORD` are managed above.")
+                        .comment("Additional environment variables passed to OpenCode processes launched by the plugin. `OPENCODE_PASSWORD` is managed above.")
                         .align(AlignX.FILL)
                         .resizableColumn()
                 }
@@ -303,8 +278,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         commitTableEdits()
         super.apply() // Pushes UI values into pendingState.
         pendingState.serverCorsOrigins = serializeServerCorsOrigins()
-        pendingState.serverAuthUsername =
-            pendingState.serverAuthUsername.trim().ifEmpty { OpenCodeSettings.DEFAULT_SERVER_AUTH_USERNAME }
         pendingState.serverEnvironmentVariables = serializeServerEnvironmentVariables()
 
         if (pendingState.serverEnvironmentVariables.any { it.name.contains('=') }) {
@@ -312,23 +285,14 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         }
         validateUniqueEnvironmentVariableNames(pendingState.serverEnvironmentVariables)
         validateReservedServerAuthEnvironmentVariables(pendingState.serverEnvironmentVariables)
-        if (pendingState.protectPluginLaunchedServerWithAuth && currentServerAuthPassword().isBlank()) {
-            if (!serverAuth.isPasswordLoaded()) {
-                throw ConfigurationException("Server authentication password is still loading. Try again.")
-            }
-            throw ConfigurationException("Enter a password to protect the server launched by plugin")
-        }
 
         val newSettings = pendingState.toSnapshot()
         val settingsChanged = newSettings != oldSettings
         val newPassword = currentServerAuthPassword()
         val passwordChanged = newPassword != oldPassword
-        val connectionAuthChanged = oldSettings.serverAuthUsername != newSettings.serverAuthUsername || passwordChanged
-        val oldLaunchAuthEnabled = oldSettings.protectPluginLaunchedServerWithAuth && oldPassword.isNotEmpty()
-        val newLaunchAuthEnabled = newSettings.protectPluginLaunchedServerWithAuth && newPassword.isNotEmpty()
-        val launchAuthChanged =
-            oldLaunchAuthEnabled != newLaunchAuthEnabled ||
-                    (newLaunchAuthEnabled && connectionAuthChanged)
+        // OpenCode 2.x always authenticates; any credential change affects the
+        // connection to a server we do not own.
+        val connectionAuthChanged = passwordChanged
         val newPort = newSettings.serverPort
         val newPath = newSettings.executablePath
         val portChanged = newPort != oldSettings.serverPort
@@ -338,22 +302,36 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         if (!settingsChanged && !passwordChanged && !shouldUpdateExecutableResolution) return
 
         val mustConfirmStop =
-            plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || launchAuthChanged)
+            plugin.isRunning && plugin.ownsProcess && (portChanged || pathChanged || connectionAuthChanged)
         val mustReattach = plugin.isRunning && !plugin.ownsProcess && portChanged
         val mustResetConnection = plugin.isRunning && !plugin.ownsProcess && !portChanged && connectionAuthChanged
 
         var resolvedState = oldResolutionState
         if (shouldUpdateExecutableResolution) {
             val userProvidedPath = newPath.takeIf { it.isNotBlank() }
-            val detectedExecutableInfo = detectExecutableInfo(userProvidedPath)
-            if (userProvidedPath != null && detectedExecutableInfo == null) {
-                throw ConfigurationException(
-                    "Could not find a valid OpenCode executable. Check the path and try again.",
-                )
+            val detection = detectExecutable(userProvidedPath)
+            when (detection) {
+                is OpenCodeExecutableDetection.Found -> resolvedState = OpenCodeExecutableResolutionState.Resolved(detection.info)
+
+                is OpenCodeExecutableDetection.IncompatibleVersion -> {
+                    if (userProvidedPath != null) {
+                        throw ConfigurationException(
+                            "OpenCode 2.x is required, but $userProvidedPath is OpenCode ${detection.info.version}. " +
+                                    "Upgrade it or point to an OpenCode 2.x executable.",
+                        )
+                    }
+                    resolvedState = OpenCodeExecutableResolutionState.IncompatibleVersion(detection.info)
+                }
+
+                OpenCodeExecutableDetection.None -> {
+                    if (userProvidedPath != null) {
+                        throw ConfigurationException(
+                            "Could not find a valid OpenCode executable. Check the path and try again.",
+                        )
+                    }
+                    resolvedState = OpenCodeExecutableResolutionState.NotFound
+                }
             }
-            resolvedState =
-                detectedExecutableInfo?.let(OpenCodeExecutableResolutionState::Resolved)
-                    ?: OpenCodeExecutableResolutionState.NotFound
         }
 
         if (mustConfirmStop && !confirmStopServerRestart()) {
@@ -371,12 +349,12 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
 
         when {
             mustConfirmStop -> plugin.stopServer()
-            mustReattach -> plugin.reattach(newPort)
+            mustReattach -> plugin.reattach()
             mustResetConnection -> plugin.resetConnection()
         }
 
         if (connectionAuthChanged && !plugin.ownsProcess && !mustReattach && !mustResetConnection) {
-            plugin.checkPort(newPort)
+            plugin.checkPort(plugin.connectionPort)
         }
 
         if (shouldUpdateExecutableResolution && resolvedState != oldResolutionState) {
@@ -391,17 +369,17 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         EditorDiffRenderer.getInstance(project).onSettingsChanged()
     }
 
-    private fun detectExecutableInfo(userProvidedPath: String?): OpenCodeInfo? {
-        val detectedInfoRef = AtomicReference<OpenCodeInfo?>()
+    private fun detectExecutable(userProvidedPath: String?): OpenCodeExecutableDetection {
+        val detectionRef = AtomicReference<OpenCodeExecutableDetection?>()
         ProgressManager.getInstance().runProcessWithProgressSynchronously(
             {
-                detectedInfoRef.set(executableResolver(userProvidedPath))
+                detectionRef.set(executableResolver(userProvidedPath))
             },
             "Resolving OpenCode...",
             false,
             project,
         )
-        return detectedInfoRef.get()
+        return detectionRef.get() ?: OpenCodeExecutableDetection.None
     }
 
     private fun confirmStopServerRestart(): Boolean =
@@ -418,11 +396,7 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     private fun loadPendingFromPersisted(settings: OpenCodeSettings = OpenCodeSettings.getInstance(project)) {
         pendingState.serverPort = settings.serverPort
         pendingState.serverHostname = settings.serverHostname
-        pendingState.serverMdnsEnabled = settings.serverMdnsEnabled
-        pendingState.serverMdnsDomain = settings.serverMdnsDomain
         pendingState.serverCorsOrigins = settings.serverCorsOrigins
-        pendingState.serverAuthUsername = settings.serverAuthUsername
-        pendingState.protectPluginLaunchedServerWithAuth = settings.protectPluginLaunchedServerWithAuth
         pendingState.serverEnvironmentVariables = settings.serverEnvironmentVariables.map { it.copy() }.toMutableList()
         pendingState.executablePath = settings.executablePath
         pendingState.autoStartOnStartup = settings.autoStartOnStartup
@@ -490,9 +464,6 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
         if (::serverAuthPasswordField.isInitialized) {
             serverAuthPasswordField.isEnabled = !serverAuthPasswordLoading
         }
-        if (::protectPluginLaunchedServerWithAuthCheckBox.isInitialized) {
-            protectPluginLaunchedServerWithAuthCheckBox.isEnabled = !serverAuthPasswordLoading
-        }
     }
 
     private fun saveServerAuthPassword(serverAuth: OpenCodeServerAuth, password: String): Boolean {
@@ -520,13 +491,13 @@ class OpenCodeSettingsConfigurable(private val project: Project) :
     private fun validateReservedServerAuthEnvironmentVariables(
         environmentVariables: List<OpenCodeSettings.EnvironmentVariable>,
     ) {
-        val reservedNames = setOf("OPENCODE_SERVER_USERNAME", "OPENCODE_SERVER_PASSWORD")
+        val reservedNames = setOf("OPENCODE_PASSWORD")
         val reservedName = environmentVariables
             .firstOrNull { it.name.uppercase() in reservedNames }
             ?.name
             ?: return
         throw ConfigurationException(
-            "Use the Server Authentication fields instead of $reservedName",
+            "Use the Server Authentication password instead of $reservedName",
         )
     }
 

@@ -18,9 +18,9 @@ fun OpenCodeHttpTransport.parseBooleanResponse(
             when (val elementResult = parseJsonElement(body)) {
                 is ApiResult.Failure -> elementResult
                 is ApiResult.Success -> {
-                    val element = elementResult.value
-                    if (element.isJsonPrimitive && element.asJsonPrimitive.isBoolean) {
-                        ApiResult.Success(element.asBoolean)
+                    val payload = elementResult.value.unwrapData()
+                    if (payload.isJsonPrimitive && payload.asJsonPrimitive.isBoolean) {
+                        ApiResult.Success(payload.asBoolean)
                     } else {
                         ApiResult.Failure(ApiError.ParseError(errorMessage))
                     }

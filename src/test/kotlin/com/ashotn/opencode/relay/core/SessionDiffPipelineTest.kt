@@ -554,9 +554,6 @@ class SessionDiffPipelineTest {
         directory = null,
         parentID = parentId,
         title = id,
-        version = null,
         time = SessionTime(created = 0L, updated = 0L, compacting = null),
-        summary = null,
-        share = null,
     )
 }

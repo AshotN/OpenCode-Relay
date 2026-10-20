@@ -9,8 +9,8 @@ enum class ActionStrings(
     OPEN_TERMINAL(
         text = "Open in Terminal",
         disabledText = "Open in Terminal (OpenCode must be running)",
-        description = "Run opencode attach in a new terminal window",
-        disabledDescription = "OpenCode must be running to attach a terminal",
+        description = "Run the OpenCode TUI in a new terminal window",
+        disabledDescription = "OpenCode must be running to open the TUI",
     ),
     OPEN_BROWSER(
         text = "Open in Browser",

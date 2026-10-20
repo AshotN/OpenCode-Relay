@@ -22,10 +22,7 @@ class SessionScopeResolverTest {
                 directory = null,
                 parentID = null,
                 title = "Session 1",
-                version = null,
                 time = SessionTime(0L, 0L, null),
-                summary = null,
-                share = null
             ),
             session2 to Session(
                 id = session2,
@@ -33,10 +30,7 @@ class SessionScopeResolverTest {
                 directory = null,
                 parentID = null,
                 title = "Session 2",
-                version = null,
                 time = SessionTime(0L, 0L, null),
-                summary = null,
-                share = null
             ),
         )
 

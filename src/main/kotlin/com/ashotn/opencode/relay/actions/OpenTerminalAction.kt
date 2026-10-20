@@ -37,27 +37,31 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
         if (plugin.serverState != ServerState.READY) return
         val executablePath = plugin.openCodeInfo?.path ?: return
 
-        val url = serverUrl(settings.serverPort)
+        val url = serverUrl(OpenCodePlugin.getInstance(project).connectionPort)
         launchExternalTerminal(executablePath, url)
     }
 
     /**
-     * Launches an external OS terminal window running `<resolved-opencode> attach <url>`.
+     * Launches an external OS terminal window running `<resolved-opencode> --server=<url>`.
+     *
+     * v2 removed the v1 `attach` subcommand; the TUI is the default command and the
+     * `--server` flag must use the equals form (a space-separated value is misparsed
+     * as the positional directory argument).
      */
     private fun launchExternalTerminal(executablePath: String, url: String) {
         val environmentVariables = OpenCodeSettings.getInstance(project)
             .processEnvironmentVariables(OpenCodeServerAuth.getInstance(project).connectionEnvironmentVariables())
-        val attachArgs = listOf(executablePath, "attach", url)
+        val tuiArgs = listOf(executablePath, "--server=$url")
         val processCommand: List<String> = when {
             SystemInfo.isWindows -> listOf(
                 "cmd",
                 "/c",
-                buildWindowsAttachCommand(executablePath, url),
+                buildWindowsTuiCommand(executablePath, url),
             )
 
             SystemInfo.isMac -> {
-                val command = buildPosixAttachCommand(
-                    OpenCodeProcessEnvironment.terminalCommand(attachArgs, environmentVariables)
+                val command = buildPosixTuiCommand(
+                    OpenCodeProcessEnvironment.terminalCommand(tuiArgs, environmentVariables)
                 )
                 listOf(
                     "osascript",
@@ -66,7 +70,7 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
                 )
             }
 
-            else -> findLinuxTerminalCommand(attachArgs)
+            else -> findLinuxTerminalCommand(tuiArgs)
         }
 
         if (processCommand.isEmpty()) {
@@ -94,10 +98,10 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
         }
     }
 
-    private fun buildWindowsAttachCommand(executablePath: String, url: String): String =
-        "start \"\" \"$executablePath\" attach \"$url\""
+    private fun buildWindowsTuiCommand(executablePath: String, url: String): String =
+        "start \"\" \"$executablePath\" --server=$url"
 
-    private fun buildPosixAttachCommand(command: List<String>): String =
+    private fun buildPosixTuiCommand(command: List<String>): String =
         command.joinToString(" ", transform = ::shellQuote)
 
     private fun shellQuote(value: String): String =
@@ -111,16 +115,16 @@ class OpenTerminalAction(private val project: Project) : AnAction(), DumbAware {
      * Returns the full command list for the first one found on PATH,
      * or an empty list if none are available.
      */
-    private fun findLinuxTerminalCommand(attachArgs: List<String>): List<String> {
+    private fun findLinuxTerminalCommand(tuiArgs: List<String>): List<String> {
         val candidates = listOf(
             // Preferred: distro-agnostic default symlink
-            listOf("x-terminal-emulator", "-e") + attachArgs,
+            listOf("x-terminal-emulator", "-e") + tuiArgs,
             // Common desktop environments
-            listOf("gnome-terminal", "--") + attachArgs,
-            listOf("konsole", "-e") + attachArgs,
-            listOf("xfce4-terminal", "-x") + attachArgs,
+            listOf("gnome-terminal", "--") + tuiArgs,
+            listOf("konsole", "-e") + tuiArgs,
+            listOf("xfce4-terminal", "-x") + tuiArgs,
             // Universal fallback
-            listOf("xterm", "-e") + attachArgs,
+            listOf("xterm", "-e") + tuiArgs,
         )
 
         for (candidate in candidates) {
