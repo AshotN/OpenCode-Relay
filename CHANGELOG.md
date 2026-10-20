@@ -24,6 +24,7 @@
   <li>Launch the embedded and external TUI with <code>opencode --server=&lt;url&gt;</code> instead of the removed v1 <code>attach</code> subcommand.</li>
   <li>Derive session idle state from execution-finished events, which is what OpenCode 2.x emits.</li>
   <li>Request cumulative session diffs with chronologically ordered turn ranges, as required by the v2 diff API.</li>
+  <li>Restore <em>New Session</em>, session switching (session-list clicks), and <em>Send Selection / Send File to TUI</em>, which relied on the removed v1 <code>/tui/</code> control routes. Sessions are now created via <code>POST /api/session</code> (reusing the newest empty session when present) and the embedded TUI is relaunched against them with <code>--session</code>; references are pasted into the embedded terminal's prompt input.</li>
 </ul>
 
 ## [3.0.0] - 2026-08-30

@@ -46,7 +46,8 @@ The **Sessions** panel lists the project's root sessions. Each row shows:
 - A spinner while the session is actively running
 - The number of files being tracked in that session
 
-Clicking a session row makes it the active session; the file list updates to show only that session's changes.
+Clicking a session row makes it the active session — the embedded TUI switches to it (by restarting with
+`--session`) and the file list updates to show only that session's changes.
 
 ### Modified-files list
 
@@ -86,19 +87,20 @@ Double-clicking a file in the modified-files list opens a standard JetBrains **d
 
 ### Send selection to TUI
 
-> **In progress** — the TUI integration is being reworked for the OpenCode 2.x server; this feature is
-> temporarily unavailable.
-
 Share code from the editor directly with OpenCode's prompt input:
 
 - Select any code in the editor
 - Use **Send Selection to OpenCode** from the right-click context menu
-- The selection is sent as a fenced code block (with filename and line range) to the active TUI session's prompt input
-  buffer
+- The selection is appended to the embedded TUI's prompt input as a file reference
+  (`@path#Lstart[-end]`) — no file content is embedded, OpenCode resolves the file and line range itself when
+  you submit
 
 The text is appended — not submitted — so you retain full control before pressing Enter in the TUI.
 
 You can also send file and folder paths to the TUI by right-clicking them in the project view.
+
+These actions paste into the embedded OpenCode terminal, so the OpenCode Relay tool window with the inline
+terminal must be open.
 
 ### Open in browser
 
@@ -106,11 +108,12 @@ The **Open in Browser** toolbar button opens the OpenCode web UI in your default
 
 ### New session in TUI
 
-> **In progress** — the TUI integration is being reworked for the OpenCode 2.x server; this feature is
-> temporarily unavailable.
-
 The **New Session** toolbar button creates a new OpenCode session and immediately switches the active TUI instance to
-it.
+it. If the most recent session is already empty (no messages, no tracked files), it is reused instead of
+accumulating blank sessions.
+
+OpenCode 2.x exposes no non-interactive route for pointing the TUI at a session, so the embedded TUI is restarted
+with the new session (`opencode --session=<id>`); the session itself is created via the `POST /api/session` API.
 
 ### Permission prompts
 

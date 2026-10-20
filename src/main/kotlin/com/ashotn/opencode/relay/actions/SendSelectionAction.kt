@@ -17,13 +17,13 @@ import com.intellij.openapi.project.DumbAware
 
 /**
  * Editor action that appends an @path#Lstart or @path#Lstart-end file reference to the TUI's prompt
- * input buffer via POST /tui/append-prompt.
+ * input buffer by pasting it into the embedded terminal.
  *
  * Sends a reference only — no file content is embedded in the prompt. OpenCode resolves
  * the file and line range itself when the user submits.
  *
- * The OpenCode server provides no session-scoping for this endpoint — the reference lands
- * in whichever session the TUI currently has open. The plugin has no control over that.
+ * The reference lands in whichever session the TUI currently has open — the plugin has no
+ * control over that (OpenCode 2.x exposes no per-session prompt-append route).
  *
  * Does NOT create a message or trigger a model response; the user still submits manually.
  */

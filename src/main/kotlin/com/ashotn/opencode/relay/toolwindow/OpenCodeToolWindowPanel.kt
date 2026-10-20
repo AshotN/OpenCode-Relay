@@ -17,6 +17,7 @@ import com.ashotn.opencode.relay.settings.effectiveForIde
 import com.ashotn.opencode.relay.terminal.ClassicTuiPanel
 import com.ashotn.opencode.relay.terminal.ReworkedTuiPanel
 import com.ashotn.opencode.relay.terminal.TuiPanel
+import com.ashotn.opencode.relay.tui.OpenCodeTuiClient
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
@@ -145,6 +146,9 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         )
 
         buildContent()
+        // Expose the embedded terminal to the TUI service so session switching and prompt
+        // injection can drive it (OpenCode 2.x has no /tui/ control routes).
+        OpenCodeTuiClient.getInstance(project).setTuiPanel(tuiPanel)
     }
 
     private fun requestSyncCard() {
@@ -248,6 +252,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
         splitPane.bottomComponent = newPanel.component
         tuiPanel = newPanel
         activeTuiEngine = configuredEngine
+        OpenCodeTuiClient.getInstance(project).setTuiPanel(newPanel)
     }
 
     private fun buildContent() {
@@ -280,6 +285,7 @@ class OpenCodeToolWindowPanel(private val project: Project) : JPanel(BorderLayou
     override fun dispose() {
         if (disposed) return
         disposed = true
+        OpenCodeTuiClient.getInstance(project).setTuiPanel(null)
         plugin.removeListener(serverStateListener)
     }
 }

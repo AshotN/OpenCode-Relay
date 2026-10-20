@@ -16,14 +16,16 @@ The plugin speaks the OpenCode 2.x HTTP/SSE API exclusively:
   password via the `OPENCODE_PASSWORD` environment variable.
 - The embedded TUI is launched as `opencode --server=<url>`. v2 removed the v1 `attach` subcommand, and the
   equals form is required: a space-separated `--server <url>` is misparsed as the positional directory argument
-  (chdir ENOENT, the TUI hangs rendering nothing).
+  (chdir ENOENT, the TUI hangs rendering nothing). `--session=<id>` (also equals form) opens/continues a
+  specific session.
 - v2 API facts were verified against a live v2 server (OpenAPI spec with 119 paths) and the official v2 client
   types. When in doubt, trust the live server over memory.
-- **Known, documented exception:** the TUI "Send Selection" / "New Session" features still call the v1
-  `/tui/append-prompt` and `/tui/select-session` routes. v2 has no TUI-control routes (verified in the v2.0.32
-  OpenAPI spec — 119 paths, nothing tui-related; the only prompt route is `POST /api/session/{sessionID}/prompt`),
-  so these features fail gracefully until a v2 rework lands (marked "in progress" in the README). This is a
-  conscious deviation, not drift — do not extend `/tui/*` usage; replace it with the v2 rework.
+- v2 has **no TUI-control routes** (verified in the v2.0.32 OpenAPI spec — 119 paths, nothing tui-related; the
+  only prompt route is `POST /api/session/{sessionID}/prompt`). TUI control goes through the embedded terminal
+  instead: session switching ("New Session", session-list clicks) relaunches the TUI with `--session=<id>`
+  (the session itself is created via `POST /api/session`, reusing the newest empty one when present), and
+  "Send Selection" / "Send File" paste a file reference into the prompt input via terminal bracketed paste.
+  Do not reintroduce the v1 `/tui/*` HTTP routes.
 
 ## Prefer JetBrains Tools
 
